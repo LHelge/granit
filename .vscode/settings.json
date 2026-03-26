@@ -3,6 +3,8 @@
     "rust": "html"
   },
   "chat.tools.terminal.autoApprove": {
-    "git add": true
+    "git add": true,
+    "cargo test": true,
+    "cargo clippy": true
   }
 }

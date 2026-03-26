@@ -43,6 +43,25 @@ A **cave** is any directory on disk selected via the native folder picker. It co
 
 One cave is open at a time. The user can switch between recently opened caves.
 
+### Configuration
+
+Layered config with precedence: **defaults ← global ← cave**.
+
+```
+~/.config/granit/          (or platform equivalent via dirs::config_dir())
+  config.yml               — Global settings (recent caves, default agent provider/model)
+  secrets.env              — Global API keys (AGENT_API_KEY, etc.)
+
+<cave>/.granit/
+  config.yml               — Per-cave overrides (e.g., different model)
+  secrets.env              — Per-cave API keys (overrides global)
+```
+
+- Config structs use `Option<T>` fields for the cave layer — unset fields fall through to global.
+- `secrets.env` files are loaded with `dotenvy`, never committed to git.
+- When opening a cave, ensure its `.gitignore` includes `.granit/secrets.env`.
+- `serde_yml` for YAML (de)serialization. `dirs` crate for platform-correct config paths.
+
 ### Markdown Processing
 
 - `pulldown-cmark` parses markdown on the backend
@@ -83,7 +102,7 @@ cargo test -p granit               # Backend unit tests
 - **Branches**: Work on feature branches. Never commit directly to `main`.
 - **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
 - **Pull requests**: Use `gh pr create` (GitHub CLI) to open PRs.
-- **After changes**: Always run `cargo fmt` and `cargo test` before committing.
+- **After changes**: Always run `cargo fmt`, `cargo clippy`, and `cargo test` before committing.
 - **Dependencies**: Use `cargo add <crate>` to add new dependencies (ensures latest version). Never hand-edit `Cargo.toml` dependency lines.
 - **Planning**: Use the Bears task tracker skill for breaking down features into epics and sub-tasks.
 
@@ -113,6 +132,9 @@ cargo test -p granit               # Backend unit tests
 | `thiserror` | Typed error derivation |
 | `serde` / `serde_json` | Serialization |
 | `serde-wasm-bindgen` | Frontend ↔ JS value conversion |
+| `serde_yml` | YAML config (de)serialization |
+| `dirs` | Platform-correct config/data directories |
+| `dotenvy` | Load `secrets.env` files |
 
 ### Deferred Features (Not Yet — Don't Build)
 
