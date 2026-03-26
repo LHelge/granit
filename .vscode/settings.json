@@ -1,0 +1,8 @@
+{
+  "emmet.includeLanguages": {
+    "rust": "html"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "git add": true
+  }
+}
