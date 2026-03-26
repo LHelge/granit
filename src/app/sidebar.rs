@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use super::invoke;
-use super::types::AppConfig;
+use super::types::{AppConfig, Note, NoteMeta};
 
 #[derive(Serialize)]
 struct OpenDialogOptions {
@@ -14,7 +14,6 @@ struct OpenDialogOptions {
 
 /// Open the native folder picker and return the selected path (or None if cancelled).
 async fn pick_folder() -> Option<String> {
-    // Access window.__TAURI__.dialog.open(...)
     let tauri =
         js_sys::Reflect::get(&web_sys::window()?.into(), &JsValue::from_str("__TAURI__")).ok()?;
     let dialog = js_sys::Reflect::get(&tauri, &JsValue::from_str("dialog")).ok()?;
@@ -47,55 +46,150 @@ async fn open_cave_cmd(path: &str) -> Option<AppConfig> {
     serde_wasm_bindgen::from_value(result).ok()
 }
 
+#[derive(Serialize)]
+struct CreateNoteArgs {
+    name: String,
+}
+
+#[derive(Serialize)]
+struct ReadNoteArgs {
+    name: String,
+}
+
 /// Left sidebar — file tree for navigating the cave.
 #[component]
 pub fn Sidebar(
     config: ReadSignal<AppConfig>,
     set_config: WriteSignal<AppConfig>,
     set_settings_open: WriteSignal<bool>,
+    notes: ReadSignal<Vec<NoteMeta>>,
+    set_notes: WriteSignal<Vec<NoteMeta>>,
+    set_active_note: WriteSignal<Option<Note>>,
 ) -> impl IntoView {
     let (dropdown_open, set_dropdown_open) = signal(false);
 
-    let open_existing = move |_| {
-        let set_config = set_config;
-        let set_dropdown_open = set_dropdown_open;
+    let refresh_and_open_cave = move |set_config: WriteSignal<AppConfig>,
+                                      set_notes: WriteSignal<Vec<NoteMeta>>,
+                                      set_active_note: WriteSignal<Option<Note>>,
+                                      set_dropdown_open: WriteSignal<bool>,
+                                      path: String| {
         leptos::task::spawn_local(async move {
-            if let Some(path) = pick_folder().await {
-                if let Some(new_config) = open_cave_cmd(&path).await {
-                    set_config.set(new_config);
-                }
+            if let Some(new_config) = open_cave_cmd(&path).await {
+                set_config.set(new_config);
+                let notes = super::fetch_notes().await;
+                set_notes.set(notes);
+                set_active_note.set(None);
             }
             set_dropdown_open.set(false);
         });
     };
 
-    // "Create New" uses the same folder picker — the backend
-    // will initialize the cave structure in the chosen directory.
-    let create_new = move |_| {
+    let open_existing = move |_| {
         let set_config = set_config;
+        let set_notes = set_notes;
+        let set_active_note = set_active_note;
         let set_dropdown_open = set_dropdown_open;
         leptos::task::spawn_local(async move {
             if let Some(path) = pick_folder().await {
-                if let Some(new_config) = open_cave_cmd(&path).await {
-                    set_config.set(new_config);
-                }
+                refresh_and_open_cave(
+                    set_config,
+                    set_notes,
+                    set_active_note,
+                    set_dropdown_open,
+                    path,
+                );
+            } else {
+                set_dropdown_open.set(false);
             }
-            set_dropdown_open.set(false);
+        });
+    };
+
+    let create_new = move |_| {
+        let set_config = set_config;
+        let set_notes = set_notes;
+        let set_active_note = set_active_note;
+        let set_dropdown_open = set_dropdown_open;
+        leptos::task::spawn_local(async move {
+            if let Some(path) = pick_folder().await {
+                refresh_and_open_cave(
+                    set_config,
+                    set_notes,
+                    set_active_note,
+                    set_dropdown_open,
+                    path,
+                );
+            } else {
+                set_dropdown_open.set(false);
+            }
         });
     };
 
     let select_recent = move |path: String| {
-        let set_config = set_config;
-        let set_dropdown_open = set_dropdown_open;
+        refresh_and_open_cave(
+            set_config,
+            set_notes,
+            set_active_note,
+            set_dropdown_open,
+            path,
+        );
+    };
+
+    let on_new_note = move |_| {
+        let set_notes = set_notes;
+        let set_active_note = set_active_note;
         leptos::task::spawn_local(async move {
-            if let Some(new_config) = open_cave_cmd(&path).await {
-                set_config.set(new_config);
+            // Prompt is not available in WASM — use a simple JS prompt
+            let name: Option<String> = js_sys::Reflect::apply(
+                &js_sys::Function::from(
+                    js_sys::Reflect::get(
+                        &web_sys::window().unwrap().into(),
+                        &JsValue::from_str("prompt"),
+                    )
+                    .unwrap(),
+                ),
+                &JsValue::NULL,
+                &{
+                    let arr = js_sys::Array::new();
+                    arr.push(&JsValue::from_str("Note name:"));
+                    arr
+                },
+            )
+            .ok()
+            .and_then(|v| v.as_string());
+
+            if let Some(name) = name {
+                let name = name.trim().to_string();
+                if name.is_empty() {
+                    return;
+                }
+                let args =
+                    serde_wasm_bindgen::to_value(&CreateNoteArgs { name: name.clone() }).unwrap();
+                let result = invoke("create_note", args).await;
+                if serde_wasm_bindgen::from_value::<NoteMeta>(result).is_ok() {
+                    // Refresh note list
+                    set_notes.set(super::fetch_notes().await);
+                    // Open the new note
+                    let read_args = serde_wasm_bindgen::to_value(&ReadNoteArgs { name }).unwrap();
+                    let note_result = invoke("read_note", read_args).await;
+                    if let Ok(note) = serde_wasm_bindgen::from_value::<Note>(note_result) {
+                        set_active_note.set(Some(note));
+                    }
+                }
             }
-            set_dropdown_open.set(false);
         });
     };
 
-    // Derive the display name for the selected cave (first recent, or "No cave")
+    let on_select_note = move |slug: String| {
+        let set_active_note = set_active_note;
+        leptos::task::spawn_local(async move {
+            let args = serde_wasm_bindgen::to_value(&ReadNoteArgs { name: slug }).unwrap();
+            let result = invoke("read_note", args).await;
+            if let Ok(note) = serde_wasm_bindgen::from_value::<Note>(result) {
+                set_active_note.set(Some(note));
+            }
+        });
+    };
+
     let cave_label = move || {
         let cfg = config.get();
         cfg.recent_caves
@@ -105,16 +199,52 @@ pub fn Sidebar(
             .unwrap_or_else(|| "No cave open".to_string())
     };
 
+    let has_cave = move || !config.get().recent_caves.is_empty();
+
     view! {
         <aside class="w-64 shrink-0 bg-stone-850 border-r border-stone-700 flex flex-col overflow-hidden">
             // Header
             <div class="flex items-center justify-between px-3 py-2 border-b border-stone-700">
                 <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">"Explorer"</span>
+                <Show when=has_cave>
+                    <button
+                        class="p-0.5 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                        title="New note"
+                        on:click=on_new_note
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                    </button>
+                </Show>
             </div>
 
-            // File tree (placeholder)
-            <div class="flex-1 overflow-y-auto p-2">
-                <p class="text-sm text-stone-500 italic">"No cave open"</p>
+            // Note list
+            <div class="flex-1 overflow-y-auto">
+                <Show
+                    when=has_cave
+                    fallback=|| view! { <p class="p-2 text-sm text-stone-500 italic">"No cave open"</p> }
+                >
+                    {move || {
+                        let note_list = notes.get();
+                        if note_list.is_empty() {
+                            view! { <p class="p-2 text-sm text-stone-500 italic">"No notes yet"</p> }.into_any()
+                        } else {
+                            note_list.into_iter().map(|meta| {
+                                let slug = meta.slug.clone();
+                                let title = meta.title.clone();
+                                view! {
+                                    <button
+                                        class="w-full text-left px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-700/50 transition-colors truncate"
+                                        on:click=move |_| on_select_note(slug.clone())
+                                    >
+                                        {title}
+                                    </button>
+                                }
+                            }).collect_view().into_any()
+                        }
+                    }}
+                </Show>
             </div>
 
             // Bottom bar: cave selector + settings gear

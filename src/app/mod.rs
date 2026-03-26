@@ -11,12 +11,18 @@ use agent_panel::AgentPanel;
 use editor::Editor;
 use settings_modal::SettingsModal;
 use sidebar::Sidebar;
-use types::AppConfig;
+use types::{AppConfig, Note, NoteMeta};
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
     pub(crate) async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+}
+
+/// Fetch the note list from the backend.
+pub(crate) async fn fetch_notes() -> Vec<NoteMeta> {
+    let result = invoke("list_notes", JsValue::NULL).await;
+    serde_wasm_bindgen::from_value(result).unwrap_or_default()
 }
 
 #[component]
@@ -25,6 +31,8 @@ pub fn App() -> impl IntoView {
     let (agent_visible, set_agent_visible) = signal(true);
     let (settings_open, set_settings_open) = signal(false);
     let (config, set_config) = signal(AppConfig::default());
+    let (notes, set_notes) = signal(Vec::<NoteMeta>::new());
+    let (active_note, set_active_note) = signal(None::<Note>);
 
     // Load config from backend on mount
     let set_config_init = set_config;
@@ -69,11 +77,18 @@ pub fn App() -> impl IntoView {
             <div class="flex flex-1 overflow-hidden">
                 // Sidebar (file tree)
                 <Show when=move || sidebar_visible.get()>
-                    <Sidebar config=config set_config=set_config set_settings_open=set_settings_open />
+                    <Sidebar
+                        config=config
+                        set_config=set_config
+                        set_settings_open=set_settings_open
+                        notes=notes
+                        set_notes=set_notes
+                        set_active_note=set_active_note
+                    />
                 </Show>
 
                 // Editor (center)
-                <Editor />
+                <Editor active_note=active_note set_active_note=set_active_note set_notes=set_notes />
 
                 // Agent panel (right)
                 <Show when=move || agent_visible.get()>
