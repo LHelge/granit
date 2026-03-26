@@ -22,3 +22,18 @@ impl Default for AgentConfig {
         }
     }
 }
+
+/// Metadata for a note in the cave.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NoteMeta {
+    pub slug: String,
+    pub title: String,
+    pub relative_path: String,
+}
+
+/// Full note content.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Note {
+    pub meta: NoteMeta,
+    pub content: String,
+}
