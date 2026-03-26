@@ -9,19 +9,27 @@ mod types;
 
 use agent_panel::AgentPanel;
 use editor::Editor;
+use serde::Serialize;
 use settings_modal::SettingsModal;
 use sidebar::Sidebar;
 use types::{AppConfig, Note, NoteMeta};
 
+#[derive(Serialize)]
+struct OpenCaveArgs {
+    path: String,
+}
+
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    pub(crate) async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    pub(crate) async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 }
 
 /// Fetch the note list from the backend.
 pub(crate) async fn fetch_notes() -> Vec<NoteMeta> {
-    let result = invoke("list_notes", JsValue::NULL).await;
+    let Ok(result) = invoke("list_notes", JsValue::NULL).await else {
+        return Vec::new();
+    };
     serde_wasm_bindgen::from_value(result).unwrap_or_default()
 }
 
@@ -34,12 +42,28 @@ pub fn App() -> impl IntoView {
     let (notes, set_notes) = signal(Vec::<NoteMeta>::new());
     let (active_note, set_active_note) = signal(None::<Note>);
 
-    // Load config from backend on mount
+    // Load config from backend on mount, and re-open the most recent cave if any
     let set_config_init = set_config;
+    let set_notes_init = set_notes;
     leptos::task::spawn_local(async move {
-        let result = invoke("get_config", JsValue::NULL).await;
+        let Ok(result) = invoke("get_config", JsValue::NULL).await else {
+            return;
+        };
         if let Ok(cfg) = serde_wasm_bindgen::from_value::<AppConfig>(result) {
+            let recent = cfg.recent_caves.first().cloned();
             set_config_init.set(cfg);
+
+            // Re-open the last cave so the backend has a cave_path set
+            if let Some(path) = recent {
+                let args = serde_wasm_bindgen::to_value(&OpenCaveArgs { path }).unwrap();
+                let Ok(cave_result) = invoke("open_cave", args).await else {
+                    return;
+                };
+                if let Ok(new_cfg) = serde_wasm_bindgen::from_value::<AppConfig>(cave_result) {
+                    set_config_init.set(new_cfg);
+                    set_notes_init.set(fetch_notes().await);
+                }
+            }
         }
     });
 

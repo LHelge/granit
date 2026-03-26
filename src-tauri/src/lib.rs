@@ -86,6 +86,16 @@ fn save_note(
     cave::save_note(&cave_path, &name, &content)
 }
 
+#[tauri::command]
+fn rename_note(
+    old_name: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<NoteMeta, CaveError> {
+    let cave_path = get_cave_path(&state)?;
+    cave::rename_note(&cave_path, &old_name, &new_name)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = AppConfig::ensure_global().expect("failed to initialize config");
@@ -105,6 +115,7 @@ pub fn run() {
             list_notes,
             read_note,
             save_note,
+            rename_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

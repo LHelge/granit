@@ -92,21 +92,35 @@ fn extract_title(content: &str, slug: &str) -> String {
 }
 
 /// Create a new note in the cave. Returns the metadata of the created note.
+/// If the name is "untitled" and already exists, appends a numeric suffix (untitled-2, untitled-3, …).
 pub fn create_note(cave_path: &Path, name: &str) -> Result<NoteMeta, CaveError> {
     validate_name(name)?;
 
-    let filename = ensure_md_extension(name);
-    let file_path = cave_path.join(&filename);
+    let base_filename = ensure_md_extension(name);
+    let file_path = cave_path.join(&base_filename);
 
-    if file_path.exists() {
-        return Err(CaveError::AlreadyExists(filename));
-    }
+    // For "untitled" notes, find a unique name automatically
+    let filename = if file_path.exists() && name == "untitled" {
+        let mut n = 2u32;
+        loop {
+            let candidate = format!("untitled-{n}.md");
+            if !cave_path.join(&candidate).exists() {
+                break candidate;
+            }
+            n += 1;
+        }
+    } else if file_path.exists() {
+        return Err(CaveError::AlreadyExists(base_filename));
+    } else {
+        base_filename
+    };
 
+    let final_path = cave_path.join(&filename);
     let slug = filename.strip_suffix(".md").unwrap_or(&filename);
     let title = slug.to_string();
     let initial_content = format!("# {title}\n");
 
-    std::fs::write(&file_path, &initial_content)?;
+    std::fs::write(&final_path, &initial_content)?;
 
     Ok(NoteMeta {
         slug: slug.to_string(),
@@ -144,7 +158,7 @@ pub fn list_notes(cave_path: &Path) -> Result<Vec<NoteMeta>, CaveError> {
         }
     }
 
-    notes.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    notes.sort_by(|a, b| a.slug.to_lowercase().cmp(&b.slug.to_lowercase()));
     Ok(notes)
 }
 
@@ -195,6 +209,59 @@ pub fn save_note(cave_path: &Path, name: &str, content: &str) -> Result<NoteMeta
         slug,
         title,
         relative_path: filename,
+    })
+}
+
+/// Rename a note file. Returns the updated metadata.
+/// Fails if `new_name` already exists or `old_name` doesn't exist.
+pub fn rename_note(
+    cave_path: &Path,
+    old_name: &str,
+    new_name: &str,
+) -> Result<NoteMeta, CaveError> {
+    validate_name(new_name)?;
+
+    let old_filename = ensure_md_extension(old_name);
+    let new_filename = ensure_md_extension(new_name);
+
+    // No-op if the name hasn't changed
+    if old_filename == new_filename {
+        let content = std::fs::read_to_string(cave_path.join(&old_filename))?;
+        let slug = new_filename
+            .strip_suffix(".md")
+            .unwrap_or(&new_filename)
+            .to_string();
+        let title = extract_title(&content, &slug);
+        return Ok(NoteMeta {
+            slug,
+            title,
+            relative_path: new_filename,
+        });
+    }
+
+    let old_path = cave_path.join(&old_filename);
+    let new_path = cave_path.join(&new_filename);
+
+    if !old_path.exists() {
+        return Err(CaveError::NotFound(old_filename));
+    }
+    if new_path.exists() {
+        return Err(CaveError::AlreadyExists(new_filename));
+    }
+
+    std::fs::rename(&old_path, &new_path)?;
+
+    let content = std::fs::read_to_string(&new_path)?;
+    let slug = new_filename
+        .strip_suffix(".md")
+        .unwrap_or(&new_filename)
+        .to_string();
+    let title = extract_title(&content, &slug);
+
+    Ok(NoteMeta {
+        slug,
+        title,
+        relative_path: new_filename,
     })
 }
 
@@ -259,6 +326,19 @@ mod tests {
     }
 
     #[test]
+    fn test_create_untitled_auto_numbering() {
+        let dir = tempfile::tempdir().unwrap();
+        let m1 = create_note(dir.path(), "untitled").unwrap();
+        assert_eq!(m1.slug, "untitled");
+
+        let m2 = create_note(dir.path(), "untitled").unwrap();
+        assert_eq!(m2.slug, "untitled-2");
+
+        let m3 = create_note(dir.path(), "untitled").unwrap();
+        assert_eq!(m3.slug, "untitled-3");
+    }
+
+    #[test]
     fn test_list_notes() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("alpha.md"), "# Alpha\n").unwrap();
@@ -304,6 +384,45 @@ mod tests {
     fn test_save_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
         let err = save_note(dir.path(), "missing", "content").unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_rename_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("old.md"), "# Old Note\n").unwrap();
+
+        let meta = rename_note(dir.path(), "old", "new-name").unwrap();
+        assert_eq!(meta.slug, "new-name");
+        assert_eq!(meta.relative_path, "new-name.md");
+        assert!(!dir.path().join("old.md").exists());
+        assert!(dir.path().join("new-name.md").exists());
+    }
+
+    #[test]
+    fn test_rename_note_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("same.md"), "# Same\n").unwrap();
+
+        let meta = rename_note(dir.path(), "same", "same").unwrap();
+        assert_eq!(meta.slug, "same");
+        assert!(dir.path().join("same.md").exists());
+    }
+
+    #[test]
+    fn test_rename_note_target_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "# A\n").unwrap();
+        std::fs::write(dir.path().join("b.md"), "# B\n").unwrap();
+
+        let err = rename_note(dir.path(), "a", "b").unwrap_err();
+        assert!(matches!(err, CaveError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn test_rename_note_source_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = rename_note(dir.path(), "missing", "new").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
 }

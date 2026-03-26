@@ -35,7 +35,10 @@ pub fn SettingsModal(
             };
             let args = serde_wasm_bindgen::to_value(&SaveConfigArgs { agent });
             if let Ok(args) = args {
-                let result = invoke("save_config", args).await;
+                let Ok(result) = invoke("save_config", args).await else {
+                    set_saving.set(false);
+                    return;
+                };
                 if let Ok(new_config) = serde_wasm_bindgen::from_value::<AppConfig>(result) {
                     set_config.set(new_config);
                 }

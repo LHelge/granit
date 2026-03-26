@@ -28,9 +28,25 @@ Built for personal use. No plugins, no sync, no bloat.
 
 ### Prerequisites
 
-- Rust (stable)
-- [Tauri CLI](https://tauri.app/start/create-project/#prerequisites)
-- [Trunk](https://trunkrs.dev/)
+- **Rust** (stable) with the WASM compile target:
+  ```sh
+  rustup target add wasm32-unknown-unknown
+  ```
+- **Tauri CLI** and system dependencies — follow the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/) for your platform (on Linux this includes `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, etc.):
+  ```sh
+  cargo install tauri-cli --locked
+  ```
+- **[Trunk](https://trunkrs.dev/)** — WASM build tool for the Leptos frontend:
+  ```sh
+  cargo install trunk --locked
+  ```
+- **[Tailwind CSS](https://tailwindcss.com/blog/standalone-cli)** standalone CLI — must be available as `tailwindcss` on your `PATH` (used by Trunk's pre-build hook):
+  ```sh
+  # Example for Linux x64:
+  curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
+  chmod +x tailwindcss-linux-x64
+  sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+  ```
 
 ### Build & Run
 
