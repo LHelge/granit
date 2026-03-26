@@ -3,22 +3,37 @@ use wasm_bindgen::prelude::*;
 
 mod agent_panel;
 mod editor;
+mod settings_modal;
 mod sidebar;
+mod types;
 
 use agent_panel::AgentPanel;
 use editor::Editor;
+use settings_modal::SettingsModal;
 use sidebar::Sidebar;
+use types::AppConfig;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"])]
-    async fn invoke(cmd: &str, args: JsValue) -> JsValue;
+    pub(crate) async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 }
 
 #[component]
 pub fn App() -> impl IntoView {
     let (sidebar_visible, set_sidebar_visible) = signal(true);
     let (agent_visible, set_agent_visible) = signal(true);
+    let (settings_open, set_settings_open) = signal(false);
+    let (config, set_config) = signal(AppConfig::default());
+
+    // Load config from backend on mount
+    let set_config_init = set_config;
+    leptos::task::spawn_local(async move {
+        let result = invoke("get_config", JsValue::NULL).await;
+        if let Ok(cfg) = serde_wasm_bindgen::from_value::<AppConfig>(result) {
+            set_config_init.set(cfg);
+        }
+    });
 
     let toggle_sidebar = move |_| set_sidebar_visible.update(|v| *v = !*v);
     let toggle_agent = move |_| set_agent_visible.update(|v| *v = !*v);
@@ -54,7 +69,7 @@ pub fn App() -> impl IntoView {
             <div class="flex flex-1 overflow-hidden">
                 // Sidebar (file tree)
                 <Show when=move || sidebar_visible.get()>
-                    <Sidebar />
+                    <Sidebar config=config set_config=set_config set_settings_open=set_settings_open />
                 </Show>
 
                 // Editor (center)
@@ -65,6 +80,11 @@ pub fn App() -> impl IntoView {
                     <AgentPanel />
                 </Show>
             </div>
+
+            // Settings modal
+            <Show when=move || settings_open.get()>
+                <SettingsModal config=config set_config=set_config set_open=set_settings_open />
+            </Show>
         </div>
     }
 }
