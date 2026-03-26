@@ -2,10 +2,12 @@ use std::collections::HashMap;
 
 /// Typed access to secrets loaded from `secrets.env` files.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Secrets {
     vars: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl Secrets {
     pub fn new(vars: HashMap<String, String>) -> Self {
         Self { vars }

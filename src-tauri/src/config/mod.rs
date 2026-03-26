@@ -171,6 +171,7 @@ impl AppConfig {
 }
 
 /// Load secrets from `secrets.env` files with layered precedence.
+#[allow(dead_code)]
 pub fn load_secrets(cave_path: Option<&Path>) -> Result<Secrets, ConfigError> {
     let mut vars = HashMap::new();
 

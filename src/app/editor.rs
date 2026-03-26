@@ -10,6 +10,13 @@ struct SaveNoteArgs {
     content: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameNoteArgs {
+    old_name: String,
+    new_name: String,
+}
+
 /// Center panel — markdown editor with edit/read mode toggle.
 #[component]
 pub fn Editor(
@@ -17,17 +24,78 @@ pub fn Editor(
     set_active_note: WriteSignal<Option<Note>>,
     set_notes: WriteSignal<Vec<NoteMeta>>,
 ) -> impl IntoView {
-    let (editing, set_editing) = signal(true);
+    let (editing, set_editing) = signal(false);
     let (content, set_content) = signal(String::new());
+    let (title_input, set_title_input) = signal(String::new());
     let (saving, set_saving) = signal(false);
+    let (error, set_error) = signal(None::<String>);
+    let (prev_slug, set_prev_slug) = signal(None::<String>);
 
-    // When active_note changes, update the local content
+    // When active_note changes, detect real note switches:
+    // - auto-save the previous note if we were editing
+    // - switch to preview mode
     Effect::new(move || {
-        if let Some(note) = active_note.get() {
-            set_content.set(note.content.clone());
-        } else {
-            set_content.set(String::new());
+        let new_note = active_note.get();
+        let old_slug = prev_slug.get_untracked();
+        let was_editing = editing.get_untracked();
+        let is_saving = saving.get_untracked();
+
+        let new_slug = new_note.as_ref().map(|n| n.meta.slug.clone());
+        let is_switch = old_slug != new_slug && !is_saving;
+
+        if is_switch {
+            // Auto-save previous note content when switching away in edit mode
+            if was_editing {
+                if let Some(slug) = old_slug {
+                    let old_content = content.get_untracked();
+                    let old_title = title_input.get_untracked().trim().to_string();
+                    let set_notes = set_notes;
+                    leptos::task::spawn_local(async move {
+                        // Rename if the title changed
+                        let current_slug = if !old_title.is_empty() && old_title != slug {
+                            let rename_args = serde_wasm_bindgen::to_value(&RenameNoteArgs {
+                                old_name: slug.clone(),
+                                new_name: old_title.clone(),
+                            })
+                            .unwrap();
+                            if let Ok(Ok(val)) = invoke("rename_note", rename_args)
+                                .await
+                                .map(serde_wasm_bindgen::from_value::<NoteMeta>)
+                            {
+                                val.slug
+                            } else {
+                                slug
+                            }
+                        } else {
+                            slug
+                        };
+                        // Save content
+                        let args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
+                            name: current_slug,
+                            content: old_content,
+                        })
+                        .unwrap();
+                        let _ = invoke("save_note", args).await;
+                        // Refresh sidebar
+                        set_notes.set(super::fetch_notes().await);
+                    });
+                }
+            }
+            // Open new note in preview mode
+            set_editing.set(false);
         }
+
+        // Update local state
+        if let Some(note) = new_note {
+            set_prev_slug.set(Some(note.meta.slug.clone()));
+            set_content.set(note.content.clone());
+            set_title_input.set(note.meta.slug.clone());
+        } else {
+            set_prev_slug.set(None);
+            set_content.set(String::new());
+            set_title_input.set(String::new());
+        }
+        set_error.set(None);
     });
 
     let toggle_mode = move |_| set_editing.update(|v| *v = !*v);
@@ -35,31 +103,68 @@ pub fn Editor(
     let on_save = move |_| {
         let note = active_note.get_untracked();
         let content = content.get_untracked();
+        let new_title = title_input.get_untracked().trim().to_string();
         if let Some(note) = note {
+            if new_title.is_empty() {
+                set_error.set(Some("Title cannot be empty".to_string()));
+                return;
+            }
+
             set_saving.set(true);
+            set_error.set(None);
+            let old_slug = note.meta.slug.clone();
+
             leptos::task::spawn_local(async move {
-                let args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
-                    name: note.meta.slug.clone(),
+                // If the title changed, rename the file first
+                let current_slug = if new_title != old_slug {
+                    let rename_args = serde_wasm_bindgen::to_value(&RenameNoteArgs {
+                        old_name: old_slug.clone(),
+                        new_name: new_title.clone(),
+                    })
+                    .unwrap();
+                    let rename_result = invoke("rename_note", rename_args).await;
+                    match rename_result {
+                        Ok(val) => match serde_wasm_bindgen::from_value::<NoteMeta>(val) {
+                            Ok(meta) => meta.slug,
+                            Err(e) => {
+                                set_error.set(Some(format!("{e}")));
+                                set_saving.set(false);
+                                return;
+                            }
+                        },
+                        Err(e) => {
+                            let msg = e.as_string().unwrap_or_else(|| "Rename failed".to_string());
+                            set_error.set(Some(msg));
+                            set_saving.set(false);
+                            return;
+                        }
+                    }
+                } else {
+                    old_slug
+                };
+
+                // Save the content
+                let save_args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
+                    name: current_slug.clone(),
                     content: content.clone(),
                 })
                 .unwrap();
-                let result = invoke("save_note", args).await;
-                if let Ok(meta) = serde_wasm_bindgen::from_value::<NoteMeta>(result) {
-                    // Update active note with new content and meta
-                    set_active_note.set(Some(Note { meta, content }));
-                    // Refresh note list to pick up title changes
-                    set_notes.set(super::fetch_notes().await);
+                let result = invoke("save_note", save_args).await;
+                match result {
+                    Ok(val) => {
+                        if let Ok(meta) = serde_wasm_bindgen::from_value::<NoteMeta>(val) {
+                            set_active_note.set(Some(Note { meta, content }));
+                            set_notes.set(super::fetch_notes().await);
+                        }
+                    }
+                    Err(e) => {
+                        let msg = e.as_string().unwrap_or_else(|| "Save failed".to_string());
+                        set_error.set(Some(msg));
+                    }
                 }
                 set_saving.set(false);
             });
         }
-    };
-
-    let title = move || {
-        active_note
-            .get()
-            .map(|n| n.meta.title.clone())
-            .unwrap_or_else(|| "Untitled".to_string())
     };
 
     let has_note = move || active_note.get().is_some();
@@ -68,7 +173,22 @@ pub fn Editor(
         <main class="flex-1 flex flex-col overflow-hidden bg-stone-900">
             // Toolbar
             <div class="flex items-center gap-2 px-3 py-1.5 border-b border-stone-700 shrink-0">
-                <span class="text-sm text-stone-400 flex-1 truncate">{title}</span>
+                <Show
+                    when=move || editing.get() && has_note()
+                    fallback=move || view! {
+                        <span class="text-sm text-stone-400 flex-1 truncate">
+                            {move || title_input.get()}
+                        </span>
+                    }
+                >
+                    <input
+                        type="text"
+                        class="text-sm flex-1 bg-transparent text-stone-200 outline-none border-b border-stone-600 focus:border-stone-400 transition-colors"
+                        placeholder="Note title…"
+                        prop:value=move || title_input.get()
+                        on:input=move |ev| set_title_input.set(event_target_value(&ev))
+                    />
+                </Show>
                 <Show when=has_note>
                     <button
                         class="px-2 py-0.5 text-xs rounded border border-stone-600 text-stone-300 hover:bg-stone-700 transition-colors disabled:opacity-50"
@@ -85,6 +205,19 @@ pub fn Editor(
                     </button>
                 </Show>
             </div>
+
+            // Error banner
+            <Show when=move || error.get().is_some()>
+                <div class="px-3 py-1.5 bg-red-900/50 border-b border-red-700 text-red-300 text-xs flex items-center gap-2">
+                    <span class="flex-1">{move || error.get().unwrap_or_default()}</span>
+                    <button
+                        class="text-red-400 hover:text-red-200"
+                        on:click=move |_| set_error.set(None)
+                    >
+                        "✕"
+                    </button>
+                </div>
+            </Show>
 
             // Content area
             <div class="flex-1 overflow-y-auto p-6">

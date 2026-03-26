@@ -25,6 +25,7 @@ impl Default for AgentConfig {
 
 /// Metadata for a note in the cave.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct NoteMeta {
     pub slug: String,
     pub title: String,

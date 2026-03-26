@@ -42,7 +42,7 @@ async fn open_cave_cmd(path: &str) -> Option<AppConfig> {
         path: path.to_string(),
     })
     .ok()?;
-    let result = invoke("open_cave", args).await;
+    let result = invoke("open_cave", args).await.ok()?;
     serde_wasm_bindgen::from_value(result).ok()
 }
 
@@ -138,42 +138,25 @@ pub fn Sidebar(
         let set_notes = set_notes;
         let set_active_note = set_active_note;
         leptos::task::spawn_local(async move {
-            // Prompt is not available in WASM — use a simple JS prompt
-            let name: Option<String> = js_sys::Reflect::apply(
-                &js_sys::Function::from(
-                    js_sys::Reflect::get(
-                        &web_sys::window().unwrap().into(),
-                        &JsValue::from_str("prompt"),
-                    )
-                    .unwrap(),
-                ),
-                &JsValue::NULL,
-                &{
-                    let arr = js_sys::Array::new();
-                    arr.push(&JsValue::from_str("Note name:"));
-                    arr
-                },
-            )
-            .ok()
-            .and_then(|v| v.as_string());
-
-            if let Some(name) = name {
-                let name = name.trim().to_string();
-                if name.is_empty() {
+            // Create an untitled note — backend handles name uniqueness
+            let args = serde_wasm_bindgen::to_value(&CreateNoteArgs {
+                name: "untitled".to_string(),
+            })
+            .unwrap();
+            let Ok(result) = invoke("create_note", args).await else {
+                return;
+            };
+            if let Ok(meta) = serde_wasm_bindgen::from_value::<NoteMeta>(result) {
+                let slug = meta.slug.clone();
+                // Refresh note list
+                set_notes.set(super::fetch_notes().await);
+                // Open the new note
+                let read_args = serde_wasm_bindgen::to_value(&ReadNoteArgs { name: slug }).unwrap();
+                let Ok(note_result) = invoke("read_note", read_args).await else {
                     return;
-                }
-                let args =
-                    serde_wasm_bindgen::to_value(&CreateNoteArgs { name: name.clone() }).unwrap();
-                let result = invoke("create_note", args).await;
-                if serde_wasm_bindgen::from_value::<NoteMeta>(result).is_ok() {
-                    // Refresh note list
-                    set_notes.set(super::fetch_notes().await);
-                    // Open the new note
-                    let read_args = serde_wasm_bindgen::to_value(&ReadNoteArgs { name }).unwrap();
-                    let note_result = invoke("read_note", read_args).await;
-                    if let Ok(note) = serde_wasm_bindgen::from_value::<Note>(note_result) {
-                        set_active_note.set(Some(note));
-                    }
+                };
+                if let Ok(note) = serde_wasm_bindgen::from_value::<Note>(note_result) {
+                    set_active_note.set(Some(note));
                 }
             }
         });
@@ -183,7 +166,9 @@ pub fn Sidebar(
         let set_active_note = set_active_note;
         leptos::task::spawn_local(async move {
             let args = serde_wasm_bindgen::to_value(&ReadNoteArgs { name: slug }).unwrap();
-            let result = invoke("read_note", args).await;
+            let Ok(result) = invoke("read_note", args).await else {
+                return;
+            };
             if let Ok(note) = serde_wasm_bindgen::from_value::<Note>(result) {
                 set_active_note.set(Some(note));
             }
@@ -232,13 +217,13 @@ pub fn Sidebar(
                         } else {
                             note_list.into_iter().map(|meta| {
                                 let slug = meta.slug.clone();
-                                let title = meta.title.clone();
+                                let display = meta.slug;
                                 view! {
                                     <button
                                         class="w-full text-left px-3 py-1.5 text-sm text-stone-300 hover:bg-stone-700/50 transition-colors truncate"
                                         on:click=move |_| on_select_note(slug.clone())
                                     >
-                                        {title}
+                                        {display}
                                     </button>
                                 }
                             }).collect_view().into_any()
