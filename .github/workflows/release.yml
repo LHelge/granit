@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: check
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            tailwindcss_binary: tailwindcss-macos-arm64
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            tailwindcss_binary: tailwindcss-macos-arm64
+          - platform: ubuntu-22.04
+            args: ''
+            tailwindcss_binary: tailwindcss-linux-x64
+          - platform: windows-latest
+            args: ''
+            tailwindcss_binary: tailwindcss-windows-x64.exe
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin,wasm32-unknown-unknown' || 'wasm32-unknown-unknown' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install trunk
+        uses: jetli/trunk-action@v0.5.0
+        with:
+          version: latest
+
+      - name: Install tailwindcss (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          curl -sLO "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${{ matrix.tailwindcss_binary }}"
+          chmod +x "${{ matrix.tailwindcss_binary }}"
+          sudo mv "${{ matrix.tailwindcss_binary }}" /usr/local/bin/tailwindcss
+
+      - name: Install tailwindcss (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${{ matrix.tailwindcss_binary }}" -OutFile tailwindcss.exe
+          $binDir = "$env:USERPROFILE\.local\bin"
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          Move-Item tailwindcss.exe "$binDir\tailwindcss.exe"
+          echo "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Granit v__VERSION__'
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
