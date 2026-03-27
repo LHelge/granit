@@ -8,5 +8,8 @@
     "cargo test": true,
     "cargo clippy": true,
     "bea": true
+  },
+  "json.schemaDownload.trustedDomains": {
+    "https://schema.tauri.app/config/2": true
   }
 }
