@@ -4,12 +4,12 @@ mod config;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use cave::{CaveError, Note, NoteMeta};
+use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError};
 
 struct AppState {
     config: Mutex<AppConfig>,
-    cave_path: Mutex<Option<PathBuf>>,
+    cave: Mutex<Option<Cave>>,
 }
 
 #[tauri::command]
@@ -37,8 +37,8 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, 
     // Reload config with cave overrides
     let new_config = AppConfig::load(Some(&path))?;
 
-    // Update cave path
-    *state.cave_path.lock().unwrap() = Some(path.clone());
+    // Open the cave
+    *state.cave.lock().unwrap() = Some(Cave::open(path.clone()));
 
     // Update recent caves and persist
     let mut config = state.config.lock().unwrap();
@@ -49,31 +49,28 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, 
     Ok(config.clone())
 }
 
-fn get_cave_path(state: &tauri::State<AppState>) -> Result<PathBuf, CaveError> {
-    state
-        .cave_path
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or(CaveError::NoCaveOpen)
+fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
+where
+    F: FnOnce(&Cave) -> Result<T, CaveError>,
+{
+    let guard = state.cave.lock().unwrap();
+    let cave = guard.as_ref().ok_or(CaveError::NoCaveOpen)?;
+    f(cave)
 }
 
 #[tauri::command]
 fn create_note(name: String, state: tauri::State<AppState>) -> Result<NoteMeta, CaveError> {
-    let cave_path = get_cave_path(&state)?;
-    cave::create_note(&cave_path, &name)
+    with_cave(&state, |cave| cave.create_note(&name))
 }
 
 #[tauri::command]
 fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError> {
-    let cave_path = get_cave_path(&state)?;
-    cave::list_notes(&cave_path)
+    with_cave(&state, |cave| cave.list_notes())
 }
 
 #[tauri::command]
 fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveError> {
-    let cave_path = get_cave_path(&state)?;
-    cave::read_note(&cave_path, &name)
+    with_cave(&state, |cave| cave.read_note(&name))
 }
 
 #[tauri::command]
@@ -82,8 +79,7 @@ fn save_note(
     content: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    let cave_path = get_cave_path(&state)?;
-    cave::save_note(&cave_path, &name, &content)
+    with_cave(&state, |cave| cave.save_note(&name, &content))
 }
 
 #[tauri::command]
@@ -92,8 +88,12 @@ fn rename_note(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    let cave_path = get_cave_path(&state)?;
-    cave::rename_note(&cave_path, &old_name, &new_name)
+    with_cave(&state, |cave| cave.rename_note(&old_name, &new_name))
+}
+
+#[tauri::command]
+fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    with_cave(&state, |cave| cave.delete_note(&name))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -105,7 +105,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             config: Mutex::new(config),
-            cave_path: Mutex::new(None),
+            cave: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -115,6 +115,7 @@ pub fn run() {
             list_notes,
             read_note,
             save_note,
+            delete_note,
             rename_note,
         ])
         .run(tauri::generate_context!())

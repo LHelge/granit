@@ -191,7 +191,7 @@ pub fn load_secrets(cave_path: Option<&Path>) -> Result<Secrets, ConfigError> {
 }
 
 /// Ensure the cave's `.gitignore` includes `.granit/secrets.env`.
-pub fn ensure_cave_gitignore(cave_path: &Path) -> Result<(), ConfigError> {
+fn ensure_cave_gitignore(cave_path: &Path) -> Result<(), ConfigError> {
     let gitignore_path = cave_path.join(".gitignore");
     let entry = ".granit/secrets.env";
 

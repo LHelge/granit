@@ -12,6 +12,9 @@ pub enum CaveError {
     #[error("Invalid note name: {0}")]
     InvalidName(String),
 
+    #[error("Text to replace not found in note")]
+    EditNotFound,
+
     #[error("IO error: {0}")]
     Io(String),
 }
