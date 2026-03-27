@@ -1,10 +1,10 @@
 ---
 id: kt9
 title: Frontmatter extraction and parsing
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:24:45.827444450Z
-updated: 2026-03-27T21:24:45.827444450Z
+updated: 2026-03-27T22:00:25.927119537Z
 tags:
 - backend
 depends_on:
