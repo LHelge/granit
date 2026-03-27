@@ -2,10 +2,10 @@
 id: z69
 title: Markdown rendering in preview mode
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:24:24.895817170Z
-updated: 2026-03-27T21:24:24.895817170Z
+updated: 2026-03-27T23:28:04.314385866Z
 ---
 
 ## Scope
