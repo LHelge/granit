@@ -1,10 +1,10 @@
 ---
 id: m9t
 title: Make filename the single source of truth for note titles
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:22:59.652856Z
-updated: 2026-03-27T12:22:59.652856Z
+updated: 2026-03-27T13:01:27.424041Z
 parent: wem
 ---
 

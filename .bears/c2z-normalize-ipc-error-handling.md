@@ -1,10 +1,10 @@
 ---
 id: c2z
 title: Normalize IPC error handling
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:13:42.676156Z
-updated: 2026-03-27T12:13:42.676156Z
+updated: 2026-03-27T12:55:51.682936Z
 parent: wem
 ---
 
