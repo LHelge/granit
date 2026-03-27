@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::app::ipc;
-use crate::app::types::{Note, NoteMeta};
+use granit_types::{Note, NoteMeta};
 
 #[component]
 pub fn Editor(

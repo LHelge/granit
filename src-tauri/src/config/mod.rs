@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use error::ConfigError;
+pub use granit_types::AgentConfig;
 pub use secrets::Secrets;
 
 /// Resolved application configuration (defaults ← global ← cave).
@@ -16,22 +17,6 @@ pub struct AppConfig {
     pub agent: AgentConfig,
     /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
     pub active_cave: Option<PathBuf>,
-}
-
-/// Agent provider configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentConfig {
-    pub provider: String,
-    pub model: String,
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            provider: "openai".to_string(),
-            model: "gpt-4o".to_string(),
-        }
-    }
 }
 
 /// Raw config as stored in YAML (all fields optional for layered merging).
@@ -89,6 +74,24 @@ impl AppConfig {
         self.recent_caves.insert(0, path);
         // Keep a reasonable limit
         self.recent_caves.truncate(10);
+    }
+
+    /// Convert to the IPC-facing type used at Tauri command boundaries.
+    /// Paths are converted to strings; `active_cave` must be set separately
+    /// by the caller if a cave is currently open.
+    pub fn to_ipc(&self) -> granit_types::AppConfig {
+        granit_types::AppConfig {
+            recent_caves: self
+                .recent_caves
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect(),
+            agent: self.agent.clone(),
+            active_cave: self
+                .active_cave
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+        }
     }
 
     /// Ensure the global config directory and default config file exist.

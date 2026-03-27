@@ -2,10 +2,10 @@
 id: wem
 title: Code review follow-ups
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:11:13.309363Z
-updated: 2026-03-27T12:11:13.309363Z
+updated: 2026-03-27T14:58:27.155604Z
 ---
 
 ## Scope

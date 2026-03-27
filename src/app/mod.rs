@@ -2,10 +2,9 @@ use leptos::prelude::*;
 
 mod components;
 pub(crate) mod ipc;
-pub(crate) mod types;
 
 use components::{AgentPanel, Editor, SettingsModal, Sidebar};
-use types::{AppConfig, Note, NoteMeta};
+use granit_types::{AppConfig, Note, NoteMeta};
 
 #[component]
 pub fn App() -> impl IntoView {
