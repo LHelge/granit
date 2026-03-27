@@ -41,7 +41,7 @@ pub fn Sidebar(
         });
     };
 
-    let has_cave = move || !config.get().recent_caves.is_empty();
+    let has_cave = move || config.get().active_cave.is_some();
 
     view! {
         <aside class="w-64 shrink-0 bg-stone-850 border-r border-stone-700 flex flex-col overflow-hidden">

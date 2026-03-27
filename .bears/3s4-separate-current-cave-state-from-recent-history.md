@@ -1,10 +1,10 @@
 ---
 id: 3s4
 title: Separate current cave state from recent history
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:25:48.767022Z
-updated: 2026-03-27T12:25:48.767022Z
+updated: 2026-03-27T13:18:19.970923Z
 parent: wem
 ---
 

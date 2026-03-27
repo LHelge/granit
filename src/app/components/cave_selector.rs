@@ -47,8 +47,8 @@ pub fn CaveSelector(
 
     let cave_label = move || {
         let cfg = config.get();
-        cfg.recent_caves
-            .first()
+        cfg.active_cave
+            .as_deref()
             .and_then(|p| p.rsplit('/').next().or_else(|| p.rsplit('\\').next()))
             .map(|s| s.to_string())
             .unwrap_or_else(|| "No cave open".to_string())
