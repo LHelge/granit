@@ -26,6 +26,10 @@ pub struct RenderedNote {
     pub frontmatter: Option<Frontmatter>,
     /// Slugs of outgoing wiki-links (`[[note-name]]`) found in the note.
     pub outgoing_links: Vec<String>,
+    /// Formatted created_at in local time (e.g. "2026-03-27 14:05:00"), if present.
+    pub created_display: Option<String>,
+    /// Formatted modified_at in local time (e.g. "2026-03-27 14:05:00"), if present.
+    pub modified_display: Option<String>,
 }
 
 /// Metadata for a note in the cave.

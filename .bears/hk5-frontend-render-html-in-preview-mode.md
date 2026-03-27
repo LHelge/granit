@@ -1,10 +1,10 @@
 ---
 id: hk5
 title: 'Frontend: render HTML in preview mode'
-status: open
+status: in_progress
 priority: P1
 created: 2026-03-27T21:25:58.693513335Z
-updated: 2026-03-27T21:25:58.693513335Z
+updated: 2026-03-27T22:36:37.939847171Z
 tags:
 - frontend
 depends_on:

@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Local, Utc};
 use granit_types::{Frontmatter, RenderedNote};
 use pulldown_cmark::{html, Options, Parser};
 
@@ -22,11 +22,20 @@ pub fn render_note<'lookup>(
     let (frontmatter, body) = extract_frontmatter(raw);
     let (resolved_body, outgoing_links) = resolve_wiki_links(body, lookup);
     let html = render_html(&resolved_body);
+    let fmt = |d: chrono::DateTime<Utc>| {
+        d.with_timezone(&Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string()
+    };
+    let created_display = frontmatter.as_ref().and_then(|f| f.created_at).map(fmt);
+    let modified_display = frontmatter.as_ref().and_then(|f| f.modified_at).map(fmt);
     RenderedNote {
         title: title.to_string(),
         html,
         frontmatter,
         outgoing_links,
+        created_display,
+        modified_display,
     }
 }
 
@@ -59,12 +68,14 @@ pub fn resolve_wiki_links<'lookup>(
             // link_text must be non-empty and contain no nested `[` or `]`
             if !link_text.is_empty() && !link_text.contains('[') && !link_text.contains(']') {
                 if let Some(slug) = lookup(link_text) {
-                    // Resolved: standard markdown link
-                    output.push_str(&format!("[{link_text}]({slug})"));
+                    // Resolved: standard markdown link; angle-bracket URL handles slugs with spaces
+                    output.push_str(&format!("[{link_text}](<{slug}>)"));
                     outgoing.push(slug.to_string());
                 } else {
-                    // Unresolved: broken-link span (raw HTML passthrough in pulldown-cmark)
-                    output.push_str(&format!("<span class=\"broken-link\">{link_text}</span>"));
+                    // Unresolved: clickable broken-link anchor (raw HTML passthrough in pulldown-cmark)
+                    output.push_str(&format!(
+                        "<a href=\"{link_text}\" class=\"broken-link\">{link_text}</a>"
+                    ));
                 }
                 remaining = &after_open[close + 2..];
                 continue;
@@ -372,7 +383,7 @@ mod tests {
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert_eq!(out, "See [my-note](my-note) for details.");
+        assert_eq!(out, "See [my-note](<my-note>) for details.");
         assert_eq!(links, ["my-note"]);
     }
 
@@ -384,7 +395,7 @@ mod tests {
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert_eq!(out, "See [My-Note](my-note) for details.");
+        assert_eq!(out, "See [My-Note](<my-note>) for details.");
         assert_eq!(links, ["my-note"]);
     }
 
@@ -407,12 +418,12 @@ mod tests {
         let (out, links) = resolve_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", |s| {
             notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert!(out.contains("[alpha](alpha)"), "got: {out}");
+        assert!(out.contains("[alpha](<alpha>)"), "got: {out}");
         assert!(
             out.contains("broken-link") && out.contains("beta"),
             "got: {out}"
         );
-        assert!(out.contains("[gamma](gamma)"), "got: {out}");
+        assert!(out.contains("[gamma](<gamma>)"), "got: {out}");
         assert_eq!(links, ["alpha", "gamma"]);
     }
 
