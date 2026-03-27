@@ -1,10 +1,10 @@
 ---
 id: n59
 title: Tighten frontend state boundaries
-status: open
+status: done
 priority: P3
 created: 2026-03-27T12:36:52.467392Z
-updated: 2026-03-27T12:39:19.568147Z
+updated: 2026-03-27T14:37:17.752087Z
 depends_on:
 - c2z
 - 3s4

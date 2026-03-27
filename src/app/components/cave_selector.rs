@@ -5,10 +5,9 @@ use crate::app::types::{AppConfig, Note, NoteMeta};
 
 #[component]
 pub fn CaveSelector(
-    config: ReadSignal<AppConfig>,
-    set_config: WriteSignal<AppConfig>,
-    set_notes: WriteSignal<Vec<NoteMeta>>,
-    set_active_note: WriteSignal<Option<Note>>,
+    config: RwSignal<AppConfig>,
+    notes: RwSignal<Vec<NoteMeta>>,
+    active_note: RwSignal<Option<Note>>,
     set_settings_open: WriteSignal<bool>,
     error_msg: RwSignal<Option<String>>,
     notes_error: RwSignal<Option<String>>,
@@ -19,15 +18,15 @@ pub fn CaveSelector(
         leptos::task::spawn_local(async move {
             match ipc::open_cave(&path).await {
                 Ok(new_config) => {
-                    set_config.set(new_config);
+                    config.set(new_config);
                     match ipc::fetch_notes().await {
                         Ok(n) => {
                             notes_error.set(None);
-                            set_notes.set(n);
+                            notes.set(n);
                         }
                         Err(e) => notes_error.set(Some(e)),
                     }
-                    set_active_note.set(None);
+                    active_note.set(None);
                 }
                 Err(e) => error_msg.set(Some(format!("Failed to open cave: {e}"))),
             }

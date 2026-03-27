@@ -4,11 +4,7 @@ use crate::app::ipc;
 use crate::app::types::{AgentConfig, AppConfig};
 
 #[component]
-pub fn SettingsModal(
-    config: ReadSignal<AppConfig>,
-    set_config: WriteSignal<AppConfig>,
-    set_open: WriteSignal<bool>,
-) -> impl IntoView {
+pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -> impl IntoView {
     // Local form state, initialized from current config
     let (provider, set_provider) = signal(config.get_untracked().agent.provider);
     let (model, set_model) = signal(config.get_untracked().agent.model);
@@ -19,7 +15,6 @@ pub fn SettingsModal(
         ev.prevent_default();
         let provider = provider.get();
         let model = model.get();
-        let set_config = set_config;
         let set_open = set_open;
         set_saving.set(true);
         set_save_error.set(None);
@@ -30,7 +25,7 @@ pub fn SettingsModal(
             };
             match ipc::save_config(agent).await {
                 Ok(new_config) => {
-                    set_config.set(new_config);
+                    config.set(new_config);
                     set_open.set(false);
                 }
                 Err(e) => set_save_error.set(Some(e)),
