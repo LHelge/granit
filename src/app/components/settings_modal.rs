@@ -13,6 +13,7 @@ pub fn SettingsModal(
     let (provider, set_provider) = signal(config.get_untracked().agent.provider);
     let (model, set_model) = signal(config.get_untracked().agent.model);
     let (saving, set_saving) = signal(false);
+    let (save_error, set_save_error) = signal(None::<String>);
 
     let on_save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -21,16 +22,20 @@ pub fn SettingsModal(
         let set_config = set_config;
         let set_open = set_open;
         set_saving.set(true);
+        set_save_error.set(None);
         leptos::task::spawn_local(async move {
             let agent = AgentConfig {
                 provider: provider.clone(),
                 model: model.clone(),
             };
-            if let Some(new_config) = ipc::save_config(agent).await {
-                set_config.set(new_config);
+            match ipc::save_config(agent).await {
+                Ok(new_config) => {
+                    set_config.set(new_config);
+                    set_open.set(false);
+                }
+                Err(e) => set_save_error.set(Some(e)),
             }
             set_saving.set(false);
-            set_open.set(false);
         });
     };
 
@@ -62,6 +67,12 @@ pub fn SettingsModal(
 
                 // Form
                 <form class="p-4 space-y-4" on:submit=on_save>
+                    // Save error
+                    <Show when=move || save_error.get().is_some()>
+                        <p class="text-xs text-red-400">
+                            {move || save_error.get().unwrap_or_default()}
+                        </p>
+                    </Show>
                     <fieldset class="space-y-3">
                         <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Agent"</legend>
 

@@ -47,7 +47,9 @@ pub fn Editor(
                         };
                         // Save content
                         let _ = ipc::save_note(&current_slug, &old_content).await;
-                        set_notes.set(ipc::fetch_notes().await);
+                        if let Ok(n) = ipc::fetch_notes().await {
+                            set_notes.set(n);
+                        }
                     });
                 }
             }
@@ -103,7 +105,9 @@ pub fn Editor(
                 match ipc::save_note(&current_slug, &content).await {
                     Ok(meta) => {
                         set_active_note.set(Some(Note { meta, content }));
-                        set_notes.set(ipc::fetch_notes().await);
+                        if let Ok(n) = ipc::fetch_notes().await {
+                            set_notes.set(n);
+                        }
                     }
                     Err(e) => {
                         set_error.set(Some(e));

@@ -7,16 +7,25 @@ use crate::app::types::{Note, NoteMeta};
 pub fn NoteList(
     notes: ReadSignal<Vec<NoteMeta>>,
     set_active_note: WriteSignal<Option<Note>>,
+    error_msg: RwSignal<Option<String>>,
+    notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let on_select = move |slug: String| {
         leptos::task::spawn_local(async move {
-            if let Some(note) = ipc::read_note(&slug).await {
-                set_active_note.set(Some(note));
+            match ipc::read_note(&slug).await {
+                Ok(note) => set_active_note.set(Some(note)),
+                Err(e) => error_msg.set(Some(format!("Failed to load note: {e}"))),
             }
         });
     };
 
     move || {
+        if let Some(err) = notes_error.get() {
+            return view! {
+                <p class="p-2 text-sm text-red-400 italic">{format!("Error loading notes: {err}")}</p>
+            }
+            .into_any();
+        }
         let note_list = notes.get();
         if note_list.is_empty() {
             view! { <p class="p-2 text-sm text-stone-500 italic">"No notes yet"</p> }.into_any()
