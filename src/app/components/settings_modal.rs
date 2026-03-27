@@ -54,7 +54,10 @@ pub fn SettingsModal(
             >
                 // Header
                 <div class="flex items-center justify-between px-4 py-3 border-b border-stone-600">
-                    <h2 class="text-sm font-semibold text-stone-200">"Settings"</h2>
+                    <div>
+                        <h2 class="text-sm font-semibold text-stone-200">"Global Settings"</h2>
+                        <p class="text-xs text-stone-500 mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
+                    </div>
                     <button
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
                         on:click=move |_| set_open.set(false)
