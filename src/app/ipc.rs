@@ -2,7 +2,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use granit_types::{AppConfig, Note, NoteMeta};
+use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 
@@ -92,6 +92,17 @@ pub async fn read_note(name: &str) -> Result<Note, String> {
     })
     .map_err(|e| format!("{e}"))?;
     let val = invoke("read_note", args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
+    let args = serde_wasm_bindgen::to_value(&NameArg {
+        name: name.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("render_note", args)
+        .await
+        .map_err(js_err_to_string)?;
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 

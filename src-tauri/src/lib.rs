@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError};
-use granit_types::AppConfig as IpcConfig;
+use granit_types::{AppConfig as IpcConfig, RenderedNote};
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -83,9 +83,18 @@ where
     f(cave)
 }
 
+fn with_cave_mut<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
+where
+    F: FnOnce(&mut Cave) -> Result<T, CaveError>,
+{
+    let mut guard = state.lock_cave()?;
+    let cave = guard.as_mut().ok_or(CaveError::NoCaveOpen)?;
+    f(cave)
+}
+
 #[tauri::command]
 fn create_note(name: String, state: tauri::State<AppState>) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| cave.create_note(&name))
+    with_cave_mut(&state, |cave| cave.create_note(&name))
 }
 
 #[tauri::command]
@@ -113,7 +122,7 @@ fn rename_note(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| cave.rename_note(&old_name, &new_name))
+    with_cave_mut(&state, |cave| cave.rename_note(&old_name, &new_name))
 }
 
 #[tauri::command]
@@ -123,14 +132,24 @@ fn update_note(
     content: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| {
+    with_cave_mut(&state, |cave| {
         cave.update_note(&old_name, &new_name, &content)
     })
 }
 
 #[tauri::command]
 fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    with_cave(&state, |cave| cave.delete_note(&name))
+    with_cave_mut(&state, |cave| cave.delete_note(&name))
+}
+
+#[tauri::command]
+fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
+    with_cave(&state, |cave| {
+        let note = cave.read_note(&name)?;
+        Ok(markdown::render_note(&note.content, &note.meta.slug, |s| {
+            cave.lookup_slug(s)
+        }))
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -155,6 +174,7 @@ pub fn run() {
             delete_note,
             rename_note,
             update_note,
+            render_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
