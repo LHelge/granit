@@ -64,6 +64,14 @@ impl Cave {
     }
 
     /// List all top-level .md notes in this cave.
+    ///
+    /// Failure policy:
+    /// - If the cave directory itself is unreadable the whole call fails with `CaveError::Io`.
+    /// - If an individual directory entry cannot be read (e.g., a race-deleted entry) the call
+    ///   also fails: partial success would silently hide underlying filesystem problems.
+    /// - An `.md` file that exists on disk but whose _content_ cannot be read is still included
+    ///   in the listing (its slug is derived from the filename); `read_note` will return the IO
+    ///   error at open time instead.
     pub fn list_notes(&self) -> Result<Vec<NoteMeta>, CaveError> {
         let mut notes = Vec::new();
 
@@ -543,5 +551,68 @@ mod tests {
         // Original file must be untouched
         let content = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
         assert_eq!(content, "a content");
+    }
+
+    // list_notes failure policy tests -------------------------------------------
+
+    #[test]
+    fn test_list_notes_skips_non_md_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("note.md"), "").unwrap();
+        std::fs::write(dir.path().join("image.png"), "").unwrap();
+        std::fs::write(dir.path().join("readme.txt"), "").unwrap();
+
+        let notes = cave.list_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].slug, "note");
+    }
+
+    /// A note whose _content_ cannot be read still appears in the listing.
+    /// The slug is derived from the filename; `read_note` will surface the IO
+    /// error when the user actually tries to open it.
+    #[test]
+    #[cfg(unix)]
+    fn test_list_notes_includes_unreadable_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        let unreadable = dir.path().join("locked.md");
+        std::fs::write(&unreadable, "secret").unwrap();
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        // listing still succeeds and includes the entry
+        let notes = cave.list_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].slug, "locked");
+
+        // but reading it returns an IO error
+        let err = cave.read_note("locked").unwrap_err();
+        assert!(matches!(err, CaveError::Io(_)));
+
+        // restore permissions so tempdir cleanup can delete the file
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    /// If the cave directory itself is unreadable, list_notes must fail explicitly.
+    #[test]
+    #[cfg(unix)]
+    fn test_list_notes_fails_on_unreadable_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("note.md"), "").unwrap();
+
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let err = cave.list_notes().unwrap_err();
+        assert!(matches!(err, CaveError::Io(_)));
+
+        // restore so that tempdir cleanup works
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
