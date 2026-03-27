@@ -1,10 +1,10 @@
 ---
 id: qvu
 title: Wiki-link resolution
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:25:27.728728237Z
-updated: 2026-03-27T21:25:27.728728237Z
+updated: 2026-03-27T22:13:53.845690889Z
 tags:
 - backend
 depends_on:
