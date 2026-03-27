@@ -136,11 +136,46 @@ cargo test -p granit               # Backend unit tests
 | `dirs` | Platform-correct config/data directories |
 | `dotenvy` | Load `secrets.env` files |
 
+### Release Process
+
+Versions must stay in sync across three places:
+
+| File | Field |
+|------|-------|
+| `Cargo.toml` (root) | `version` |
+| `src-tauri/Cargo.toml` | `version` |
+| `src-tauri/tauri.conf.json` | `version` |
+
+The git tag **must** match the version in these files exactly (e.g. version `1.2.3` → tag `v1.2.3`).
+
+Steps to cut a release:
+
+```sh
+# 1. Bump version in all three files to X.Y.Z — edit them, then verify:
+grep -E '^version' Cargo.toml src-tauri/Cargo.toml
+grep '"version"' src-tauri/tauri.conf.json
+
+# 2. Commit the version bump
+git add Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json
+git commit -m "chore: bump version to X.Y.Z"
+
+# 3. Tag exactly matching the version
+git tag vX.Y.Z
+
+# 4. Push branch and tag
+git push && git push --tags
+```
+
+Pushing the tag triggers `.github/workflows/release.yml`:
+1. CI checks (fmt, clippy, tests) run first
+2. On success, cross-platform Tauri builds run (macOS arm64/x86_64, Linux x86_64, Windows x86_64)
+3. A **draft** GitHub Release is created with all artifacts attached
+4. Review and publish the draft release on GitHub when ready
+
 ### Deferred Features (Not Yet — Don't Build)
 
 - Full-text search (currently filename/title only)
 - File watching / live reload on external changes
-- CI / GitHub Actions
 - Obsidian-style live preview editor
 - Backlinks panel
 - Sync (caves are local-only; user manages sync externally)

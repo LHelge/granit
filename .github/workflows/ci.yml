@@ -3,6 +3,8 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '.bears/**'
   workflow_dispatch:
   workflow_call:
 
