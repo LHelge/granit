@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 pub struct AppConfig {
     pub recent_caves: Vec<String>,
     pub agent: AgentConfig,
+    /// The currently open cave path, if any. Runtime-only — not persisted.
+    pub active_cave: Option<String>,
 }
 
 /// Mirrors the backend `AgentConfig`.

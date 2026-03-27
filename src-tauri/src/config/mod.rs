@@ -14,6 +14,8 @@ pub use secrets::Secrets;
 pub struct AppConfig {
     pub recent_caves: Vec<PathBuf>,
     pub agent: AgentConfig,
+    /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
+    pub active_cave: Option<PathBuf>,
 }
 
 /// Agent provider configuration.
@@ -93,6 +95,7 @@ impl AppConfig {
             let config = Self {
                 recent_caves: Vec::new(),
                 agent: AgentConfig::default(),
+                active_cave: None,
             };
             config.save_global()?;
         }
@@ -134,6 +137,7 @@ impl AppConfig {
         let defaults = AppConfig {
             recent_caves: Vec::new(),
             agent: AgentConfig::default(),
+            active_cave: None,
         };
 
         // Apply global over defaults
@@ -151,6 +155,7 @@ impl AppConfig {
                     .and_then(|a| a.model.clone())
                     .unwrap_or(defaults.agent.model),
             },
+            active_cave: None,
         };
 
         // Apply cave overrides
@@ -406,6 +411,7 @@ mod tests {
                 provider: "anthropic".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
             },
+            active_cave: None,
         };
 
         // Save manually to temp path (bypassing global_config_path)

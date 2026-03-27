@@ -14,8 +14,14 @@ struct AppState {
 
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
-    let config = state.config.lock().unwrap();
-    Ok(config.clone())
+    let mut config = state.config.lock().unwrap().clone();
+    config.active_cave = state
+        .cave
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.path().to_path_buf());
+    Ok(config)
 }
 
 #[tauri::command]
@@ -43,10 +49,13 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, 
     // Update recent caves and persist
     let mut config = state.config.lock().unwrap();
     *config = new_config;
-    config.add_recent_cave(path);
+    config.add_recent_cave(path.clone());
     config.save_global()?;
 
-    Ok(config.clone())
+    // Return config with active_cave set to the just-opened path
+    let mut response = config.clone();
+    response.active_cave = Some(path);
+    Ok(response)
 }
 
 fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
