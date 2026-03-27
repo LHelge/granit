@@ -1,23 +1,8 @@
 use leptos::prelude::*;
-use serde::Serialize;
 
-use super::invoke;
-use super::types::{Note, NoteMeta};
+use crate::app::ipc;
+use crate::app::types::{Note, NoteMeta};
 
-#[derive(Serialize)]
-struct SaveNoteArgs {
-    name: String,
-    content: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RenameNoteArgs {
-    old_name: String,
-    new_name: String,
-}
-
-/// Center panel — markdown editor with edit/read mode toggle.
 #[component]
 pub fn Editor(
     active_note: ReadSignal<Option<Note>>,
@@ -53,31 +38,16 @@ pub fn Editor(
                     leptos::task::spawn_local(async move {
                         // Rename if the title changed
                         let current_slug = if !old_title.is_empty() && old_title != slug {
-                            let rename_args = serde_wasm_bindgen::to_value(&RenameNoteArgs {
-                                old_name: slug.clone(),
-                                new_name: old_title.clone(),
-                            })
-                            .unwrap();
-                            if let Ok(Ok(val)) = invoke("rename_note", rename_args)
-                                .await
-                                .map(serde_wasm_bindgen::from_value::<NoteMeta>)
-                            {
-                                val.slug
-                            } else {
-                                slug
+                            match ipc::rename_note(&slug, &old_title).await {
+                                Ok(meta) => meta.slug,
+                                Err(_) => slug,
                             }
                         } else {
                             slug
                         };
                         // Save content
-                        let args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
-                            name: current_slug,
-                            content: old_content,
-                        })
-                        .unwrap();
-                        let _ = invoke("save_note", args).await;
-                        // Refresh sidebar
-                        set_notes.set(super::fetch_notes().await);
+                        let _ = ipc::save_note(&current_slug, &old_content).await;
+                        set_notes.set(ipc::fetch_notes().await);
                     });
                 }
             }
@@ -117,24 +87,10 @@ pub fn Editor(
             leptos::task::spawn_local(async move {
                 // If the title changed, rename the file first
                 let current_slug = if new_title != old_slug {
-                    let rename_args = serde_wasm_bindgen::to_value(&RenameNoteArgs {
-                        old_name: old_slug.clone(),
-                        new_name: new_title.clone(),
-                    })
-                    .unwrap();
-                    let rename_result = invoke("rename_note", rename_args).await;
-                    match rename_result {
-                        Ok(val) => match serde_wasm_bindgen::from_value::<NoteMeta>(val) {
-                            Ok(meta) => meta.slug,
-                            Err(e) => {
-                                set_error.set(Some(format!("{e}")));
-                                set_saving.set(false);
-                                return;
-                            }
-                        },
+                    match ipc::rename_note(&old_slug, &new_title).await {
+                        Ok(meta) => meta.slug,
                         Err(e) => {
-                            let msg = e.as_string().unwrap_or_else(|| "Rename failed".to_string());
-                            set_error.set(Some(msg));
+                            set_error.set(Some(e));
                             set_saving.set(false);
                             return;
                         }
@@ -144,22 +100,13 @@ pub fn Editor(
                 };
 
                 // Save the content
-                let save_args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
-                    name: current_slug.clone(),
-                    content: content.clone(),
-                })
-                .unwrap();
-                let result = invoke("save_note", save_args).await;
-                match result {
-                    Ok(val) => {
-                        if let Ok(meta) = serde_wasm_bindgen::from_value::<NoteMeta>(val) {
-                            set_active_note.set(Some(Note { meta, content }));
-                            set_notes.set(super::fetch_notes().await);
-                        }
+                match ipc::save_note(&current_slug, &content).await {
+                    Ok(meta) => {
+                        set_active_note.set(Some(Note { meta, content }));
+                        set_notes.set(ipc::fetch_notes().await);
                     }
                     Err(e) => {
-                        let msg = e.as_string().unwrap_or_else(|| "Save failed".to_string());
-                        set_error.set(Some(msg));
+                        set_error.set(Some(e));
                     }
                 }
                 set_saving.set(false);

@@ -1,15 +1,8 @@
 use leptos::prelude::*;
-use serde::Serialize;
 
-use super::invoke;
-use super::types::{AgentConfig, AppConfig};
+use crate::app::ipc;
+use crate::app::types::{AgentConfig, AppConfig};
 
-#[derive(Serialize)]
-struct SaveConfigArgs {
-    agent: AgentConfig,
-}
-
-/// Modal overlay for editing global settings.
 #[component]
 pub fn SettingsModal(
     config: ReadSignal<AppConfig>,
@@ -33,15 +26,8 @@ pub fn SettingsModal(
                 provider: provider.clone(),
                 model: model.clone(),
             };
-            let args = serde_wasm_bindgen::to_value(&SaveConfigArgs { agent });
-            if let Ok(args) = args {
-                let Ok(result) = invoke("save_config", args).await else {
-                    set_saving.set(false);
-                    return;
-                };
-                if let Ok(new_config) = serde_wasm_bindgen::from_value::<AppConfig>(result) {
-                    set_config.set(new_config);
-                }
+            if let Some(new_config) = ipc::save_config(agent).await {
+                set_config.set(new_config);
             }
             set_saving.set(false);
             set_open.set(false);
