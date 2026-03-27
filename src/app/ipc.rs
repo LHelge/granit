@@ -48,45 +48,56 @@ struct SaveConfigArgs {
     agent: super::types::AgentConfig,
 }
 
-// ── IPC helpers ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────
 
-pub async fn fetch_config() -> Option<AppConfig> {
-    let val = invoke("get_config", JsValue::NULL).await.ok()?;
-    serde_wasm_bindgen::from_value(val).ok()
+fn js_err_to_string(e: JsValue) -> String {
+    e.as_string()
+        .unwrap_or_else(|| "Unknown IPC error".to_string())
 }
 
-pub async fn open_cave(path: &str) -> Option<AppConfig> {
+// ── IPC helpers ────────────────────────────────────────────────────
+
+pub async fn fetch_config() -> Result<AppConfig, String> {
+    let val = invoke("get_config", JsValue::NULL)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
     let args = serde_wasm_bindgen::to_value(&OpenCaveArgs {
         path: path.to_string(),
     })
-    .ok()?;
-    let val = invoke("open_cave", args).await.ok()?;
-    serde_wasm_bindgen::from_value(val).ok()
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("open_cave", args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn fetch_notes() -> Vec<NoteMeta> {
-    let Ok(result) = invoke("list_notes", JsValue::NULL).await else {
-        return Vec::new();
-    };
-    serde_wasm_bindgen::from_value(result).unwrap_or_default()
+pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
+    let val = invoke("list_notes", JsValue::NULL)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn create_note(name: &str) -> Option<NoteMeta> {
+pub async fn create_note(name: &str) -> Result<NoteMeta, String> {
     let args = serde_wasm_bindgen::to_value(&NameArg {
         name: name.to_string(),
     })
-    .ok()?;
-    let val = invoke("create_note", args).await.ok()?;
-    serde_wasm_bindgen::from_value(val).ok()
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("create_note", args)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn read_note(name: &str) -> Option<Note> {
+pub async fn read_note(name: &str) -> Result<Note, String> {
     let args = serde_wasm_bindgen::to_value(&NameArg {
         name: name.to_string(),
     })
-    .ok()?;
-    let val = invoke("read_note", args).await.ok()?;
-    serde_wasm_bindgen::from_value(val).ok()
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("read_note", args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
 pub async fn save_note(name: &str, content: &str) -> Result<NoteMeta, String> {
@@ -113,10 +124,13 @@ pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, Str
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn save_config(agent: super::types::AgentConfig) -> Option<AppConfig> {
-    let args = serde_wasm_bindgen::to_value(&SaveConfigArgs { agent }).ok()?;
-    let val = invoke("save_config", args).await.ok()?;
-    serde_wasm_bindgen::from_value(val).ok()
+pub async fn save_config(agent: super::types::AgentConfig) -> Result<AppConfig, String> {
+    let args =
+        serde_wasm_bindgen::to_value(&SaveConfigArgs { agent }).map_err(|e| format!("{e}"))?;
+    let val = invoke("save_config", args)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
 pub async fn pick_folder() -> Option<String> {

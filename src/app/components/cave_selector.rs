@@ -10,15 +10,26 @@ pub fn CaveSelector(
     set_notes: WriteSignal<Vec<NoteMeta>>,
     set_active_note: WriteSignal<Option<Note>>,
     set_settings_open: WriteSignal<bool>,
+    error_msg: RwSignal<Option<String>>,
+    notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let (dropdown_open, set_dropdown_open) = signal(false);
 
     let open_and_refresh = move |path: String| {
         leptos::task::spawn_local(async move {
-            if let Some(new_config) = ipc::open_cave(&path).await {
-                set_config.set(new_config);
-                set_notes.set(ipc::fetch_notes().await);
-                set_active_note.set(None);
+            match ipc::open_cave(&path).await {
+                Ok(new_config) => {
+                    set_config.set(new_config);
+                    match ipc::fetch_notes().await {
+                        Ok(n) => {
+                            notes_error.set(None);
+                            set_notes.set(n);
+                        }
+                        Err(e) => notes_error.set(Some(e)),
+                    }
+                    set_active_note.set(None);
+                }
+                Err(e) => error_msg.set(Some(format!("Failed to open cave: {e}"))),
             }
             set_dropdown_open.set(false);
         });

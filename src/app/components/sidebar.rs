@@ -14,15 +14,29 @@ pub fn Sidebar(
     notes: ReadSignal<Vec<NoteMeta>>,
     set_notes: WriteSignal<Vec<NoteMeta>>,
     set_active_note: WriteSignal<Option<Note>>,
+    error_msg: RwSignal<Option<String>>,
+    notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let on_new_note = move |_| {
         leptos::task::spawn_local(async move {
-            if let Some(meta) = ipc::create_note("untitled").await {
-                let slug = meta.slug.clone();
-                set_notes.set(ipc::fetch_notes().await);
-                if let Some(note) = ipc::read_note(&slug).await {
-                    set_active_note.set(Some(note));
+            let meta = match ipc::create_note("untitled").await {
+                Ok(m) => m,
+                Err(e) => {
+                    error_msg.set(Some(format!("Failed to create note: {e}")));
+                    return;
                 }
+            };
+            let slug = meta.slug.clone();
+            match ipc::fetch_notes().await {
+                Ok(n) => {
+                    notes_error.set(None);
+                    set_notes.set(n);
+                }
+                Err(e) => notes_error.set(Some(e)),
+            }
+            match ipc::read_note(&slug).await {
+                Ok(note) => set_active_note.set(Some(note)),
+                Err(e) => error_msg.set(Some(format!("Failed to open note: {e}"))),
             }
         });
     };
@@ -53,7 +67,12 @@ pub fn Sidebar(
                     when=has_cave
                     fallback=|| view! { <p class="p-2 text-sm text-stone-500 italic">"No cave open"</p> }
                 >
-                    <NoteList notes=notes set_active_note=set_active_note />
+                    <NoteList
+                        notes=notes
+                        set_active_note=set_active_note
+                        error_msg=error_msg
+                        notes_error=notes_error
+                    />
                 </Show>
             </div>
 
@@ -64,6 +83,8 @@ pub fn Sidebar(
                 set_notes=set_notes
                 set_active_note=set_active_note
                 set_settings_open=set_settings_open
+                error_msg=error_msg
+                notes_error=notes_error
             />
         </aside>
     }

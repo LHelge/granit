@@ -15,22 +15,37 @@ pub fn App() -> impl IntoView {
     let (config, set_config) = signal(AppConfig::default());
     let (notes, set_notes) = signal(Vec::<NoteMeta>::new());
     let (active_note, set_active_note) = signal(None::<Note>);
+    let error_msg = RwSignal::new(None::<String>);
+    let notes_error = RwSignal::new(None::<String>);
 
     // Load config from backend on mount, and re-open the most recent cave if any
     let set_config_init = set_config;
     let set_notes_init = set_notes;
     leptos::task::spawn_local(async move {
-        let Some(cfg) = ipc::fetch_config().await else {
-            return;
+        let cfg = match ipc::fetch_config().await {
+            Ok(c) => c,
+            Err(e) => {
+                error_msg.set(Some(format!("Failed to load config: {e}")));
+                return;
+            }
         };
         let recent = cfg.recent_caves.first().cloned();
         set_config_init.set(cfg);
 
         // Re-open the last cave so the backend has a cave_path set
         if let Some(path) = recent {
-            if let Some(new_cfg) = ipc::open_cave(&path).await {
-                set_config_init.set(new_cfg);
-                set_notes_init.set(ipc::fetch_notes().await);
+            match ipc::open_cave(&path).await {
+                Ok(new_cfg) => {
+                    set_config_init.set(new_cfg);
+                    match ipc::fetch_notes().await {
+                        Ok(n) => {
+                            notes_error.set(None);
+                            set_notes_init.set(n);
+                        }
+                        Err(e) => notes_error.set(Some(e)),
+                    }
+                }
+                Err(e) => error_msg.set(Some(format!("Failed to reopen cave: {e}"))),
             }
         }
     });
@@ -40,6 +55,18 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div class="flex flex-col h-screen bg-stone-900 text-stone-200 font-sans">
+            // Global error banner
+            <Show when=move || error_msg.get().is_some()>
+                <div class="px-3 py-1.5 bg-red-900/70 border-b border-red-700 text-red-300 text-xs flex items-center gap-2">
+                    <span class="flex-1">{move || error_msg.get().unwrap_or_default()}</span>
+                    <button
+                        class="text-red-400 hover:text-red-200"
+                        on:click=move |_| error_msg.set(None)
+                    >
+                        "✕"
+                    </button>
+                </div>
+            </Show>
             // Top bar
             <header class="flex items-center justify-between h-10 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
                 <div class="flex items-center gap-2">
@@ -76,6 +103,8 @@ pub fn App() -> impl IntoView {
                         notes=notes
                         set_notes=set_notes
                         set_active_note=set_active_note
+                        error_msg=error_msg
+                        notes_error=notes_error
                     />
                 </Show>
 
