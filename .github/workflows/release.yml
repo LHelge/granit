@@ -82,3 +82,38 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        run: |
+          mkdir /tmp/git-cliff-dl
+          curl -sSfL "https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -C /tmp/git-cliff-dl -xzf -
+          sudo mv /tmp/git-cliff-dl/*/git-cliff /usr/local/bin/git-cliff
+
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${{ github.ref_name }}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            git cliff "${PREV_TAG}..${{ github.ref_name }}" --strip header -o CHANGELOG_RELEASE.md
+          else
+            git cliff --strip header -o CHANGELOG_RELEASE.md
+          fi
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --draft=false \
+            --notes-file CHANGELOG_RELEASE.md
