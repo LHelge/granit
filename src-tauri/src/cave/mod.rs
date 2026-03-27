@@ -56,16 +56,11 @@ impl Cave {
 
         let final_path = self.path.join(&filename);
         let slug = filename.strip_suffix(".md").unwrap_or(&filename);
-        let title = slug.to_string();
-        let initial_content = format!("# {title}\n");
+        let initial_content = format!("# {slug}\n");
 
         std::fs::write(&final_path, &initial_content)?;
 
-        Ok(NoteMeta {
-            slug: slug.to_string(),
-            title,
-            relative_path: filename,
-        })
+        Ok(NoteMeta::from_file(&filename))
     }
 
     /// List all top-level .md notes in this cave.
@@ -80,8 +75,7 @@ impl Cave {
                 if let Some(ext) = path.extension() {
                     if ext == "md" {
                         let filename = entry.file_name().to_string_lossy().to_string();
-                        let content = std::fs::read_to_string(&path).unwrap_or_default();
-                        notes.push(NoteMeta::from_file(&filename, &content));
+                        notes.push(NoteMeta::from_file(&filename));
                     }
                 }
             }
@@ -103,7 +97,7 @@ impl Cave {
         let content = std::fs::read_to_string(&file_path)?;
 
         Ok(Note {
-            meta: NoteMeta::from_file(&filename, &content),
+            meta: NoteMeta::from_file(&filename),
             content,
         })
     }
@@ -118,7 +112,7 @@ impl Cave {
         }
 
         std::fs::write(&file_path, content)?;
-        Ok(NoteMeta::from_file(&filename, content))
+        Ok(NoteMeta::from_file(&filename))
     }
 
     /// Replace `old_text` with `new_text` in an existing note.
@@ -144,7 +138,7 @@ impl Cave {
         let new_content = content.replacen(old_text, new_text, 1);
 
         std::fs::write(&file_path, &new_content)?;
-        Ok(NoteMeta::from_file(&filename, &new_content))
+        Ok(NoteMeta::from_file(&filename))
     }
 
     /// Delete a note by slug or filename.
@@ -182,8 +176,7 @@ impl Cave {
 
         std::fs::rename(&old_path, &new_path)?;
 
-        let content = std::fs::read_to_string(&new_path)?;
-        Ok(NoteMeta::from_file(&new_filename, &content))
+        Ok(NoteMeta::from_file(&new_filename))
     }
 }
 
@@ -207,7 +200,7 @@ mod tests {
 
         cave.save_note("hello", "# Updated\nBody").unwrap();
         let note = cave.read_note("hello").unwrap();
-        assert_eq!(note.meta.title, "Updated");
+        assert_eq!(note.meta.slug, "hello");
 
         cave.rename_note("hello", "world").unwrap();
         assert!(cave.read_note("hello").is_err());
@@ -266,8 +259,8 @@ mod tests {
 
         let notes = cave.list_notes().unwrap();
         assert_eq!(notes.len(), 2);
-        assert_eq!(notes[0].title, "Alpha");
-        assert_eq!(notes[1].title, "Beta");
+        assert_eq!(notes[0].slug, "alpha");
+        assert_eq!(notes[1].slug, "beta");
     }
 
     #[test]
@@ -278,7 +271,7 @@ mod tests {
         std::fs::write(dir.path().join("test.md"), "# Test Note\nBody").unwrap();
 
         let note = cave.read_note("test").unwrap();
-        assert_eq!(note.meta.title, "Test Note");
+        assert_eq!(note.meta.slug, "test");
         assert!(note.content.contains("Body"));
     }
 
@@ -308,7 +301,7 @@ mod tests {
         std::fs::write(dir.path().join("test.md"), "# Old\n").unwrap();
 
         let meta = cave.save_note("test", "# New Title\nNew body").unwrap();
-        assert_eq!(meta.title, "New Title");
+        assert_eq!(meta.slug, "test");
 
         let content = std::fs::read_to_string(dir.path().join("test.md")).unwrap();
         assert!(content.contains("New body"));
@@ -340,7 +333,7 @@ mod tests {
         std::fs::write(dir.path().join("test.md"), "# Hello\nold text here").unwrap();
 
         let meta = cave.edit_note("test", "old text", "new text").unwrap();
-        assert_eq!(meta.title, "Hello");
+        assert_eq!(meta.slug, "test");
 
         let content = std::fs::read_to_string(dir.path().join("test.md")).unwrap();
         assert!(content.contains("new text here"));

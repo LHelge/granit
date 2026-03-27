@@ -28,7 +28,6 @@ impl Default for AgentConfig {
 #[allow(dead_code)]
 pub struct NoteMeta {
     pub slug: String,
-    pub title: String,
     pub relative_path: String,
 }
 

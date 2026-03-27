@@ -135,7 +135,7 @@ pub fn Editor(
                     <input
                         type="text"
                         class="text-sm flex-1 bg-transparent text-stone-200 outline-none border-b border-stone-600 focus:border-stone-400 transition-colors"
-                        placeholder="Note title…"
+                        placeholder="Filename (without .md)…"
                         prop:value=move || title_input.get()
                         on:input=move |ev| set_title_input.set(event_target_value(&ev))
                     />
