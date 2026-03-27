@@ -56,7 +56,7 @@ impl Cave {
 
         let final_path = self.path.join(&filename);
         let slug = filename.strip_suffix(".md").unwrap_or(&filename);
-        let initial_content = format!("# {slug}\n");
+        let initial_content = crate::markdown::initial_content(slug);
 
         std::fs::write(&final_path, &initial_content)?;
 
@@ -119,7 +119,8 @@ impl Cave {
             return Err(CaveError::NotFound(filename));
         }
 
-        std::fs::write(&file_path, content)?;
+        let updated = crate::markdown::update_modified_at(content);
+        std::fs::write(&file_path, updated.as_str())?;
         Ok(note_meta_from_file(&filename))
     }
 
@@ -222,7 +223,8 @@ impl Cave {
             path
         };
 
-        std::fs::write(&file_path, content)?;
+        let updated = crate::markdown::update_modified_at(content);
+        std::fs::write(&file_path, updated.as_str())?;
         Ok(note_meta_from_file(&new_filename))
     }
 }

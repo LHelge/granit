@@ -1,3 +1,4 @@
+use chrono::Utc;
 use granit_types::{Frontmatter, RenderedNote};
 use pulldown_cmark::{html, Options, Parser};
 
@@ -6,20 +7,128 @@ use pulldown_cmark::{html, Options, Parser};
 /// `title` is the note's slug (filename without `.md`) — displayed as a page
 /// header outside the rendered body area.
 ///
+/// `cave_notes` is the list of all note slugs in the cave (filename without
+/// `.md`), used to resolve `[[wiki-links]]`.
+///
 /// Pipeline:
 /// 1. Strip and parse YAML frontmatter (between `---` fences)
-/// 2. Run the body through pulldown-cmark
-///
-/// Wiki-link resolution is handled by the next stage in the pipeline.
-pub fn render_note(raw: &str, title: &str) -> RenderedNote {
+/// 2. Resolve `[[wiki-links]]` against `cave_notes`
+/// 3. Run the resolved body through pulldown-cmark
+pub fn render_note(raw: &str, title: &str, cave_notes: &[&str]) -> RenderedNote {
     let (frontmatter, body) = extract_frontmatter(raw);
-    let html = render_html(body);
+    let (resolved_body, outgoing_links) = resolve_wiki_links(body, cave_notes);
+    let html = render_html(&resolved_body);
     RenderedNote {
         title: title.to_string(),
         html,
         frontmatter,
-        outgoing_links: Vec::new(),
+        outgoing_links,
     }
+}
+
+/// Resolve `[[wiki-links]]` in `body` against the list of cave note slugs.
+///
+/// For each `[[note-name]]` found:
+/// - If a slug matching `note-name` (case-insensitive) exists in `cave_notes`,
+///   it is replaced with a standard markdown link `[note-name](slug)`.
+/// - If no match is found, it is replaced with an HTML `<span>` carrying the
+///   `broken-link` class so the frontend can style it distinctly.
+///
+/// Returns `(resolved_body, outgoing_links)` where `outgoing_links` is the
+/// list of resolved slugs (one entry per resolved wiki-link occurrence).
+pub fn resolve_wiki_links(body: &str, cave_notes: &[&str]) -> (String, Vec<String>) {
+    let mut output = String::with_capacity(body.len());
+    let mut outgoing = Vec::new();
+    let mut remaining = body;
+
+    while let Some(open) = remaining.find("[[") {
+        // Append everything before the opening `[[`
+        output.push_str(&remaining[..open]);
+        let after_open = &remaining[open + 2..];
+
+        // Find the matching closing `]]`
+        if let Some(close) = after_open.find("]]") {
+            let link_text = &after_open[..close];
+            // link_text must be non-empty and contain no nested `[` or `]`
+            if !link_text.is_empty() && !link_text.contains('[') && !link_text.contains(']') {
+                let lower = link_text.to_lowercase();
+                if let Some(&slug) = cave_notes.iter().find(|s| s.to_lowercase() == lower) {
+                    // Resolved: standard markdown link
+                    output.push_str(&format!("[{link_text}]({slug})"));
+                    outgoing.push(slug.to_string());
+                } else {
+                    // Unresolved: broken-link span (raw HTML passthrough in pulldown-cmark)
+                    output.push_str(&format!("<span class=\"broken-link\">{link_text}</span>"));
+                }
+                remaining = &after_open[close + 2..];
+                continue;
+            }
+        }
+
+        // Not a valid wiki-link — emit `[[` literally and advance past it
+        output.push_str("[[");
+        remaining = after_open;
+    }
+
+    output.push_str(remaining);
+    (output, outgoing)
+}
+
+/// Generate the initial file content for a new note.
+///
+/// Produces a YAML frontmatter block with `created_at` and `modified_at` set
+/// to the current UTC time, followed by a level-1 heading using the slug.
+pub fn initial_content(slug: &str) -> String {
+    let now = Utc::now();
+    let fm = Frontmatter {
+        tags: Vec::new(),
+        created_at: Some(now),
+        modified_at: Some(now),
+    };
+    let yaml = serde_yml::to_string(&fm).unwrap_or_default();
+    format!("---\n{}---\n# {slug}\n", yaml)
+}
+
+/// Update the `modified_at` field in the YAML frontmatter of `raw` to the
+/// current UTC time.
+///
+/// If `raw` contains no frontmatter (or it cannot be parsed) the original
+/// content is returned unchanged — callers that save user-edited content
+/// without frontmatter are not affected.
+pub fn update_modified_at(raw: &str) -> String {
+    let after_open = match raw.strip_prefix("---") {
+        Some(rest) => rest,
+        None => return raw.to_string(),
+    };
+    let after_open = match after_open
+        .strip_prefix('\n')
+        .or_else(|| after_open.strip_prefix("\r\n"))
+    {
+        Some(rest) => rest,
+        None => return raw.to_string(),
+    };
+
+    let close_pattern = "\n---";
+    let close_pos = match after_open.find(close_pattern) {
+        Some(pos) => pos,
+        None => return raw.to_string(),
+    };
+
+    let yaml = &after_open[..close_pos];
+    let after_close = &after_open[close_pos + close_pattern.len()..];
+
+    let mut fm: Frontmatter = match serde_yml::from_str(yaml) {
+        Ok(fm) => fm,
+        Err(_) => return raw.to_string(),
+    };
+    fm.modified_at = Some(Utc::now());
+
+    let new_yaml = match serde_yml::to_string(&fm) {
+        Ok(s) => s,
+        Err(_) => return raw.to_string(),
+    };
+
+    format!("---\n{}---{}", new_yaml, after_close)
 }
 
 /// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.
@@ -216,7 +325,7 @@ mod tests {
     #[test]
     fn test_render_note_with_frontmatter() {
         let raw = "---\ntags:\n  - rust\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\n# Hello";
-        let result = render_note(raw, "my-note");
+        let result = render_note(raw, "my-note", &[]);
         assert_eq!(result.title, "my-note");
         let fm = result
             .frontmatter
@@ -234,9 +343,68 @@ mod tests {
     #[test]
     fn test_render_note_without_frontmatter() {
         let raw = "# Plain note";
-        let result = render_note(raw, "plain-note");
+        let result = render_note(raw, "plain-note", &[]);
         assert_eq!(result.title, "plain-note");
         assert!(result.frontmatter.is_none());
         assert!(result.html.contains("<h1>"));
+    }
+
+    // ── resolve_wiki_links ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_wiki_link_no_links() {
+        let (out, links) = resolve_wiki_links("Just plain text.", &["some-note"]);
+        assert_eq!(out, "Just plain text.");
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_wiki_link_resolved() {
+        let (out, links) = resolve_wiki_links("See [[my-note]] for details.", &["my-note"]);
+        assert_eq!(out, "See [my-note](my-note) for details.");
+        assert_eq!(links, ["my-note"]);
+    }
+
+    #[test]
+    fn test_wiki_link_resolved_case_insensitive() {
+        let (out, links) = resolve_wiki_links("See [[My-Note]] for details.", &["my-note"]);
+        assert_eq!(out, "See [My-Note](my-note) for details.");
+        assert_eq!(links, ["my-note"]);
+    }
+
+    #[test]
+    fn test_wiki_link_unresolved() {
+        let (out, links) = resolve_wiki_links("See [[ghost]] here.", &["real-note"]);
+        assert!(out.contains("broken-link"), "got: {out}");
+        assert!(out.contains("ghost"), "got: {out}");
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_wiki_link_multiple() {
+        let notes = ["alpha", "gamma"];
+        let (out, links) = resolve_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", &notes);
+        assert!(out.contains("[alpha](alpha)"), "got: {out}");
+        assert!(
+            out.contains("broken-link") && out.contains("beta"),
+            "got: {out}"
+        );
+        assert!(out.contains("[gamma](gamma)"), "got: {out}");
+        assert_eq!(links, ["alpha", "gamma"]);
+    }
+
+    #[test]
+    fn test_wiki_link_in_render_note_populates_outgoing() {
+        let notes = ["other-note"];
+        let result = render_note("Check [[other-note]] out.", "my-note", &notes);
+        assert_eq!(result.outgoing_links, ["other-note"]);
+        assert!(result.html.contains("<a href=\"other-note\">"));
+    }
+
+    #[test]
+    fn test_wiki_link_empty_brackets_passthrough() {
+        let (out, links) = resolve_wiki_links("[[]] is not a link.", &[]);
+        assert_eq!(out, "[[]] is not a link.");
+        assert!(links.is_empty());
     }
 }
