@@ -1,10 +1,10 @@
 ---
 id: duy
 title: Align docs with implemented scope
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:15:24.294843Z
-updated: 2026-03-27T12:39:19.905341Z
+updated: 2026-03-27T13:27:01.529146Z
 depends_on:
 - tx2
 - m9t
