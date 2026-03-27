@@ -1,10 +1,10 @@
 ---
 id: vc2
 title: Make note listing fail explicitly on unreadable files
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:20:40.992694Z
-updated: 2026-03-27T12:39:18.702319Z
+updated: 2026-03-27T13:13:41.864210Z
 depends_on:
 - c2z
 parent: wem
