@@ -1,10 +1,10 @@
 ---
 id: 26a
 title: Add render_note Tauri command and IPC wrapper
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:25:43.985489914Z
-updated: 2026-03-27T21:25:43.985489914Z
+updated: 2026-03-27T22:36:29.805590581Z
 tags:
 - backend
 - frontend

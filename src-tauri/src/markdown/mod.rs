@@ -14,9 +14,13 @@ use pulldown_cmark::{html, Options, Parser};
 /// 1. Strip and parse YAML frontmatter (between `---` fences)
 /// 2. Resolve `[[wiki-links]]` against `cave_notes`
 /// 3. Run the resolved body through pulldown-cmark
-pub fn render_note(raw: &str, title: &str, cave_notes: &[&str]) -> RenderedNote {
+pub fn render_note<'lookup>(
+    raw: &str,
+    title: &str,
+    lookup: impl Fn(&str) -> Option<&'lookup str>,
+) -> RenderedNote {
     let (frontmatter, body) = extract_frontmatter(raw);
-    let (resolved_body, outgoing_links) = resolve_wiki_links(body, cave_notes);
+    let (resolved_body, outgoing_links) = resolve_wiki_links(body, lookup);
     let html = render_html(&resolved_body);
     RenderedNote {
         title: title.to_string(),
@@ -36,7 +40,10 @@ pub fn render_note(raw: &str, title: &str, cave_notes: &[&str]) -> RenderedNote 
 ///
 /// Returns `(resolved_body, outgoing_links)` where `outgoing_links` is the
 /// list of resolved slugs (one entry per resolved wiki-link occurrence).
-pub fn resolve_wiki_links(body: &str, cave_notes: &[&str]) -> (String, Vec<String>) {
+pub fn resolve_wiki_links<'lookup>(
+    body: &str,
+    lookup: impl Fn(&str) -> Option<&'lookup str>,
+) -> (String, Vec<String>) {
     let mut output = String::with_capacity(body.len());
     let mut outgoing = Vec::new();
     let mut remaining = body;
@@ -51,8 +58,7 @@ pub fn resolve_wiki_links(body: &str, cave_notes: &[&str]) -> (String, Vec<Strin
             let link_text = &after_open[..close];
             // link_text must be non-empty and contain no nested `[` or `]`
             if !link_text.is_empty() && !link_text.contains('[') && !link_text.contains(']') {
-                let lower = link_text.to_lowercase();
-                if let Some(&slug) = cave_notes.iter().find(|s| s.to_lowercase() == lower) {
+                if let Some(slug) = lookup(link_text) {
                     // Resolved: standard markdown link
                     output.push_str(&format!("[{link_text}]({slug})"));
                     outgoing.push(slug.to_string());
@@ -325,7 +331,7 @@ mod tests {
     #[test]
     fn test_render_note_with_frontmatter() {
         let raw = "---\ntags:\n  - rust\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\n# Hello";
-        let result = render_note(raw, "my-note", &[]);
+        let result = render_note(raw, "my-note", |_| None);
         assert_eq!(result.title, "my-note");
         let fm = result
             .frontmatter
@@ -343,7 +349,7 @@ mod tests {
     #[test]
     fn test_render_note_without_frontmatter() {
         let raw = "# Plain note";
-        let result = render_note(raw, "plain-note", &[]);
+        let result = render_note(raw, "plain-note", |_| None);
         assert_eq!(result.title, "plain-note");
         assert!(result.frontmatter.is_none());
         assert!(result.html.contains("<h1>"));
@@ -353,28 +359,43 @@ mod tests {
 
     #[test]
     fn test_wiki_link_no_links() {
-        let (out, links) = resolve_wiki_links("Just plain text.", &["some-note"]);
+        let (out, links) = resolve_wiki_links("Just plain text.", |_| None);
         assert_eq!(out, "Just plain text.");
         assert!(links.is_empty());
     }
 
     #[test]
     fn test_wiki_link_resolved() {
-        let (out, links) = resolve_wiki_links("See [[my-note]] for details.", &["my-note"]);
+        let (out, links) = resolve_wiki_links("See [[my-note]] for details.", |s| {
+            ["my-note"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
         assert_eq!(out, "See [my-note](my-note) for details.");
         assert_eq!(links, ["my-note"]);
     }
 
     #[test]
     fn test_wiki_link_resolved_case_insensitive() {
-        let (out, links) = resolve_wiki_links("See [[My-Note]] for details.", &["my-note"]);
+        let (out, links) = resolve_wiki_links("See [[My-Note]] for details.", |s| {
+            ["my-note"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
         assert_eq!(out, "See [My-Note](my-note) for details.");
         assert_eq!(links, ["my-note"]);
     }
 
     #[test]
     fn test_wiki_link_unresolved() {
-        let (out, links) = resolve_wiki_links("See [[ghost]] here.", &["real-note"]);
+        let (out, links) = resolve_wiki_links("See [[ghost]] here.", |s| {
+            ["real-note"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
         assert!(out.contains("broken-link"), "got: {out}");
         assert!(out.contains("ghost"), "got: {out}");
         assert!(links.is_empty());
@@ -383,7 +404,9 @@ mod tests {
     #[test]
     fn test_wiki_link_multiple() {
         let notes = ["alpha", "gamma"];
-        let (out, links) = resolve_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", &notes);
+        let (out, links) = resolve_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", |s| {
+            notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
+        });
         assert!(out.contains("[alpha](alpha)"), "got: {out}");
         assert!(
             out.contains("broken-link") && out.contains("beta"),
@@ -396,14 +419,16 @@ mod tests {
     #[test]
     fn test_wiki_link_in_render_note_populates_outgoing() {
         let notes = ["other-note"];
-        let result = render_note("Check [[other-note]] out.", "my-note", &notes);
+        let result = render_note("Check [[other-note]] out.", "my-note", |s| {
+            notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
+        });
         assert_eq!(result.outgoing_links, ["other-note"]);
         assert!(result.html.contains("<a href=\"other-note\">"));
     }
 
     #[test]
     fn test_wiki_link_empty_brackets_passthrough() {
-        let (out, links) = resolve_wiki_links("[[]] is not a link.", &[]);
+        let (out, links) = resolve_wiki_links("[[]] is not a link.", |_| None);
         assert_eq!(out, "[[]] is not a link.");
         assert!(links.is_empty());
     }
