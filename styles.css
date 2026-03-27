@@ -1,6 +1,18 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --color-stone-850: #231f1e;
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
+}
+
+/* Unresolved wiki-links: styled as muted links */
+.broken-link {
+  color: var(--color-stone-500);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  cursor: pointer;
+}
+.broken-link:hover {
+  color: var(--color-stone-300);
 }

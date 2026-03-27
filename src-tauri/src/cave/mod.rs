@@ -54,14 +54,6 @@ impl Cave {
         Ok(notes)
     }
 
-    /// Return the slugs of all notes tracked in the in-memory index.
-    ///
-    /// Reflects notes present at cave-open time plus any notes created, renamed,
-    /// or deleted during this session. Does **not** scan the filesystem.
-    pub fn note_slugs(&self) -> Vec<&str> {
-        self.notes.keys().map(String::as_str).collect()
-    }
-
     /// Look up a note slug by name (case-insensitive).
     ///
     /// Returns the stored slug if found, `None` otherwise. Designed to be passed
