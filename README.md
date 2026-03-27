@@ -4,13 +4,22 @@ A minimal, opinionated desktop note-taking app. Granit manages a **cave** — a 
 
 Built for personal use. No plugins, no sync, no bloat.
 
-## Features
+## Current Features
 
-- **Cave-based storage** — Any directory is a cave. Nested folders for organization. Wiki-style `[[links]]` resolved by filename.
-- **Markdown-first** — YAML frontmatter for metadata. `pulldown-cmark` renders on the backend.
-- **Edit / Read toggle** — Raw markdown editing with rendered HTML preview.
-- **AI Agent** — Side panel chat powered by `rig-core`. CRUD tools for cave operations. In-memory vector DB for RAG. Configurable LLM provider.
-- **Multi-cave** — One cave open at a time, switchable via recent caves list.
+- **Cave-based storage** — Any directory is a cave. Open, switch, and track recently opened caves.
+- **Note CRUD** — Create, read, rename, and delete markdown notes. Filenames are the source of truth for note identity.
+- **Edit / Preview toggle** — Raw markdown editing with plaintext preview.
+- **Global settings** — Configurable AI agent provider and model saved to `~/.config/granit/config.yml`.
+- **Layered config** — Global config can be overridden per-cave via `<cave>/.granit/config.yml` (UI editing not yet exposed).
+
+## Planned / Not Yet Implemented
+
+- **Rendered markdown preview** — Preview currently shows raw text. `pulldown-cmark` HTML rendering is planned.
+- **AI Agent** — Side panel UI is scaffolded but not yet connected. `rig-core` integration, cave CRUD tools, and RAG over notes are roadmap items.
+- **Nested folders** — Notes are currently flat in the cave root. Hierarchical folder support is planned.
+- **Wiki-links** — `[[note-name]]` link resolution is planned but not yet implemented.
+- **Full-text search** — Not yet implemented.
+- **Backlinks panel** — Not yet implemented.
 
 ## Tech Stack
 
@@ -20,9 +29,8 @@ Built for personal use. No plugins, no sync, no bloat.
 | Frontend | Leptos 0.8 (Rust → WASM, CSR) |
 | Build | Trunk |
 | Styling | Tailwind CSS |
-| Markdown | `pulldown-cmark` |
-| AI | `rig-core` |
 | Errors | `thiserror` |
+| Config | `serde_yml`, `dirs`, `dotenvy` |
 
 ## Development
 
