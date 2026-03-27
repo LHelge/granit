@@ -12,13 +12,22 @@ struct AppState {
     cave: Mutex<Option<Cave>>,
 }
 
+impl AppState {
+    fn lock_config(&self) -> Result<std::sync::MutexGuard<'_, AppConfig>, ConfigError> {
+        self.config.lock().map_err(|_| ConfigError::Poisoned)
+    }
+
+    fn lock_cave(&self) -> Result<std::sync::MutexGuard<'_, Option<Cave>>, CaveError> {
+        self.cave.lock().map_err(|_| CaveError::Poisoned)
+    }
+}
+
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
-    let mut config = state.config.lock().unwrap().clone();
+    let mut config = state.lock_config()?.clone();
     config.active_cave = state
-        .cave
-        .lock()
-        .unwrap()
+        .lock_cave()
+        .map_err(|_| ConfigError::Poisoned)?
         .as_ref()
         .map(|c| c.path().to_path_buf());
     Ok(config)
@@ -32,7 +41,7 @@ fn save_config(
     agent: AgentConfig,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, ConfigError> {
-    let mut config = state.config.lock().unwrap();
+    let mut config = state.lock_config()?;
     config.agent = agent;
     config.save_global()?;
     Ok(config.clone())
@@ -47,10 +56,10 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, 
     let new_config = AppConfig::load(Some(&path))?;
 
     // Open the cave
-    *state.cave.lock().unwrap() = Some(Cave::open(path.clone()));
+    *state.lock_cave().map_err(|_| ConfigError::Poisoned)? = Some(Cave::open(path.clone()));
 
     // Update recent caves and persist
-    let mut config = state.config.lock().unwrap();
+    let mut config = state.lock_config()?;
     *config = new_config;
     config.add_recent_cave(path.clone());
     config.save_global()?;
@@ -65,7 +74,7 @@ fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
 where
     F: FnOnce(&Cave) -> Result<T, CaveError>,
 {
-    let guard = state.cave.lock().unwrap();
+    let guard = state.lock_cave()?;
     let cave = guard.as_ref().ok_or(CaveError::NoCaveOpen)?;
     f(cave)
 }

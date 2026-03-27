@@ -1,10 +1,10 @@
 ---
 id: nst
 title: Remove panic-prone backend state handling
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:34:57.155741Z
-updated: 2026-03-27T12:39:19.207718Z
+updated: 2026-03-27T13:25:35.863099Z
 depends_on:
 - 3s4
 parent: wem
