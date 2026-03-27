@@ -1,5 +1,6 @@
 mod cave;
 mod config;
+mod markdown;
 
 use std::path::PathBuf;
 use std::sync::Mutex;
