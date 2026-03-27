@@ -50,6 +50,10 @@ struct RawAgentConfig {
 impl AppConfig {
     /// Load config with layered precedence: defaults ← global ← cave.
     /// `cave_path` is None if no cave is currently open.
+    ///
+    /// Note: cave-level overrides affect the resolved `agent` config at open
+    /// time, but are not currently exposed as an editable UI surface. The
+    /// settings modal always reads and writes the global config only.
     pub fn load(cave_path: Option<&Path>) -> Result<Self, ConfigError> {
         let global = Self::load_raw(&Self::global_config_path()?)?;
         let cave = cave_path

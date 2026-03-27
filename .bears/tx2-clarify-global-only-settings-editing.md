@@ -1,10 +1,10 @@
 ---
 id: tx2
 title: Clarify global-only settings editing
-status: open
+status: done
 priority: P3
 created: 2026-03-27T12:31:56.443401Z
-updated: 2026-03-27T12:31:56.443401Z
+updated: 2026-03-27T13:20:07.792803Z
 parent: wem
 ---
 
