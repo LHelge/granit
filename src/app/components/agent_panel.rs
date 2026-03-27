@@ -1,6 +1,5 @@
 use leptos::prelude::*;
 
-/// Right panel — AI agent chat interface.
 #[component]
 pub fn AgentPanel() -> impl IntoView {
     let (input, set_input) = signal(String::new());
