@@ -1,10 +1,10 @@
 ---
 id: bjf
 title: Stabilize editor persistence flow
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:11:19.259747Z
-updated: 2026-03-27T12:39:18.564598Z
+updated: 2026-03-27T13:09:13.535557Z
 depends_on:
 - c2z
 - m9t

@@ -44,6 +44,14 @@ struct RenameNoteArgs {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateNoteArgs {
+    old_name: String,
+    new_name: String,
+    content: String,
+}
+
+#[derive(Serialize)]
 struct SaveConfigArgs {
     agent: super::types::AgentConfig,
 }
@@ -121,6 +129,23 @@ pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, Str
     let val = invoke("rename_note", args)
         .await
         .map_err(|e| e.as_string().unwrap_or_else(|| "Rename failed".to_string()))?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+pub async fn update_note(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+) -> Result<NoteMeta, String> {
+    let args = serde_wasm_bindgen::to_value(&UpdateNoteArgs {
+        old_name: old_name.to_string(),
+        new_name: new_name.to_string(),
+        content: content.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("update_note", args)
+        .await
+        .map_err(js_err_to_string)?;
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 

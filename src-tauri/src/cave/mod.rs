@@ -178,6 +178,45 @@ impl Cave {
 
         Ok(NoteMeta::from_file(&new_filename))
     }
+
+    /// Update a note's filename and content in one operation.
+    /// If `old_name` and `new_name` differ, the file is renamed first, then the new content
+    /// is written. Fails atomically-as-possible: a rename failure leaves the original file
+    /// untouched; a write failure after a successful rename leaves the file at the new name
+    /// with the previous content.
+    pub fn update_note(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        content: &str,
+    ) -> Result<NoteMeta, CaveError> {
+        let old_filename = resolve_filename(old_name)?;
+        let new_filename = resolve_filename(new_name)?;
+
+        let file_path = if old_filename != new_filename {
+            let old_path = self.path.join(&old_filename);
+            let new_path = self.path.join(&new_filename);
+
+            if !old_path.exists() {
+                return Err(CaveError::NotFound(old_filename));
+            }
+            if new_path.exists() {
+                return Err(CaveError::AlreadyExists(new_filename));
+            }
+
+            std::fs::rename(&old_path, &new_path)?;
+            new_path
+        } else {
+            let path = self.path.join(&old_filename);
+            if !path.exists() {
+                return Err(CaveError::NotFound(old_filename));
+            }
+            path
+        };
+
+        std::fs::write(&file_path, content)?;
+        Ok(NoteMeta::from_file(&new_filename))
+    }
 }
 
 #[cfg(test)]
@@ -449,5 +488,60 @@ mod tests {
 
         let err = cave.rename_note("missing", "new").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_update_note_content_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("note.md"), "old content").unwrap();
+
+        let meta = cave.update_note("note", "note", "new content").unwrap();
+        assert_eq!(meta.slug, "note");
+
+        let saved = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert_eq!(saved, "new content");
+    }
+
+    #[test]
+    fn test_update_note_rename_and_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("old.md"), "original content").unwrap();
+
+        let meta = cave
+            .update_note("old", "new-name", "updated content")
+            .unwrap();
+        assert_eq!(meta.slug, "new-name");
+        assert!(!dir.path().join("old.md").exists());
+
+        let saved = std::fs::read_to_string(dir.path().join("new-name.md")).unwrap();
+        assert_eq!(saved, "updated content");
+    }
+
+    #[test]
+    fn test_update_note_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave.update_note("ghost", "ghost", "content").unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_update_note_rename_target_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+
+        std::fs::write(dir.path().join("a.md"), "a content").unwrap();
+        std::fs::write(dir.path().join("b.md"), "b content").unwrap();
+
+        let err = cave.update_note("a", "b", "new content").unwrap_err();
+        assert!(matches!(err, CaveError::AlreadyExists(_)));
+        // Original file must be untouched
+        let content = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        assert_eq!(content, "a content");
     }
 }

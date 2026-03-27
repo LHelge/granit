@@ -92,6 +92,18 @@ fn rename_note(
 }
 
 #[tauri::command]
+fn update_note(
+    old_name: String,
+    new_name: String,
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<NoteMeta, CaveError> {
+    with_cave(&state, |cave| {
+        cave.update_note(&old_name, &new_name, &content)
+    })
+}
+
+#[tauri::command]
 fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
     with_cave(&state, |cave| cave.delete_note(&name))
 }
@@ -117,6 +129,7 @@ pub fn run() {
             save_note,
             delete_note,
             rename_note,
+            update_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

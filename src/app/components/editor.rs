@@ -29,24 +29,20 @@ pub fn Editor(
         let is_switch = old_slug != new_slug && !is_saving;
 
         if is_switch {
-            // Auto-save previous note content when switching away in edit mode
+            // Auto-save the previous note when switching away in edit mode
             if was_editing {
                 if let Some(slug) = old_slug {
                     let old_content = content.get_untracked();
                     let old_title = title_input.get_untracked().trim().to_string();
-                    let set_notes = set_notes;
+                    let new_name = if !old_title.is_empty() {
+                        old_title
+                    } else {
+                        slug.clone()
+                    };
                     leptos::task::spawn_local(async move {
-                        // Rename if the title changed
-                        let current_slug = if !old_title.is_empty() && old_title != slug {
-                            match ipc::rename_note(&slug, &old_title).await {
-                                Ok(meta) => meta.slug,
-                                Err(_) => slug,
-                            }
-                        } else {
-                            slug
-                        };
-                        // Save content
-                        let _ = ipc::save_note(&current_slug, &old_content).await;
+                        if let Err(e) = ipc::update_note(&slug, &new_name, &old_content).await {
+                            set_error.set(Some(format!("Autosave failed: {e}")));
+                        }
                         if let Ok(n) = ipc::fetch_notes().await {
                             set_notes.set(n);
                         }
@@ -70,15 +66,21 @@ pub fn Editor(
         set_error.set(None);
     });
 
+    // Dirty state: true when content or filename differs from the active note on disk
+    let is_dirty = Memo::new(move |_| match active_note.get() {
+        Some(note) => content.get() != note.content || title_input.get() != note.meta.slug,
+        None => false,
+    });
+
     let toggle_mode = move |_| set_editing.update(|v| *v = !*v);
 
     let on_save = move |_| {
         let note = active_note.get_untracked();
-        let content = content.get_untracked();
-        let new_title = title_input.get_untracked().trim().to_string();
+        let cur_content = content.get_untracked();
+        let new_name = title_input.get_untracked().trim().to_string();
         if let Some(note) = note {
-            if new_title.is_empty() {
-                set_error.set(Some("Title cannot be empty".to_string()));
+            if new_name.is_empty() {
+                set_error.set(Some("Filename cannot be empty".to_string()));
                 return;
             }
 
@@ -87,24 +89,15 @@ pub fn Editor(
             let old_slug = note.meta.slug.clone();
 
             leptos::task::spawn_local(async move {
-                // If the title changed, rename the file first
-                let current_slug = if new_title != old_slug {
-                    match ipc::rename_note(&old_slug, &new_title).await {
-                        Ok(meta) => meta.slug,
-                        Err(e) => {
-                            set_error.set(Some(e));
-                            set_saving.set(false);
-                            return;
-                        }
-                    }
-                } else {
-                    old_slug
-                };
-
-                // Save the content
-                match ipc::save_note(&current_slug, &content).await {
+                match ipc::update_note(&old_slug, &new_name, &cur_content).await {
                     Ok(meta) => {
-                        set_active_note.set(Some(Note { meta, content }));
+                        // Update prev_slug immediately so the Effect does not
+                        // mistake this save as a note switch when active_note changes.
+                        set_prev_slug.set(Some(meta.slug.clone()));
+                        set_active_note.set(Some(Note {
+                            meta,
+                            content: cur_content,
+                        }));
                         if let Ok(n) = ipc::fetch_notes().await {
                             set_notes.set(n);
                         }
@@ -146,7 +139,7 @@ pub fn Editor(
                         on:click=on_save
                         disabled=move || saving.get()
                     >
-                        {move || if saving.get() { "Saving…" } else { "Save" }}
+                        {move || if saving.get() { "Saving…" } else if is_dirty.get() { "Save ●" } else { "Save" }}
                     </button>
                     <button
                         class="px-2 py-0.5 text-xs rounded border border-stone-600 text-stone-300 hover:bg-stone-700 transition-colors"
