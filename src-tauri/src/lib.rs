@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError};
+use granit_types::AppConfig as IpcConfig;
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -23,14 +24,16 @@ impl AppState {
 }
 
 #[tauri::command]
-fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
-    let mut config = state.lock_config()?.clone();
-    config.active_cave = state
+fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+    let config = state.lock_config()?;
+    let active_cave = state
         .lock_cave()
         .map_err(|_| ConfigError::Poisoned)?
         .as_ref()
-        .map(|c| c.path().to_path_buf());
-    Ok(config)
+        .map(|c| c.path().to_string_lossy().into_owned());
+    let mut ipc = config.to_ipc();
+    ipc.active_cave = active_cave;
+    Ok(ipc)
 }
 
 #[tauri::command]
@@ -40,15 +43,15 @@ fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
 fn save_config(
     agent: AgentConfig,
     state: tauri::State<AppState>,
-) -> Result<AppConfig, ConfigError> {
+) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config()?;
     config.agent = agent;
     config.save_global()?;
-    Ok(config.clone())
+    Ok(config.to_ipc())
 }
 
 #[tauri::command]
-fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
+fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     // Ensure cave .granit/ dir and defaults exist
     AppConfig::ensure_cave(&path)?;
 
@@ -65,9 +68,9 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, 
     config.save_global()?;
 
     // Return config with active_cave set to the just-opened path
-    let mut response = config.clone();
-    response.active_cave = Some(path);
-    Ok(response)
+    let mut ipc = config.to_ipc();
+    ipc.active_cave = Some(path.to_string_lossy().into_owned());
+    Ok(ipc)
 }
 
 fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>

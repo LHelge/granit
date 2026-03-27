@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::app::ipc;
-use crate::app::types::{AgentConfig, AppConfig};
+use granit_types::{AgentConfig, AppConfig};
 
 #[component]
 pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -> impl IntoView {

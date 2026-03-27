@@ -1,10 +1,10 @@
 ---
 id: urx
 title: Add shared crate for IPC types
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:29:24.793966Z
-updated: 2026-03-27T12:39:19.026919Z
+updated: 2026-03-27T14:58:27.155188Z
 depends_on:
 - 3s4
 - m9t

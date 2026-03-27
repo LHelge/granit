@@ -1,32 +1,14 @@
-use serde::{Deserialize, Serialize};
-
 use super::CaveError;
 
-/// Metadata for a note in the cave.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NoteMeta {
-    /// Filename without extension (e.g., "my-note").
-    pub slug: String,
-    /// Relative path from cave root (e.g., "subfolder/my-note.md").
-    pub relative_path: String,
-}
+pub use granit_types::{Note, NoteMeta};
 
-impl NoteMeta {
-    /// Build metadata from a filename.
-    pub(crate) fn from_file(filename: &str) -> Self {
-        let slug = filename.strip_suffix(".md").unwrap_or(filename).to_string();
-        Self {
-            slug,
-            relative_path: filename.to_string(),
-        }
+/// Build note metadata from a filename.
+pub(crate) fn note_meta_from_file(filename: &str) -> NoteMeta {
+    let slug = filename.strip_suffix(".md").unwrap_or(filename).to_string();
+    NoteMeta {
+        slug,
+        relative_path: filename.to_string(),
     }
-}
-
-/// Full note content returned when reading a note.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Note {
-    pub meta: NoteMeta,
-    pub content: String,
 }
 
 /// Validate a note name: must be non-empty, no path separators, no null bytes.

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 pub use error::CaveError;
 pub use note::{Note, NoteMeta};
 
-use note::{ensure_md_extension, validate_name};
+use note::{ensure_md_extension, note_meta_from_file, validate_name};
 
 /// Resolve a validated filename from a user-supplied name.
 /// Validates the name and ensures it has a `.md` extension.
@@ -60,7 +60,7 @@ impl Cave {
 
         std::fs::write(&final_path, &initial_content)?;
 
-        Ok(NoteMeta::from_file(&filename))
+        Ok(note_meta_from_file(&filename))
     }
 
     /// List all top-level .md notes in this cave.
@@ -83,7 +83,7 @@ impl Cave {
                 if let Some(ext) = path.extension() {
                     if ext == "md" {
                         let filename = entry.file_name().to_string_lossy().to_string();
-                        notes.push(NoteMeta::from_file(&filename));
+                        notes.push(note_meta_from_file(&filename));
                     }
                 }
             }
@@ -105,7 +105,7 @@ impl Cave {
         let content = std::fs::read_to_string(&file_path)?;
 
         Ok(Note {
-            meta: NoteMeta::from_file(&filename),
+            meta: note_meta_from_file(&filename),
             content,
         })
     }
@@ -120,7 +120,7 @@ impl Cave {
         }
 
         std::fs::write(&file_path, content)?;
-        Ok(NoteMeta::from_file(&filename))
+        Ok(note_meta_from_file(&filename))
     }
 
     /// Replace `old_text` with `new_text` in an existing note.
@@ -146,7 +146,7 @@ impl Cave {
         let new_content = content.replacen(old_text, new_text, 1);
 
         std::fs::write(&file_path, &new_content)?;
-        Ok(NoteMeta::from_file(&filename))
+        Ok(note_meta_from_file(&filename))
     }
 
     /// Delete a note by slug or filename.
@@ -184,7 +184,7 @@ impl Cave {
 
         std::fs::rename(&old_path, &new_path)?;
 
-        Ok(NoteMeta::from_file(&new_filename))
+        Ok(note_meta_from_file(&new_filename))
     }
 
     /// Update a note's filename and content in one operation.
@@ -223,7 +223,7 @@ impl Cave {
         };
 
         std::fs::write(&file_path, content)?;
-        Ok(NoteMeta::from_file(&new_filename))
+        Ok(note_meta_from_file(&new_filename))
     }
 }
 

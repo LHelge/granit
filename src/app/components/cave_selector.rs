@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::app::ipc;
-use crate::app::types::{AppConfig, Note, NoteMeta};
+use granit_types::{AppConfig, Note, NoteMeta};
 
 #[component]
 pub fn CaveSelector(

@@ -2,7 +2,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use super::types::{AppConfig, Note, NoteMeta};
+use granit_types::{AppConfig, Note, NoteMeta};
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 
@@ -31,19 +31,6 @@ struct OpenDialogOptions {
 }
 
 #[derive(Serialize)]
-struct SaveNoteArgs {
-    name: String,
-    content: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RenameNoteArgs {
-    old_name: String,
-    new_name: String,
-}
-
-#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateNoteArgs {
     old_name: String,
@@ -53,7 +40,7 @@ struct UpdateNoteArgs {
 
 #[derive(Serialize)]
 struct SaveConfigArgs {
-    agent: super::types::AgentConfig,
+    agent: granit_types::AgentConfig,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -108,30 +95,6 @@ pub async fn read_note(name: &str) -> Result<Note, String> {
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn save_note(name: &str, content: &str) -> Result<NoteMeta, String> {
-    let args = serde_wasm_bindgen::to_value(&SaveNoteArgs {
-        name: name.to_string(),
-        content: content.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("save_note", args)
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| "Save failed".to_string()))?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, String> {
-    let args = serde_wasm_bindgen::to_value(&RenameNoteArgs {
-        old_name: old_name.to_string(),
-        new_name: new_name.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("rename_note", args)
-        .await
-        .map_err(|e| e.as_string().unwrap_or_else(|| "Rename failed".to_string()))?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
 pub async fn update_note(
     old_name: &str,
     new_name: &str,
@@ -149,7 +112,7 @@ pub async fn update_note(
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn save_config(agent: super::types::AgentConfig) -> Result<AppConfig, String> {
+pub async fn save_config(agent: granit_types::AgentConfig) -> Result<AppConfig, String> {
     let args =
         serde_wasm_bindgen::to_value(&SaveConfigArgs { agent }).map_err(|e| format!("{e}"))?;
     let val = invoke("save_config", args)
