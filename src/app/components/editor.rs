@@ -5,9 +5,8 @@ use crate::app::types::{Note, NoteMeta};
 
 #[component]
 pub fn Editor(
-    active_note: ReadSignal<Option<Note>>,
-    set_active_note: WriteSignal<Option<Note>>,
-    set_notes: WriteSignal<Vec<NoteMeta>>,
+    active_note: RwSignal<Option<Note>>,
+    notes: RwSignal<Vec<NoteMeta>>,
 ) -> impl IntoView {
     let (editing, set_editing) = signal(false);
     let (content, set_content) = signal(String::new());
@@ -44,7 +43,7 @@ pub fn Editor(
                             set_error.set(Some(format!("Autosave failed: {e}")));
                         }
                         if let Ok(n) = ipc::fetch_notes().await {
-                            set_notes.set(n);
+                            notes.set(n);
                         }
                     });
                 }
@@ -94,12 +93,12 @@ pub fn Editor(
                         // Update prev_slug immediately so the Effect does not
                         // mistake this save as a note switch when active_note changes.
                         set_prev_slug.set(Some(meta.slug.clone()));
-                        set_active_note.set(Some(Note {
+                        active_note.set(Some(Note {
                             meta,
                             content: cur_content,
                         }));
                         if let Ok(n) = ipc::fetch_notes().await {
-                            set_notes.set(n);
+                            notes.set(n);
                         }
                     }
                     Err(e) => {

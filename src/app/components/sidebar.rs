@@ -8,12 +8,10 @@ use super::note_list::NoteList;
 
 #[component]
 pub fn Sidebar(
-    config: ReadSignal<AppConfig>,
-    set_config: WriteSignal<AppConfig>,
+    config: RwSignal<AppConfig>,
     set_settings_open: WriteSignal<bool>,
-    notes: ReadSignal<Vec<NoteMeta>>,
-    set_notes: WriteSignal<Vec<NoteMeta>>,
-    set_active_note: WriteSignal<Option<Note>>,
+    notes: RwSignal<Vec<NoteMeta>>,
+    active_note: RwSignal<Option<Note>>,
     error_msg: RwSignal<Option<String>>,
     notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
@@ -30,12 +28,12 @@ pub fn Sidebar(
             match ipc::fetch_notes().await {
                 Ok(n) => {
                     notes_error.set(None);
-                    set_notes.set(n);
+                    notes.set(n);
                 }
                 Err(e) => notes_error.set(Some(e)),
             }
             match ipc::read_note(&slug).await {
-                Ok(note) => set_active_note.set(Some(note)),
+                Ok(note) => active_note.set(Some(note)),
                 Err(e) => error_msg.set(Some(format!("Failed to open note: {e}"))),
             }
         });
@@ -69,7 +67,7 @@ pub fn Sidebar(
                 >
                     <NoteList
                         notes=notes
-                        set_active_note=set_active_note
+                        active_note=active_note
                         error_msg=error_msg
                         notes_error=notes_error
                     />
@@ -79,9 +77,8 @@ pub fn Sidebar(
             // Bottom bar: cave selector + settings
             <CaveSelector
                 config=config
-                set_config=set_config
-                set_notes=set_notes
-                set_active_note=set_active_note
+                notes=notes
+                active_note=active_note
                 set_settings_open=set_settings_open
                 error_msg=error_msg
                 notes_error=notes_error

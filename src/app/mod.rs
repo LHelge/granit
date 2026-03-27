@@ -12,15 +12,13 @@ pub fn App() -> impl IntoView {
     let (sidebar_visible, set_sidebar_visible) = signal(true);
     let (agent_visible, set_agent_visible) = signal(true);
     let (settings_open, set_settings_open) = signal(false);
-    let (config, set_config) = signal(AppConfig::default());
-    let (notes, set_notes) = signal(Vec::<NoteMeta>::new());
-    let (active_note, set_active_note) = signal(None::<Note>);
+    let config = RwSignal::new(AppConfig::default());
+    let notes = RwSignal::new(Vec::<NoteMeta>::new());
+    let active_note = RwSignal::new(None::<Note>);
     let error_msg = RwSignal::new(None::<String>);
     let notes_error = RwSignal::new(None::<String>);
 
     // Load config from backend on mount, and re-open the most recent cave if any
-    let set_config_init = set_config;
-    let set_notes_init = set_notes;
     leptos::task::spawn_local(async move {
         let cfg = match ipc::fetch_config().await {
             Ok(c) => c,
@@ -30,17 +28,17 @@ pub fn App() -> impl IntoView {
             }
         };
         let recent = cfg.recent_caves.first().cloned();
-        set_config_init.set(cfg);
+        config.set(cfg);
 
         // Re-open the last cave so the backend has a cave_path set
         if let Some(path) = recent {
             match ipc::open_cave(&path).await {
                 Ok(new_cfg) => {
-                    set_config_init.set(new_cfg);
+                    config.set(new_cfg);
                     match ipc::fetch_notes().await {
                         Ok(n) => {
                             notes_error.set(None);
-                            set_notes_init.set(n);
+                            notes.set(n);
                         }
                         Err(e) => notes_error.set(Some(e)),
                     }
@@ -98,18 +96,16 @@ pub fn App() -> impl IntoView {
                 <Show when=move || sidebar_visible.get()>
                     <Sidebar
                         config=config
-                        set_config=set_config
                         set_settings_open=set_settings_open
                         notes=notes
-                        set_notes=set_notes
-                        set_active_note=set_active_note
+                        active_note=active_note
                         error_msg=error_msg
                         notes_error=notes_error
                     />
                 </Show>
 
                 // Editor (center)
-                <Editor active_note=active_note set_active_note=set_active_note set_notes=set_notes />
+                <Editor active_note=active_note notes=notes />
 
                 // Agent panel (right)
                 <Show when=move || agent_visible.get()>
@@ -119,7 +115,7 @@ pub fn App() -> impl IntoView {
 
             // Settings modal
             <Show when=move || settings_open.get()>
-                <SettingsModal config=config set_config=set_config set_open=set_settings_open />
+                <SettingsModal config=config set_open=set_settings_open />
             </Show>
         </div>
     }
