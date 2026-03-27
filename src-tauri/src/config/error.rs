@@ -8,6 +8,9 @@ pub enum ConfigError {
 
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yml::Error),
+
+    #[error("Internal state error: mutex poisoned")]
+    Poisoned,
 }
 
 // Allow returning ConfigError from Tauri commands
