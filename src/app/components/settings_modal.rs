@@ -6,23 +6,25 @@ use granit_types::{AgentConfig, AppConfig};
 #[component]
 pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -> impl IntoView {
     // Local form state, initialized from current config
-    let (provider, set_provider) = signal(config.get_untracked().agent.provider);
     let (model, set_model) = signal(config.get_untracked().agent.model);
+    let (base_url, set_base_url) = signal(
+        config.get_untracked().agent.base_url.unwrap_or_default(),
+    );
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
 
     let on_save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        let provider = provider.get();
         let model = model.get();
+        let base_url = base_url.get();
         let set_open = set_open;
         set_saving.set(true);
         set_save_error.set(None);
         leptos::task::spawn_local(async move {
             let agent = AgentConfig {
-                provider: provider.clone(),
+                provider: "ollama".to_string(),
                 model: model.clone(),
-                base_url: None,
+                base_url: if base_url.trim().is_empty() { None } else { Some(base_url.clone()) },
             };
             match ipc::save_config(agent).await {
                 Ok(new_config) => {
@@ -73,19 +75,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                         </p>
                     </Show>
                     <fieldset class="space-y-3">
-                        <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Agent"</legend>
-
-                        <div class="space-y-1">
-                            <label class="block text-xs text-stone-400" for="settings-provider">"Provider"</label>
-                            <input
-                                id="settings-provider"
-                                type="text"
-                                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                                placeholder="openai"
-                                prop:value=move || provider.get()
-                                on:input=move |ev| set_provider.set(event_target_value(&ev))
-                            />
-                        </div>
+                        <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Agent (Ollama)"</legend>
 
                         <div class="space-y-1">
                             <label class="block text-xs text-stone-400" for="settings-model">"Model"</label>
@@ -93,10 +83,23 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                                 id="settings-model"
                                 type="text"
                                 class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                                placeholder="gpt-4o"
+                                placeholder="qwen3.5:9b"
                                 prop:value=move || model.get()
                                 on:input=move |ev| set_model.set(event_target_value(&ev))
                             />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="block text-xs text-stone-400" for="settings-base-url">"Base URL"</label>
+                            <input
+                                id="settings-base-url"
+                                type="text"
+                                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                                placeholder="http://localhost:11434"
+                                prop:value=move || base_url.get()
+                                on:input=move |ev| set_base_url.set(event_target_value(&ev))
+                            />
+                            <p class="text-xs text-stone-500">"Leave blank to use the default (http://localhost:11434)"</p>
                         </div>
                     </fieldset>
 

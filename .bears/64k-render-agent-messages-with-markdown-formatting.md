@@ -1,10 +1,10 @@
 ---
 id: 64k
 title: Render agent messages with markdown formatting
-status: open
+status: done
 priority: P2
 created: 2026-03-27T21:34:20.424460003Z
-updated: 2026-03-27T21:34:20.424460003Z
+updated: 2026-03-28T23:15:57.592021274Z
 tags:
 - frontend
 depends_on:
