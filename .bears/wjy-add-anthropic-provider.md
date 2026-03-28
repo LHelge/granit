@@ -1,10 +1,10 @@
 ---
 id: wjy
 title: Add Anthropic provider
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:41:34.912883009Z
-updated: 2026-03-27T21:41:34.912883009Z
+updated: 2026-03-28T23:36:07.372895011Z
 tags:
 - backend
 depends_on:

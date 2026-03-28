@@ -1,10 +1,10 @@
 ---
 id: dej
 title: API key management via secrets commands
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:41:47.514900253Z
-updated: 2026-03-27T21:41:47.514900253Z
+updated: 2026-03-28T23:36:07.372097675Z
 tags:
 - backend
 parent: 6hv

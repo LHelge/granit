@@ -1,10 +1,10 @@
 ---
 id: e9d
 title: Provider abstraction in agent module
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:41:24.257081459Z
-updated: 2026-03-27T21:41:24.257081459Z
+updated: 2026-03-28T23:36:07.363744170Z
 tags:
 - backend
 parent: 6hv
