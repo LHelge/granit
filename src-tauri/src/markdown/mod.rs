@@ -191,7 +191,7 @@ fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
 /// Render a markdown string to HTML using pulldown-cmark.
 ///
 /// Options enabled: tables, strikethrough, task lists, footnotes.
-fn render_html(markdown: &str) -> String {
+pub(crate) fn render_html(markdown: &str) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);

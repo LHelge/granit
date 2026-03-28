@@ -46,8 +46,19 @@ struct SaveConfigArgs {
 // ── Helpers ───────────────────────────────────────────────────────
 
 fn js_err_to_string(e: JsValue) -> String {
-    e.as_string()
-        .unwrap_or_else(|| "Unknown IPC error".to_string())
+    // Tauri 2 returns errors as a plain string or as `{ message: "..." }`.
+    if let Some(s) = e.as_string() {
+        return s;
+    }
+    js_sys::Reflect::get(&e, &JsValue::from_str("message"))
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| {
+            js_sys::JSON::stringify(&e)
+                .ok()
+                .and_then(|s| s.as_string())
+                .unwrap_or_else(|| "Unknown IPC error".to_string())
+        })
 }
 
 // ── IPC helpers ────────────────────────────────────────────────────
@@ -151,6 +162,23 @@ pub async fn pick_folder() -> Option<String> {
 }
 
 // ── Agent IPC ─────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct RenderMarkdownArgs {
+    content: String,
+}
+
+/// Render a markdown string to HTML via the backend.
+pub async fn render_markdown(content: &str) -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&RenderMarkdownArgs {
+        content: content.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("render_markdown", args)
+        .await
+        .map_err(js_err_to_string)?;
+    val.as_string().ok_or_else(|| "invalid response".to_string())
+}
 
 #[derive(Serialize)]
 struct SendMessageArgs {

@@ -1,10 +1,10 @@
 ---
 id: '443'
 title: Agent panel chat UI with message bubbles and streaming
-status: open
+status: in_progress
 priority: P1
 created: 2026-03-27T21:34:06.144233731Z
-updated: 2026-03-27T21:34:06.144233731Z
+updated: 2026-03-28T23:01:49.576516624Z
 tags:
 - frontend
 depends_on:
