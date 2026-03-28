@@ -149,3 +149,74 @@ pub async fn pick_folder() -> Option<String> {
     let result: JsValue = JsFuture::from(js_sys::Promise::from(promise)).await.ok()?;
     result.as_string()
 }
+
+// ── Agent IPC ─────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct SendMessageArgs {
+    msg: String,
+}
+
+/// Invoke the backend `send_message` command. Returns immediately; streaming
+/// tokens arrive via Tauri events (`agent:stream-chunk`, `agent:stream-done`,
+/// `agent:stream-error`).
+pub async fn send_message(msg: &str) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&SendMessageArgs {
+        msg: msg.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("send_message", args)
+        .await
+        .map(|_| ())
+        .map_err(js_err_to_string)
+}
+
+/// Register a one-shot closure to be called for each streaming text chunk.
+/// Returns an unlisten closure — call it to remove the listener.
+pub async fn listen_stream_chunk(cb: impl Fn(String) + 'static) -> Option<js_sys::Function> {
+    listen_event("agent:stream-chunk", move |payload: JsValue| {
+        // Tauri 2 event payload: { payload: <data> }
+        let text = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        cb(text);
+    })
+    .await
+}
+
+/// Register a closure called when streaming is done.
+pub async fn listen_stream_done(cb: impl Fn() + 'static) -> Option<js_sys::Function> {
+    listen_event("agent:stream-done", move |_| cb()).await
+}
+
+/// Register a closure called on a streaming error.
+pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<js_sys::Function> {
+    listen_event("agent:stream-error", move |payload: JsValue| {
+        let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown error".to_string());
+        cb(msg);
+    })
+    .await
+}
+
+/// Internal helper: call `window.__TAURI__.event.listen(event, handler)`.
+/// Awaits the Promise and returns the unlisten function.
+async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<js_sys::Function> {
+    let win: JsValue = web_sys::window()?.into();
+    let tauri = js_sys::Reflect::get(&win, &JsValue::from_str("__TAURI__")).ok()?;
+    let event_ns = js_sys::Reflect::get(&tauri, &JsValue::from_str("event")).ok()?;
+    let listen_fn = js_sys::Reflect::get(&event_ns, &JsValue::from_str("listen")).ok()?;
+    let listen_fn = js_sys::Function::from(listen_fn);
+
+    let handler = Closure::wrap(Box::new(cb) as Box<dyn Fn(JsValue)>);
+    let promise = listen_fn
+        .call2(&event_ns, &JsValue::from_str(event), handler.as_ref())
+        .ok()?;
+    handler.forget(); // keep the closure alive for the duration of listening
+
+    let unlisten = JsFuture::from(js_sys::Promise::from(promise)).await.ok()?;
+    Some(js_sys::Function::from(unlisten))
+}
