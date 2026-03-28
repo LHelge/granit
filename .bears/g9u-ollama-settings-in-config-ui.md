@@ -1,10 +1,10 @@
 ---
 id: g9u
 title: Ollama settings in config UI
-status: open
+status: done
 priority: P2
 created: 2026-03-27T21:34:29.952301723Z
-updated: 2026-03-27T21:34:29.952301723Z
+updated: 2026-03-28T23:19:54.126189296Z
 tags:
 - frontend
 - backend

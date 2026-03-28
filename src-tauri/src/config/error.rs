@@ -9,6 +9,9 @@ pub enum ConfigError {
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yml::Error),
 
+    #[error("Invalid secret: {0}")]
+    InvalidSecret(String),
+
     #[error("Internal state error: mutex poisoned")]
     Poisoned,
 }

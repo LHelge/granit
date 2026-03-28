@@ -2,10 +2,10 @@
 id: ann
 title: Basic agent chat with Ollama
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:33:13.847854674Z
-updated: 2026-03-28T14:35:58.009849286Z
+updated: 2026-03-28T23:19:57.987797241Z
 ---
 
 ## Scope

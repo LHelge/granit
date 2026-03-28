@@ -1,10 +1,10 @@
 ---
 id: dw2
 title: Provider selection and API key UI in settings
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:42:07.930289460Z
-updated: 2026-03-27T21:42:07.930289460Z
+updated: 2026-03-28T23:39:05.411974424Z
 tags:
 - frontend
 depends_on:

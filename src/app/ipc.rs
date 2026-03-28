@@ -143,6 +143,40 @@ pub async fn save_config(agent: granit_types::AgentConfig) -> Result<AppConfig, 
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
+#[derive(Serialize)]
+struct SecretKeyArg {
+    key: String,
+}
+
+#[derive(Serialize)]
+struct SetSecretArgs {
+    key: String,
+    value: String,
+}
+
+/// Check whether a secret key is configured. Returns `Some(true)` if set, `None` if not.
+pub async fn get_secret(key: &str) -> Result<Option<bool>, String> {
+    let args = serde_wasm_bindgen::to_value(&SecretKeyArg {
+        key: key.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("get_secret", args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+/// Write a secret key to the global secrets.env file.
+pub async fn set_secret(key: &str, value: &str) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&SetSecretArgs {
+        key: key.to_string(),
+        value: value.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("set_secret", args)
+        .await
+        .map(|_| ())
+        .map_err(js_err_to_string)
+}
+
 pub async fn pick_folder() -> Option<String> {
     let tauri =
         js_sys::Reflect::get(&web_sys::window()?.into(), &JsValue::from_str("__TAURI__")).ok()?;
@@ -177,7 +211,8 @@ pub async fn render_markdown(content: &str) -> Result<String, String> {
     let val = invoke("render_markdown", args)
         .await
         .map_err(js_err_to_string)?;
-    val.as_string().ok_or_else(|| "invalid response".to_string())
+    val.as_string()
+        .ok_or_else(|| "invalid response".to_string())
 }
 
 #[derive(Serialize)]

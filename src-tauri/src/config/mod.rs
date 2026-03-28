@@ -189,7 +189,6 @@ impl AppConfig {
 }
 
 /// Load secrets from `secrets.env` files with layered precedence.
-#[allow(dead_code)]
 pub fn load_secrets(cave_path: Option<&Path>) -> Result<Secrets, ConfigError> {
     let mut vars = HashMap::new();
 
@@ -206,6 +205,62 @@ pub fn load_secrets(cave_path: Option<&Path>) -> Result<Secrets, ConfigError> {
     }
 
     Ok(Secrets::new(vars))
+}
+
+/// Validate that a secret value is safe for `secrets.env` storage.
+/// Rejects whitespace, control characters, and non-ASCII bytes.
+pub fn validate_secret_value(value: &str) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Err(ConfigError::InvalidSecret("value cannot be empty".into()));
+    }
+    if let Some(pos) = value.find(|c: char| c.is_whitespace() || c.is_control()) {
+        return Err(ConfigError::InvalidSecret(format!(
+            "contains invalid character at position {pos}"
+        )));
+    }
+    if !value.is_ascii() {
+        return Err(ConfigError::InvalidSecret(
+            "contains non-ASCII characters".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Write a secret to the global `secrets.env` file.
+/// Creates or updates the key in-place.
+pub fn write_global_secret(key: &str, value: &str) -> Result<(), ConfigError> {
+    let config_dir = dirs::config_dir().ok_or(ConfigError::NoConfigDir)?;
+    let secrets_path = config_dir.join("granit").join("secrets.env");
+
+    // Ensure parent directory exists
+    if let Some(parent) = secrets_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let contents = std::fs::read_to_string(&secrets_path).unwrap_or_default();
+    let mut found = false;
+    let mut new_lines: Vec<String> = contents
+        .lines()
+        .map(|line| {
+            if line.starts_with(&format!("{key}=")) {
+                found = true;
+                format!("{key}={value}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    if !found {
+        new_lines.push(format!("{key}={value}"));
+    }
+
+    let mut output = new_lines.join("\n");
+    if !output.ends_with('\n') {
+        output.push('\n');
+    }
+    std::fs::write(&secrets_path, output)?;
+    Ok(())
 }
 
 /// Ensure the cave's `.gitignore` includes `.granit/secrets.env`.
@@ -450,5 +505,30 @@ mod tests {
             Some("anthropic")
         );
         assert_eq!(loaded.recent_caves.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_validate_secret_value_accepts_valid_key() {
+        assert!(validate_secret_value("sk-ant-api03-abc123_DEF").is_ok());
+    }
+
+    #[test]
+    fn test_validate_secret_value_rejects_empty() {
+        assert!(validate_secret_value("").is_err());
+    }
+
+    #[test]
+    fn test_validate_secret_value_rejects_spaces() {
+        assert!(validate_secret_value("sk-ant abc").is_err());
+    }
+
+    #[test]
+    fn test_validate_secret_value_rejects_newlines() {
+        assert!(validate_secret_value("sk-ant\nabc").is_err());
+    }
+
+    #[test]
+    fn test_validate_secret_value_rejects_non_ascii() {
+        assert!(validate_secret_value("sk-ant-│abc").is_err());
     }
 }
