@@ -6,6 +6,7 @@ mod markdown;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use agent::{Agent, AgentError};
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError};
 use granit_types::{AppConfig as IpcConfig, RenderedNote};
@@ -13,6 +14,7 @@ use granit_types::{AppConfig as IpcConfig, RenderedNote};
 struct AppState {
     config: Mutex<AppConfig>,
     cave: Mutex<Option<Cave>>,
+    agent: Mutex<Option<Agent>>,
 }
 
 impl AppState {
@@ -22,6 +24,10 @@ impl AppState {
 
     fn lock_cave(&self) -> Result<std::sync::MutexGuard<'_, Option<Cave>>, CaveError> {
         self.cave.lock().map_err(|_| CaveError::Poisoned)
+    }
+
+    fn lock_agent(&self) -> Result<std::sync::MutexGuard<'_, Option<Agent>>, AgentError> {
+        self.agent.lock().map_err(|_| AgentError::Poisoned)
     }
 }
 
@@ -153,6 +159,72 @@ fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNo
     })
 }
 
+#[tauri::command]
+async fn send_message(
+    msg: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), AgentError> {
+    use futures::StreamExt;
+    use rig::agent::{MultiTurnStreamItem, Text};
+    use rig::completion::message::Message;
+    use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
+    use tauri::Emitter;
+
+    // Build agent on first use.
+    {
+        let mut guard = state.lock_agent()?;
+        if guard.is_none() {
+            let config = state.config.lock().map_err(|_| AgentError::Poisoned)?;
+            *guard = Some(Agent::from_config(&config.agent)?);
+        }
+    }
+
+    // Clone the inner rig agent and snapshot history — no lock held across await.
+    let (inner, history) = {
+        let guard = state.lock_agent()?;
+        let a = guard.as_ref().ok_or(AgentError::NotInitialized)?;
+        (a.inner.clone(), a.history.clone())
+    };
+
+    let mut stream = inner
+        .stream_prompt(msg.as_str())
+        .with_history(history)
+        .multi_turn(1)
+        .await;
+
+    let mut full_response = String::new();
+
+    loop {
+        match stream.next().await {
+            Some(Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
+                Text { text },
+            )))) => {
+                full_response.push_str(&text);
+                let _ = app.emit("agent:stream-chunk", text);
+            }
+            Some(Ok(MultiTurnStreamItem::FinalResponse(_))) | None => break,
+            Some(Err(e)) => {
+                let _ = app.emit("agent:stream-error", e.to_string());
+                return Err(AgentError::Stream(e.to_string()));
+            }
+            _ => {}
+        }
+    }
+
+    // Persist history.
+    {
+        let mut guard = state.lock_agent()?;
+        if let Some(a) = guard.as_mut() {
+            a.history.push(Message::user(&msg));
+            a.history.push(Message::assistant(&full_response));
+        }
+    }
+
+    let _ = app.emit("agent:stream-done", ());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = AppConfig::ensure_global().expect("failed to initialize config");
@@ -163,6 +235,7 @@ pub fn run() {
         .manage(AppState {
             config: Mutex::new(config),
             cave: Mutex::new(None),
+            agent: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -176,6 +249,7 @@ pub fn run() {
             rename_note,
             update_note,
             render_note,
+            send_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

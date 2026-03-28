@@ -4,15 +4,17 @@ pub use error::AgentError;
 
 use granit_types::AgentConfig;
 use rig::client::{CompletionClient, Nothing};
+use rig::completion::message::Message;
 use rig::providers::ollama;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_SYSTEM_PROMPT: &str =
     "You are a helpful assistant integrated into Granit, a personal note-taking app.";
 
-/// An agent backed by an Ollama model.
+/// An agent backed by an Ollama model, with session conversation history.
 pub struct Agent {
-    inner: rig::agent::Agent<ollama::CompletionModel>,
+    pub(crate) inner: rig::agent::Agent<ollama::CompletionModel>,
+    pub history: Vec<Message>,
 }
 
 impl Agent {
@@ -34,11 +36,10 @@ impl Agent {
             .preamble(DEFAULT_SYSTEM_PROMPT)
             .build();
 
-        Ok(Self { inner })
-    }
-
-    pub fn inner(&self) -> &rig::agent::Agent<ollama::CompletionModel> {
-        &self.inner
+        Ok(Self {
+            inner,
+            history: Vec::new(),
+        })
     }
 }
 
