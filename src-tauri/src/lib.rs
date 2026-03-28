@@ -1,3 +1,4 @@
+mod agent;
 mod cave;
 mod config;
 mod markdown;

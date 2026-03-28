@@ -53,13 +53,16 @@ pub struct Note {
 pub struct AgentConfig {
     pub provider: String,
     pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            provider: "openai".to_string(),
-            model: "gpt-4o".to_string(),
+            provider: "ollama".to_string(),
+            model: "qwen3.5:9b".to_string(),
+            base_url: None,
         }
     }
 }

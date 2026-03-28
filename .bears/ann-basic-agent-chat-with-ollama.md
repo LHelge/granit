@@ -5,7 +5,7 @@ type: epic
 status: open
 priority: P1
 created: 2026-03-27T21:33:13.847854674Z
-updated: 2026-03-27T21:33:13.847854674Z
+updated: 2026-03-28T14:35:58.009849286Z
 ---
 
 ## Scope
@@ -34,3 +34,4 @@ Add a basic AI chat agent using rig-core with Ollama as the provider. No tools, 
 - [ ] Agent responses are rendered with markdown formatting
 - [ ] Config: Ollama base URL and model name configurable in settings
 - [ ] Graceful error handling: Ollama not running, model not found, etc.
+- [ ] Default model: `qwen3.5:9b`
