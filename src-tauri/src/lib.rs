@@ -55,6 +55,8 @@ fn save_config(
     let mut config = state.lock_config()?;
     config.agent = agent;
     config.save_global()?;
+    // Reset the agent so it rebuilds with the new config on the next message.
+    *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
     Ok(config.to_ipc())
 }
 
