@@ -1,10 +1,10 @@
 ---
 id: kjn
 title: Implement send_message command with streaming events
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:33:42.039347935Z
-updated: 2026-03-27T21:33:42.039347935Z
+updated: 2026-03-28T22:58:37.034482269Z
 tags:
 - backend
 depends_on:
