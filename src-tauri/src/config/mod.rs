@@ -30,6 +30,7 @@ struct RawConfig {
 struct RawAgentConfig {
     provider: Option<String>,
     model: Option<String>,
+    base_url: Option<String>,
 }
 
 impl AppConfig {
@@ -60,6 +61,7 @@ impl AppConfig {
             agent: Some(RawAgentConfig {
                 provider: Some(self.agent.provider.clone()),
                 model: Some(self.agent.model.clone()),
+                base_url: self.agent.base_url.clone(),
             }),
         };
 
@@ -161,6 +163,7 @@ impl AppConfig {
                     .as_ref()
                     .and_then(|a| a.model.clone())
                     .unwrap_or(defaults.agent.model),
+                base_url: global.agent.as_ref().and_then(|a| a.base_url.clone()),
             },
             active_cave: None,
         };
@@ -173,6 +176,9 @@ impl AppConfig {
                 }
                 if let Some(model) = agent.model {
                     config.agent.model = model;
+                }
+                if let Some(base_url) = agent.base_url {
+                    config.agent.base_url = Some(base_url);
                 }
             }
             // recent_caves is global-only, not overridden by cave config
@@ -244,8 +250,8 @@ mod tests {
     #[test]
     fn test_merge_defaults_only() {
         let config = AppConfig::merge(RawConfig::default(), None);
-        assert_eq!(config.agent.provider, "openai");
-        assert_eq!(config.agent.model, "gpt-4o");
+        assert_eq!(config.agent.provider, "ollama");
+        assert_eq!(config.agent.model, "qwen3.5:9b");
         assert!(config.recent_caves.is_empty());
     }
 
@@ -256,11 +262,12 @@ mod tests {
             agent: Some(RawAgentConfig {
                 provider: Some("anthropic".to_string()),
                 model: None,
+                base_url: None,
             }),
         };
         let config = AppConfig::merge(global, None);
         assert_eq!(config.agent.provider, "anthropic");
-        assert_eq!(config.agent.model, "gpt-4o"); // default preserved
+        assert_eq!(config.agent.model, "qwen3.5:9b"); // default preserved
         assert_eq!(config.recent_caves.len(), 1);
     }
 
@@ -271,6 +278,7 @@ mod tests {
             agent: Some(RawAgentConfig {
                 provider: Some("openai".to_string()),
                 model: Some("gpt-4o".to_string()),
+                base_url: None,
             }),
         };
         let cave = RawConfig {
@@ -278,6 +286,7 @@ mod tests {
             agent: Some(RawAgentConfig {
                 provider: None,
                 model: Some("gpt-4o-mini".to_string()),
+                base_url: None,
             }),
         };
         let config = AppConfig::merge(global, Some(cave));
@@ -417,6 +426,7 @@ mod tests {
             agent: AgentConfig {
                 provider: "anthropic".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
+                base_url: None,
             },
             active_cave: None,
         };
@@ -427,6 +437,7 @@ mod tests {
             agent: Some(RawAgentConfig {
                 provider: Some(config.agent.provider.clone()),
                 model: Some(config.agent.model.clone()),
+                base_url: config.agent.base_url.clone(),
             }),
         };
         let yaml = serde_yml::to_string(&raw).unwrap();

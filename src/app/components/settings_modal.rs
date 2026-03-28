@@ -22,6 +22,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
             let agent = AgentConfig {
                 provider: provider.clone(),
                 model: model.clone(),
+                base_url: None,
             };
             match ipc::save_config(agent).await {
                 Ok(new_config) => {
