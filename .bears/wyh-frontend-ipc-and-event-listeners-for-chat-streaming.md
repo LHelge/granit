@@ -1,10 +1,10 @@
 ---
 id: wyh
 title: Frontend IPC and event listeners for chat streaming
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:33:53.343014628Z
-updated: 2026-03-27T21:33:53.343014628Z
+updated: 2026-03-28T23:01:30.728307404Z
 tags:
 - frontend
 depends_on:
