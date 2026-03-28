@@ -160,6 +160,11 @@ fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNo
 }
 
 #[tauri::command]
+fn render_markdown(content: String) -> String {
+    markdown::render_html(&content)
+}
+
+#[tauri::command]
 async fn send_message(
     msg: String,
     app: tauri::AppHandle,
@@ -249,6 +254,7 @@ pub fn run() {
             rename_note,
             update_note,
             render_note,
+            render_markdown,
             send_message,
         ])
         .run(tauri::generate_context!())
