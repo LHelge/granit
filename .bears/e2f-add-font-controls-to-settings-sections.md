@@ -1,10 +1,10 @@
 ---
 id: e2f
 title: Add font controls to settings sections
-status: open
+status: in_progress
 priority: P1
 created: 2026-03-27T21:38:06.579772716Z
-updated: 2026-03-29T21:02:47.426663590Z
+updated: 2026-03-29T21:21:35.333196917Z
 tags:
 - frontend
 depends_on:

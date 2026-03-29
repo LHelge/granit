@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use error::ConfigError;
-pub use granit_types::AgentConfig;
+pub use granit_types::{AgentConfig, FontConfig};
 pub use secrets::Secrets;
 
 /// Resolved application configuration (defaults ← global ← cave).
@@ -15,6 +15,9 @@ pub use secrets::Secrets;
 pub struct AppConfig {
     pub recent_caves: Vec<PathBuf>,
     pub agent: AgentConfig,
+    pub markdown_font: FontConfig,
+    pub reading_font: FontConfig,
+    pub agent_font: FontConfig,
     /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
     pub active_cave: Option<PathBuf>,
 }
@@ -24,6 +27,9 @@ pub struct AppConfig {
 struct RawConfig {
     recent_caves: Option<Vec<PathBuf>>,
     agent: Option<RawAgentConfig>,
+    markdown_font: Option<RawFontConfig>,
+    reading_font: Option<RawFontConfig>,
+    agent_font: Option<RawFontConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -31,6 +37,12 @@ struct RawAgentConfig {
     provider: Option<String>,
     model: Option<String>,
     base_url: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RawFontConfig {
+    font_family: Option<String>,
+    font_size: Option<u8>,
 }
 
 impl AppConfig {
@@ -63,6 +75,18 @@ impl AppConfig {
                 model: Some(self.agent.model.clone()),
                 base_url: self.agent.base_url.clone(),
             }),
+            markdown_font: Some(RawFontConfig {
+                font_family: Some(self.markdown_font.font_family.clone()),
+                font_size: Some(self.markdown_font.font_size),
+            }),
+            reading_font: Some(RawFontConfig {
+                font_family: Some(self.reading_font.font_family.clone()),
+                font_size: Some(self.reading_font.font_size),
+            }),
+            agent_font: Some(RawFontConfig {
+                font_family: Some(self.agent_font.font_family.clone()),
+                font_size: Some(self.agent_font.font_size),
+            }),
         };
 
         let yaml = serde_yml::to_string(&raw)?;
@@ -89,6 +113,9 @@ impl AppConfig {
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect(),
             agent: self.agent.clone(),
+            markdown_font: self.markdown_font.clone(),
+            reading_font: self.reading_font.clone(),
+            agent_font: self.agent_font.clone(),
             active_cave: self
                 .active_cave
                 .as_ref()
@@ -104,6 +131,9 @@ impl AppConfig {
             let config = Self {
                 recent_caves: Vec::new(),
                 agent: AgentConfig::default(),
+                markdown_font: FontConfig::markdown_default(),
+                reading_font: FontConfig::reading_default(),
+                agent_font: FontConfig::agent_default(),
                 active_cave: None,
             };
             config.save_global()?;
@@ -146,6 +176,9 @@ impl AppConfig {
         let defaults = AppConfig {
             recent_caves: Vec::new(),
             agent: AgentConfig::default(),
+            markdown_font: FontConfig::markdown_default(),
+            reading_font: FontConfig::reading_default(),
+            agent_font: FontConfig::agent_default(),
             active_cave: None,
         };
 
@@ -165,6 +198,9 @@ impl AppConfig {
                     .unwrap_or(defaults.agent.model),
                 base_url: global.agent.as_ref().and_then(|a| a.base_url.clone()),
             },
+            markdown_font: Self::merge_font(global.markdown_font, &defaults.markdown_font),
+            reading_font: Self::merge_font(global.reading_font, &defaults.reading_font),
+            agent_font: Self::merge_font(global.agent_font, &defaults.agent_font),
             active_cave: None,
         };
 
@@ -181,10 +217,40 @@ impl AppConfig {
                     config.agent.base_url = Some(base_url);
                 }
             }
+            if let Some(font) = cave.markdown_font {
+                Self::apply_font_overrides(&mut config.markdown_font, font);
+            }
+            if let Some(font) = cave.reading_font {
+                Self::apply_font_overrides(&mut config.reading_font, font);
+            }
+            if let Some(font) = cave.agent_font {
+                Self::apply_font_overrides(&mut config.agent_font, font);
+            }
             // recent_caves is global-only, not overridden by cave config
         }
 
         config
+    }
+
+    fn merge_font(raw: Option<RawFontConfig>, defaults: &FontConfig) -> FontConfig {
+        match raw {
+            Some(r) => FontConfig {
+                font_family: r
+                    .font_family
+                    .unwrap_or_else(|| defaults.font_family.clone()),
+                font_size: r.font_size.unwrap_or(defaults.font_size),
+            },
+            None => defaults.clone(),
+        }
+    }
+
+    fn apply_font_overrides(target: &mut FontConfig, overrides: RawFontConfig) {
+        if let Some(family) = overrides.font_family {
+            target.font_family = family;
+        }
+        if let Some(size) = overrides.font_size {
+            target.font_size = size;
+        }
     }
 }
 
@@ -319,6 +385,7 @@ mod tests {
                 model: None,
                 base_url: None,
             }),
+            ..Default::default()
         };
         let config = AppConfig::merge(global, None);
         assert_eq!(config.agent.provider, "anthropic");
@@ -335,6 +402,7 @@ mod tests {
                 model: Some("gpt-4o".to_string()),
                 base_url: None,
             }),
+            ..Default::default()
         };
         let cave = RawConfig {
             recent_caves: None,
@@ -343,6 +411,7 @@ mod tests {
                 model: Some("gpt-4o-mini".to_string()),
                 base_url: None,
             }),
+            ..Default::default()
         };
         let config = AppConfig::merge(global, Some(cave));
         assert_eq!(config.agent.provider, "openai");
@@ -483,6 +552,9 @@ mod tests {
                 model: "claude-sonnet-4-20250514".to_string(),
                 base_url: None,
             },
+            markdown_font: FontConfig::markdown_default(),
+            reading_font: FontConfig::reading_default(),
+            agent_font: FontConfig::agent_default(),
             active_cave: None,
         };
 
@@ -494,6 +566,7 @@ mod tests {
                 model: Some(config.agent.model.clone()),
                 base_url: config.agent.base_url.clone(),
             }),
+            ..Default::default()
         };
         let yaml = serde_yml::to_string(&raw).unwrap();
         fs::write(&config_path, yaml).unwrap();
@@ -530,5 +603,64 @@ mod tests {
     #[test]
     fn test_validate_secret_value_rejects_non_ascii() {
         assert!(validate_secret_value("sk-ant-│abc").is_err());
+    }
+
+    #[test]
+    fn test_merge_defaults_includes_font_defaults() {
+        let config = AppConfig::merge(RawConfig::default(), None);
+        assert_eq!(config.markdown_font, FontConfig::markdown_default());
+        assert_eq!(config.reading_font, FontConfig::reading_default());
+        assert_eq!(config.agent_font, FontConfig::agent_default());
+    }
+
+    #[test]
+    fn test_merge_font_partial_override() {
+        let global = RawConfig {
+            markdown_font: Some(RawFontConfig {
+                font_family: Some("JetBrains Mono".to_string()),
+                font_size: None,
+            }),
+            ..Default::default()
+        };
+        let config = AppConfig::merge(global, None);
+        assert_eq!(config.markdown_font.font_family, "JetBrains Mono");
+        assert_eq!(config.markdown_font.font_size, 14); // default preserved
+    }
+
+    #[test]
+    fn test_merge_font_cave_overrides_global() {
+        let global = RawConfig {
+            markdown_font: Some(RawFontConfig {
+                font_family: Some("monospace".to_string()),
+                font_size: Some(14),
+            }),
+            ..Default::default()
+        };
+        let cave = RawConfig {
+            markdown_font: Some(RawFontConfig {
+                font_family: None,
+                font_size: Some(18),
+            }),
+            ..Default::default()
+        };
+        let config = AppConfig::merge(global, Some(cave));
+        assert_eq!(config.markdown_font.font_family, "monospace");
+        assert_eq!(config.markdown_font.font_size, 18);
+    }
+
+    #[test]
+    fn test_load_yaml_without_font_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.yml");
+        fs::write(&path, "agent:\n  provider: ollama\n").unwrap();
+
+        let raw = AppConfig::load_raw(&path).unwrap();
+        assert!(raw.markdown_font.is_none());
+        assert!(raw.reading_font.is_none());
+        assert!(raw.agent_font.is_none());
+
+        // Merge should fill in defaults
+        let config = AppConfig::merge(raw, None);
+        assert_eq!(config.markdown_font, FontConfig::markdown_default());
     }
 }

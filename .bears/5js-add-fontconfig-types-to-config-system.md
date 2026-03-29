@@ -1,10 +1,10 @@
 ---
 id: 5js
 title: Add FontConfig types to config system
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:37:56.127460951Z
-updated: 2026-03-29T21:02:47.425271058Z
+updated: 2026-03-29T21:17:59.002567421Z
 tags:
 - backend
 - types
