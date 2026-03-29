@@ -636,6 +636,29 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_editor_cave_full_override() {
+        let global = RawConfig {
+            recent_caves: None,
+            agent: None,
+            editor: Some(RawEditorConfig {
+                font_family: Some("monospace".to_string()),
+                font_size: Some(14),
+            }),
+        };
+        let cave = RawConfig {
+            recent_caves: None,
+            agent: None,
+            editor: Some(RawEditorConfig {
+                font_family: Some("JetBrains Mono".to_string()),
+                font_size: Some(20),
+            }),
+        };
+        let config = AppConfig::merge(global, Some(cave));
+        assert_eq!(config.editor.font_family, "JetBrains Mono");
+        assert_eq!(config.editor.font_size, 20);
+    }
+
+    #[test]
     fn test_config_without_editor_loads_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.yml");
