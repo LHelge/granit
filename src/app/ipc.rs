@@ -74,6 +74,13 @@ pub async fn fetch_config() -> Result<AppConfig, String> {
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
+pub async fn list_system_fonts() -> Result<Vec<String>, String> {
+    let val = invoke("list_system_fonts", JsValue::NULL)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
 pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
     let args = serde_wasm_bindgen::to_value(&OpenCaveArgs {
         path: path.to_string(),

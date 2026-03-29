@@ -1,4 +1,5 @@
 mod agent;
+mod font_picker;
 mod markdown;
 mod reading;
 
@@ -56,10 +57,16 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
         signal(config.get_untracked().agent_font.font_family);
     let (ag_font_size, set_ag_font_size) = signal(config.get_untracked().agent_font.font_size);
 
+    // System fonts — loaded once when the modal opens
+    let (system_fonts, set_system_fonts) = signal(Vec::<String>::new());
+
     // Check if Anthropic API key is configured on modal open
     leptos::task::spawn_local(async move {
         if let Ok(Some(true)) = ipc::get_secret("ANTHROPIC_API_KEY").await {
             set_api_key_is_set.set(true);
+        }
+        if let Ok(fonts) = ipc::list_system_fonts().await {
+            set_system_fonts.set(fonts);
         }
     });
 
@@ -179,6 +186,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
 
                             <Show when=move || active_section.get() == SettingsSection::Markdown>
                                 <MarkdownSettings
+                                    fonts=system_fonts
                                     font_family=md_font_family
                                     set_font_family=set_md_font_family
                                     font_size=md_font_size
@@ -188,6 +196,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
 
                             <Show when=move || active_section.get() == SettingsSection::Reading>
                                 <ReadingSettings
+                                    fonts=system_fonts
                                     font_family=rd_font_family
                                     set_font_family=set_rd_font_family
                                     font_size=rd_font_size
@@ -206,6 +215,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                                     api_key=api_key
                                     set_api_key=set_api_key
                                     api_key_is_set=api_key_is_set
+                                    fonts=system_fonts
                                     font_family=ag_font_family
                                     set_font_family=set_ag_font_family
                                     font_size=ag_font_size
