@@ -39,6 +39,7 @@ struct UpdateNoteArgs {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SaveConfigArgs {
     agent: granit_types::AgentConfig,
     markdown_font: FontConfig,

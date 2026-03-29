@@ -1,10 +1,10 @@
 ---
 id: 5nd
 title: Apply font configs to editor, preview, and chat
-status: open
+status: in_progress
 priority: P1
 created: 2026-03-29T21:02:55.549080253Z
-updated: 2026-03-29T21:02:55.549080253Z
+updated: 2026-03-29T21:27:40.642014452Z
 tags:
 - frontend
 depends_on:

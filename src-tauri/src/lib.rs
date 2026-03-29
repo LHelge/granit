@@ -68,7 +68,13 @@ fn save_config(
     config.save_global()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
-    Ok(config.to_ipc())
+    let mut ipc = config.to_ipc();
+    ipc.active_cave = state
+        .lock_cave()
+        .map_err(|_| ConfigError::Poisoned)?
+        .as_ref()
+        .map(|c| c.path().to_string_lossy().into_owned());
+    Ok(ipc)
 }
 
 #[tauri::command]
