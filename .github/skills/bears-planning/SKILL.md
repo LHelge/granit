@@ -15,6 +15,32 @@ Create structured plans using the Bears task tracker — epics with ordered, dep
 - Organizing work with priorities and dependency chains
 - Scoping a refactor, bug fix, or new module
 
+## Installation
+
+Install `bea-rs` using one of the following methods:
+
+**From crates.io:**
+```sh
+cargo install bea-rs
+```
+
+**Pre-built binary (shell script):**
+```sh
+curl -fsSL https://raw.githubusercontent.com/LHelge/bea-rs/main/install.sh | sh
+```
+
+The script detects your OS and architecture, downloads the right binary from GitHub Releases, and installs it to `/usr/local/bin`. Falls back to `cargo install` if no pre-built binary is available.
+
+## MCP Server
+
+`bea` can run as an MCP server over **stdio** for AI coding agents:
+
+```sh
+bea mcp
+```
+
+Register with Claude Code (`claude mcp add`) or any MCP-compatible client by setting the command to `bea` with args `["mcp"]`.
+
 ## Tool Selection
 
 **Prefer Bears MCP tools** (`bears/*`) when available. They are structured and avoid shell parsing issues.
