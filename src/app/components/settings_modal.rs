@@ -125,8 +125,8 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                                     on:change=on_provider_change
                                     prop:value=move || provider.get()
                                 >
-                                    <option class="bg-stone-900 text-stone-200" value="ollama" selected=move || is_ollama()>"Ollama"</option>
-                                    <option class="bg-stone-900 text-stone-200" value="anthropic" selected=move || is_anthropic()>"Anthropic"</option>
+                                    <option class="bg-stone-900 text-stone-200" value="ollama" selected=is_ollama>"Ollama"</option>
+                                    <option class="bg-stone-900 text-stone-200" value="anthropic" selected=is_anthropic>"Anthropic"</option>
                                 </select>
                                 // Custom chevron
                                 <svg class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
