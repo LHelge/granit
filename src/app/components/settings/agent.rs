@@ -11,6 +11,10 @@ pub fn AgentSettings(
     api_key: ReadSignal<String>,
     set_api_key: WriteSignal<String>,
     api_key_is_set: ReadSignal<bool>,
+    font_family: ReadSignal<String>,
+    set_font_family: WriteSignal<String>,
+    font_size: ReadSignal<u8>,
+    set_font_size: WriteSignal<u8>,
 ) -> impl IntoView {
     // When provider changes, reset model to a sensible default
     let on_provider_change = move |ev: leptos::ev::Event| {
@@ -29,6 +33,39 @@ pub fn AgentSettings(
     view! {
         <fieldset class="space-y-3">
             <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Agent"</legend>
+
+            // Font family
+            <div class="space-y-1">
+                <label class="block text-xs text-stone-400" for="ag-font-family">"Font family"</label>
+                <input
+                    id="ag-font-family"
+                    type="text"
+                    class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                    placeholder="sans-serif"
+                    prop:value=move || font_family.get()
+                    on:input=move |ev| set_font_family.set(event_target_value(&ev))
+                />
+            </div>
+
+            // Font size
+            <div class="space-y-1">
+                <label class="block text-xs text-stone-400" for="ag-font-size">"Font size (px)"</label>
+                <input
+                    id="ag-font-size"
+                    type="number"
+                    min="8"
+                    max="48"
+                    class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                    prop:value=move || font_size.get().to_string()
+                    on:input=move |ev| {
+                        if let Ok(v) = event_target_value(&ev).parse::<u8>() {
+                            set_font_size.set(v);
+                        }
+                    }
+                />
+            </div>
+
+            <hr class="border-stone-600" />
 
             // Provider selector
             <div class="space-y-1">

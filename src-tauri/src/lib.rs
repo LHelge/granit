@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use agent::{Agent, AgentError};
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, Secrets};
-use granit_types::{AppConfig as IpcConfig, RenderedNote};
+use granit_types::{AppConfig as IpcConfig, FontConfig, RenderedNote};
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -50,15 +50,21 @@ fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
 }
 
 #[tauri::command]
-/// Save agent settings to the global config file.
+/// Save settings to the global config file.
 /// Cave-level config overrides are loaded at cave-open time but are not
 /// currently editable through the UI.
 fn save_config(
     agent: AgentConfig,
+    markdown_font: FontConfig,
+    reading_font: FontConfig,
+    agent_font: FontConfig,
     state: tauri::State<AppState>,
 ) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config()?;
     config.agent = agent;
+    config.markdown_font = markdown_font;
+    config.reading_font = reading_font;
+    config.agent_font = agent_font;
     config.save_global()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;

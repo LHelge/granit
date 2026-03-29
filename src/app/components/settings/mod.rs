@@ -6,7 +6,7 @@ use leptos::prelude::*;
 
 use crate::app::ipc;
 use agent::AgentSettings;
-use granit_types::{AgentConfig, AppConfig};
+use granit_types::{AgentConfig, AppConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 
@@ -45,6 +45,17 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
 
+    // Font signals for each section
+    let (md_font_family, set_md_font_family) =
+        signal(config.get_untracked().markdown_font.font_family);
+    let (md_font_size, set_md_font_size) = signal(config.get_untracked().markdown_font.font_size);
+    let (rd_font_family, set_rd_font_family) =
+        signal(config.get_untracked().reading_font.font_family);
+    let (rd_font_size, set_rd_font_size) = signal(config.get_untracked().reading_font.font_size);
+    let (ag_font_family, set_ag_font_family) =
+        signal(config.get_untracked().agent_font.font_family);
+    let (ag_font_size, set_ag_font_size) = signal(config.get_untracked().agent_font.font_size);
+
     // Check if Anthropic API key is configured on modal open
     leptos::task::spawn_local(async move {
         if let Ok(Some(true)) = ipc::get_secret("ANTHROPIC_API_KEY").await {
@@ -58,6 +69,18 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
         let model = model.get();
         let base_url = base_url.get();
         let api_key_val = api_key.get();
+        let markdown_font = FontConfig {
+            font_family: md_font_family.get(),
+            font_size: md_font_size.get(),
+        };
+        let reading_font = FontConfig {
+            font_family: rd_font_family.get(),
+            font_size: rd_font_size.get(),
+        };
+        let agent_font = FontConfig {
+            font_family: ag_font_family.get(),
+            font_size: ag_font_size.get(),
+        };
         let set_open = set_open;
         set_saving.set(true);
         set_save_error.set(None);
@@ -80,7 +103,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                     Some(base_url.clone())
                 },
             };
-            match ipc::save_config(agent).await {
+            match ipc::save_config(agent, markdown_font, reading_font, agent_font).await {
                 Ok(new_config) => {
                     config.set(new_config);
                     set_open.set(false);
@@ -155,11 +178,21 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Markdown>
-                                <MarkdownSettings />
+                                <MarkdownSettings
+                                    font_family=md_font_family
+                                    set_font_family=set_md_font_family
+                                    font_size=md_font_size
+                                    set_font_size=set_md_font_size
+                                />
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Reading>
-                                <ReadingSettings />
+                                <ReadingSettings
+                                    font_family=rd_font_family
+                                    set_font_family=set_rd_font_family
+                                    font_size=rd_font_size
+                                    set_font_size=set_rd_font_size
+                                />
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Agent>
@@ -173,6 +206,10 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                                     api_key=api_key
                                     set_api_key=set_api_key
                                     api_key_is_set=api_key_is_set
+                                    font_family=ag_font_family
+                                    set_font_family=set_ag_font_family
+                                    font_size=ag_font_size
+                                    set_font_size=set_ag_font_size
                                 />
                             </Show>
                         </div>

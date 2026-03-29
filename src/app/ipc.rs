@@ -2,7 +2,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
+use granit_types::{AppConfig, FontConfig, Note, NoteMeta, RenderedNote};
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 
@@ -41,6 +41,9 @@ struct UpdateNoteArgs {
 #[derive(Serialize)]
 struct SaveConfigArgs {
     agent: granit_types::AgentConfig,
+    markdown_font: FontConfig,
+    reading_font: FontConfig,
+    agent_font: FontConfig,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -134,9 +137,19 @@ pub async fn update_note(
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn save_config(agent: granit_types::AgentConfig) -> Result<AppConfig, String> {
-    let args =
-        serde_wasm_bindgen::to_value(&SaveConfigArgs { agent }).map_err(|e| format!("{e}"))?;
+pub async fn save_config(
+    agent: granit_types::AgentConfig,
+    markdown_font: FontConfig,
+    reading_font: FontConfig,
+    agent_font: FontConfig,
+) -> Result<AppConfig, String> {
+    let args = serde_wasm_bindgen::to_value(&SaveConfigArgs {
+        agent,
+        markdown_font,
+        reading_font,
+        agent_font,
+    })
+    .map_err(|e| format!("{e}"))?;
     let val = invoke("save_config", args)
         .await
         .map_err(js_err_to_string)?;
