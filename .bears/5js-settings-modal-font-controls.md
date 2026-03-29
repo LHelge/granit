@@ -1,10 +1,10 @@
 ---
 id: 5js
 title: Settings modal font controls
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:37:56.127460951Z
-updated: 2026-03-27T21:37:56.127460951Z
+updated: 2026-03-29T13:15:44.773091617Z
 tags:
 - frontend
 depends_on:

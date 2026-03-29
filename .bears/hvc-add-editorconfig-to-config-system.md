@@ -1,10 +1,10 @@
 ---
 id: hvc
 title: Add EditorConfig to config system
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:37:46.400844004Z
-updated: 2026-03-27T21:37:46.400844004Z
+updated: 2026-03-29T13:15:44.764465205Z
 tags:
 - backend
 parent: bp2

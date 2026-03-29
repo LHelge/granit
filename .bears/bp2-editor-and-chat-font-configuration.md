@@ -2,10 +2,10 @@
 id: bp2
 title: Editor and chat font configuration
 type: epic
-status: open
+status: done
 priority: P2
 created: 2026-03-27T21:37:34.875669640Z
-updated: 2026-03-27T21:37:34.875669640Z
+updated: 2026-03-29T13:15:44.780897242Z
 ---
 
 ## Scope

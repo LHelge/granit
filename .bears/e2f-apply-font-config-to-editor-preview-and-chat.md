@@ -1,10 +1,10 @@
 ---
 id: e2f
 title: Apply font config to editor, preview, and chat
-status: open
+status: done
 priority: P1
 created: 2026-03-27T21:38:06.579772716Z
-updated: 2026-03-27T21:38:06.579772716Z
+updated: 2026-03-29T13:15:44.780743936Z
 tags:
 - frontend
 depends_on:
