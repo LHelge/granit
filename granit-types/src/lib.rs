@@ -67,6 +67,22 @@ impl Default for AgentConfig {
     }
 }
 
+/// Editor appearance configuration (font family and size).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditorConfig {
+    pub font_family: String,
+    pub font_size: u8,
+}
+
+impl Default for EditorConfig {
+    fn default() -> Self {
+        Self {
+            font_family: "monospace".to_string(),
+            font_size: 14,
+        }
+    }
+}
+
 /// Application configuration as returned over IPC.
 ///
 /// Paths are represented as strings for cross-platform serialization.
@@ -74,6 +90,7 @@ impl Default for AgentConfig {
 pub struct AppConfig {
     pub recent_caves: Vec<String>,
     pub agent: AgentConfig,
+    pub editor: EditorConfig,
     /// The currently open cave path, if any. Runtime-only — not persisted.
     pub active_cave: Option<String>,
 }

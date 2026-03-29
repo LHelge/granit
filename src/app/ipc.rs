@@ -41,6 +41,7 @@ struct UpdateNoteArgs {
 #[derive(Serialize)]
 struct SaveConfigArgs {
     agent: granit_types::AgentConfig,
+    editor: granit_types::EditorConfig,
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -134,9 +135,12 @@ pub async fn update_note(
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn save_config(agent: granit_types::AgentConfig) -> Result<AppConfig, String> {
-    let args =
-        serde_wasm_bindgen::to_value(&SaveConfigArgs { agent }).map_err(|e| format!("{e}"))?;
+pub async fn save_config(
+    agent: granit_types::AgentConfig,
+    editor: granit_types::EditorConfig,
+) -> Result<AppConfig, String> {
+    let args = serde_wasm_bindgen::to_value(&SaveConfigArgs { agent, editor })
+        .map_err(|e| format!("{e}"))?;
     let val = invoke("save_config", args)
         .await
         .map_err(js_err_to_string)?;

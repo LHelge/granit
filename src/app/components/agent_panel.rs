@@ -1,10 +1,10 @@
 use crate::app::ipc;
-use granit_types::{ChatMessage, ChatRole};
+use granit_types::{AppConfig, ChatMessage, ChatRole};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 #[component]
-pub fn AgentPanel() -> impl IntoView {
+pub fn AgentPanel(config: RwSignal<AppConfig>) -> impl IntoView {
     let (input, set_input) = signal(String::new());
     // (message, rendered_html) — html is Some for assistant messages after streaming completes
     let messages: RwSignal<Vec<(ChatMessage, Option<String>)>> = RwSignal::new(Vec::new());
@@ -85,6 +85,14 @@ pub fn AgentPanel() -> impl IntoView {
         });
     };
 
+    let chat_style = move || {
+        let cfg = config.get();
+        format!(
+            "font-family: {}; font-size: {}px;",
+            cfg.editor.font_family, cfg.editor.font_size
+        )
+    };
+
     view! {
         <aside class="w-80 shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden">
             // Header
@@ -93,7 +101,7 @@ pub fn AgentPanel() -> impl IntoView {
             </div>
 
             // Message list
-            <div class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col">
+            <div class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col" style=chat_style>
                 // Empty state
                 <Show when=move || messages.get().is_empty() && !is_streaming.get() && streaming_content.get().is_empty()>
                     <p class="text-sm text-stone-500 italic text-center mt-8">"Ask me anything about your notes..."</p>

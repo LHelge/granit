@@ -2,12 +2,13 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::app::ipc;
-use granit_types::{Note, NoteMeta, RenderedNote};
+use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
 
 #[component]
 pub fn Editor(
     active_note: RwSignal<Option<Note>>,
     notes: RwSignal<Vec<NoteMeta>>,
+    config: RwSignal<AppConfig>,
 ) -> impl IntoView {
     let (editing, set_editing) = signal(false);
     let (content, set_content) = signal(String::new());
@@ -200,6 +201,14 @@ pub fn Editor(
 
     let has_note = move || active_note.get().is_some();
 
+    let editor_style = move || {
+        let cfg = config.get();
+        format!(
+            "font-family: {}; font-size: {}px;",
+            cfg.editor.font_family, cfg.editor.font_size
+        )
+    };
+
     view! {
         <main class="flex-1 flex flex-col overflow-hidden bg-stone-900 relative">
             // Floating action buttons — always top-right, no layout impact
@@ -302,6 +311,7 @@ pub fn Editor(
                                     }
                                 }
                                 <div
+                                    style=editor_style
                                     inner_html=move || rendered_note.get().map(|r| r.html).unwrap_or_default()
                                     on:click=on_prose_click
                                 />
@@ -316,7 +326,8 @@ pub fn Editor(
                                 on:input=move |ev| set_title_input.set(event_target_value(&ev))
                             />
                             <textarea
-                                class="not-prose w-full min-h-[60vh] bg-transparent text-stone-300 resize-none outline-none font-mono text-sm leading-relaxed"
+                                class="not-prose w-full min-h-[60vh] bg-transparent text-stone-300 resize-none outline-none leading-relaxed"
+                                style=editor_style
                                 placeholder="Start writing..."
                                 prop:value=move || content.get()
                                 on:input=move |ev| set_content.set(event_target_value(&ev))

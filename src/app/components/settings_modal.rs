@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::app::ipc;
-use granit_types::{AgentConfig, AppConfig};
+use granit_types::{AgentConfig, AppConfig, EditorConfig};
 
 #[component]
 pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -> impl IntoView {
@@ -12,6 +12,9 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
         signal(config.get_untracked().agent.base_url.unwrap_or_default());
     let (api_key, set_api_key) = signal(String::new());
     let (api_key_is_set, set_api_key_is_set) = signal(false);
+    let (editor_font, set_editor_font) = signal(config.get_untracked().editor.font_family);
+    let (editor_font_size, set_editor_font_size) =
+        signal(config.get_untracked().editor.font_size.to_string());
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
 
@@ -39,6 +42,8 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
         let model = model.get();
         let base_url = base_url.get();
         let api_key_val = api_key.get();
+        let font_family = editor_font.get();
+        let font_size_str = editor_font_size.get();
         let set_open = set_open;
         set_saving.set(true);
         set_save_error.set(None);
@@ -61,7 +66,15 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                     Some(base_url.clone())
                 },
             };
-            match ipc::save_config(agent).await {
+            let editor = EditorConfig {
+                font_family: if font_family.trim().is_empty() {
+                    "monospace".to_string()
+                } else {
+                    font_family
+                },
+                font_size: font_size_str.parse::<u8>().unwrap_or(14).clamp(8, 32),
+            };
+            match ipc::save_config(agent, editor).await {
                 Ok(new_config) => {
                     config.set(new_config);
                     set_open.set(false);
@@ -185,6 +198,40 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                                 </p>
                             </div>
                         </Show>
+                    </fieldset>
+
+                    <fieldset class="space-y-3">
+                        <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Editor"</legend>
+
+                        // Font family
+                        <div class="space-y-1">
+                            <label class="block text-xs text-stone-400" for="settings-font-family">"Font Family"</label>
+                            <input
+                                id="settings-font-family"
+                                type="text"
+                                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                                placeholder="monospace"
+                                prop:value=move || editor_font.get()
+                                on:input=move |ev| set_editor_font.set(event_target_value(&ev))
+                            />
+                            <p class="text-xs text-stone-500">"e.g. \"monospace\", \"JetBrains Mono\", \"Inter\""</p>
+                        </div>
+
+                        // Font size
+                        <div class="space-y-1">
+                            <label class="block text-xs text-stone-400" for="settings-font-size">"Font Size"</label>
+                            <input
+                                id="settings-font-size"
+                                type="number"
+                                min="8"
+                                max="32"
+                                class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                                placeholder="14"
+                                prop:value=move || editor_font_size.get()
+                                on:input=move |ev| set_editor_font_size.set(event_target_value(&ev))
+                            />
+                            <p class="text-xs text-stone-500">"Size in pixels (8\u{2013}32)"</p>
+                        </div>
                     </fieldset>
 
                     // Actions
