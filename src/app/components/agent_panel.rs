@@ -1,10 +1,10 @@
 use crate::app::ipc;
-use granit_types::{ChatMessage, ChatRole};
+use granit_types::{AppConfig, ChatMessage, ChatRole};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 #[component]
-pub fn AgentPanel() -> impl IntoView {
+pub fn AgentPanel(config: RwSignal<AppConfig>) -> impl IntoView {
     let (input, set_input) = signal(String::new());
     // (message, rendered_html) — html is Some for assistant messages after streaming completes
     let messages: RwSignal<Vec<(ChatMessage, Option<String>)>> = RwSignal::new(Vec::new());
@@ -93,10 +93,14 @@ pub fn AgentPanel() -> impl IntoView {
             </div>
 
             // Message list
-            <div class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col">
+            <div
+                class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col"
+                style:font-family=move || config.get().agent_font.font_family
+                style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+            >
                 // Empty state
                 <Show when=move || messages.get().is_empty() && !is_streaming.get() && streaming_content.get().is_empty()>
-                    <p class="text-sm text-stone-500 italic text-center mt-8">"Ask me anything about your notes..."</p>
+                    <p class="text-stone-500 italic text-center mt-8">"Ask me anything about your notes..."</p>
                 </Show>
 
                 // Committed messages
@@ -106,10 +110,11 @@ pub fn AgentPanel() -> impl IntoView {
                     children=|(msg, html)| {
                         let is_user = msg.role == ChatRole::User;
                         let bubble_class = if is_user {
-                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 text-sm whitespace-pre-wrap break-words"
+                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 whitespace-pre-wrap break-words"
                         } else {
-                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm prose prose-invert prose-sm max-w-none"
+                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 prose prose-sm prose-invert max-w-none"
                         };
+                        let bubble_style = if is_user { "" } else { "font-size: inherit" };
                         let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
                         view! {
                             <div class=wrapper_class>
@@ -117,6 +122,7 @@ pub fn AgentPanel() -> impl IntoView {
                                     view! {
                                         <div
                                             class=bubble_class
+                                            style=bubble_style
                                             inner_html=rendered
                                         />
                                     }.into_any()
@@ -135,7 +141,7 @@ pub fn AgentPanel() -> impl IntoView {
                 // Streaming response in progress
                 <Show when=move || is_streaming.get() || !streaming_content.get().is_empty()>
                     <div class="flex justify-start">
-                        <div class="max-w-[85%] px-3 py-2 rounded-lg bg-stone-750 text-stone-200 text-sm whitespace-pre-wrap break-words">
+                        <div class="max-w-[85%] px-3 py-2 rounded-lg bg-stone-750 text-stone-200 whitespace-pre-wrap break-words">
                             {move || {
                                 let content = streaming_content.get();
                                 if content.is_empty() {
@@ -150,7 +156,7 @@ pub fn AgentPanel() -> impl IntoView {
 
                 // Error
                 <Show when=move || stream_error.get().is_some()>
-                    <div class="px-3 py-2 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-xs">
+                    <div class="px-3 py-2 rounded-lg bg-red-900/40 border border-red-700 text-red-300">
                         {move || stream_error.get().unwrap_or_default()}
                     </div>
                 </Show>
@@ -164,7 +170,9 @@ pub fn AgentPanel() -> impl IntoView {
                 <div class="flex gap-2">
                     <input
                         type="text"
-                        class="flex-1 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
+                        style:font-family=move || config.get().agent_font.font_family
+                        style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+                        class="flex-1 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
                         placeholder="Message..."
                         prop:value=move || input.get()
                         prop:disabled=move || is_streaming.get()

@@ -104,11 +104,11 @@ pub fn App() -> impl IntoView {
                 </Show>
 
                 // Editor (center)
-                <Editor active_note=active_note notes=notes />
+                <Editor active_note=active_note notes=notes config=config />
 
                 // Agent panel (right)
                 <Show when=move || agent_visible.get()>
-                    <AgentPanel />
+                    <AgentPanel config=config />
                 </Show>
             </div>
 
