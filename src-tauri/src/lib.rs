@@ -50,6 +50,15 @@ fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
 }
 
 #[tauri::command]
+fn list_system_fonts() -> Vec<String> {
+    let source = font_kit::source::SystemSource::new();
+    let mut families = source.all_families().unwrap_or_default();
+    families.sort();
+    families.dedup();
+    families
+}
+
+#[tauri::command]
 /// Save settings to the global config file.
 /// Cave-level config overrides are loaded at cave-open time but are not
 /// currently editable through the UI.
@@ -298,6 +307,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            list_system_fonts,
             open_cave,
             create_note,
             list_notes,

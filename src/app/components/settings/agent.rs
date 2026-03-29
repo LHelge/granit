@@ -1,5 +1,7 @@
 use leptos::prelude::*;
 
+use super::font_picker::FontPicker;
+
 #[component]
 pub fn AgentSettings(
     provider: ReadSignal<String>,
@@ -11,6 +13,7 @@ pub fn AgentSettings(
     api_key: ReadSignal<String>,
     set_api_key: WriteSignal<String>,
     api_key_is_set: ReadSignal<bool>,
+    fonts: ReadSignal<Vec<String>>,
     font_family: ReadSignal<String>,
     set_font_family: WriteSignal<String>,
     font_size: ReadSignal<u8>,
@@ -36,14 +39,12 @@ pub fn AgentSettings(
 
             // Font family
             <div class="space-y-1">
-                <label class="block text-xs text-stone-400" for="ag-font-family">"Font family"</label>
-                <input
+                <label class="block text-xs text-stone-400">"Font family"</label>
+                <FontPicker
+                    fonts=fonts
+                    value=font_family
+                    set_value=set_font_family
                     id="ag-font-family"
-                    type="text"
-                    class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                    placeholder="sans-serif"
-                    prop:value=move || font_family.get()
-                    on:input=move |ev| set_font_family.set(event_target_value(&ev))
                 />
             </div>
 
