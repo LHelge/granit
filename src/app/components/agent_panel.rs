@@ -13,16 +13,24 @@ pub fn AgentPanel() -> impl IntoView {
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
 
     // Register event listeners once on mount.
+    // The returned EventHandles are stored in `_handles` to keep the JS
+    // closures alive. When this future (and `_handles`) is dropped, the
+    // unlisten functions run and memory is freed.
     Effect::new(move |_| {
         spawn_local(async move {
+            let mut _handles = Vec::new();
+
             // chunk → append to streaming_content
-            ipc::listen_stream_chunk(move |text| {
+            if let Some(h) = ipc::listen_stream_chunk(move |text| {
                 streaming_content.update(|s| s.push_str(&text));
             })
-            .await;
+            .await
+            {
+                _handles.push(h);
+            }
 
             // done → render markdown, then move into messages
-            ipc::listen_stream_done(move || {
+            if let Some(h) = ipc::listen_stream_done(move || {
                 let content = streaming_content.get_untracked();
                 if !content.is_empty() {
                     spawn_local(async move {
@@ -35,15 +43,26 @@ pub fn AgentPanel() -> impl IntoView {
                     is_streaming.set(false);
                 }
             })
-            .await;
+            .await
+            {
+                _handles.push(h);
+            }
 
             // error
-            ipc::listen_stream_error(move |err| {
+            if let Some(h) = ipc::listen_stream_error(move |err| {
                 stream_error.set(Some(err));
                 streaming_content.set(String::new());
                 is_streaming.set(false);
             })
-            .await;
+            .await
+            {
+                _handles.push(h);
+            }
+
+            // Keep handles alive for the component lifetime.
+            // This future is owned by the Effect; when the reactive owner
+            // is cleaned up, the future is dropped along with these handles.
+            std::future::pending::<()>().await;
         });
     });
 
@@ -89,7 +108,7 @@ pub fn AgentPanel() -> impl IntoView {
                         let bubble_class = if is_user {
                             "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 text-sm whitespace-pre-wrap break-words"
                         } else {
-                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-750 text-stone-200 text-sm prose prose-invert prose-sm max-w-none"
+                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 text-sm prose prose-invert prose-sm max-w-none"
                         };
                         let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
                         view! {

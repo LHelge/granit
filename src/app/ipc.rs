@@ -234,9 +234,9 @@ pub async fn send_message(msg: &str) -> Result<(), String> {
         .map_err(js_err_to_string)
 }
 
-/// Register a one-shot closure to be called for each streaming text chunk.
-/// Returns an unlisten closure — call it to remove the listener.
-pub async fn listen_stream_chunk(cb: impl Fn(String) + 'static) -> Option<js_sys::Function> {
+/// Register a closure to be called for each streaming text chunk.
+/// Returns an [`EventHandle`] — drop it to remove the listener.
+pub async fn listen_stream_chunk(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
     listen_event("agent:stream-chunk", move |payload: JsValue| {
         // Tauri 2 event payload: { payload: <data> }
         let text = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
@@ -249,12 +249,12 @@ pub async fn listen_stream_chunk(cb: impl Fn(String) + 'static) -> Option<js_sys
 }
 
 /// Register a closure called when streaming is done.
-pub async fn listen_stream_done(cb: impl Fn() + 'static) -> Option<js_sys::Function> {
+pub async fn listen_stream_done(cb: impl Fn() + 'static) -> Option<EventHandle> {
     listen_event("agent:stream-done", move |_| cb()).await
 }
 
 /// Register a closure called on a streaming error.
-pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<js_sys::Function> {
+pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
     listen_event("agent:stream-error", move |payload: JsValue| {
         let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
             .ok()
@@ -265,9 +265,23 @@ pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<js_sys
     .await
 }
 
+/// Handle returned by `listen_event`. Dropping this calls the unlisten
+/// function and frees the JS closure — no leaked memory.
+pub struct EventHandle {
+    _closure: Closure<dyn Fn(JsValue)>,
+    unlisten: js_sys::Function,
+}
+
+impl Drop for EventHandle {
+    fn drop(&mut self) {
+        let _ = self.unlisten.call0(&JsValue::NULL);
+    }
+}
+
 /// Internal helper: call `window.__TAURI__.event.listen(event, handler)`.
-/// Awaits the Promise and returns the unlisten function.
-async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<js_sys::Function> {
+/// Returns an [`EventHandle`] that keeps the closure alive. Dropping
+/// the handle calls the Tauri unlisten function and frees the closure.
+async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<EventHandle> {
     let win: JsValue = web_sys::window()?.into();
     let tauri = js_sys::Reflect::get(&win, &JsValue::from_str("__TAURI__")).ok()?;
     let event_ns = js_sys::Reflect::get(&tauri, &JsValue::from_str("event")).ok()?;
@@ -278,8 +292,10 @@ async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<js_
     let promise = listen_fn
         .call2(&event_ns, &JsValue::from_str(event), handler.as_ref())
         .ok()?;
-    handler.forget(); // keep the closure alive for the duration of listening
 
     let unlisten = JsFuture::from(js_sys::Promise::from(promise)).await.ok()?;
-    Some(js_sys::Function::from(unlisten))
+    Some(EventHandle {
+        _closure: handler,
+        unlisten: js_sys::Function::from(unlisten),
+    })
 }

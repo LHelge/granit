@@ -72,10 +72,9 @@ pub fn resolve_wiki_links<'lookup>(
                     output.push_str(&format!("[{link_text}](<{slug}>)"));
                     outgoing.push(slug.to_string());
                 } else {
-                    // Unresolved: clickable broken-link anchor (raw HTML passthrough in pulldown-cmark)
-                    output.push_str(&format!(
-                        "<a href=\"{link_text}\" class=\"broken-link\">{link_text}</a>"
-                    ));
+                    // Unresolved: markdown link with a broken-link marker as title.
+                    // The frontend can style links whose title equals "broken-link".
+                    output.push_str(&format!("[{link_text}](<{link_text}> \"broken-link\")"));
                 }
                 remaining = &after_open[close + 2..];
                 continue;
@@ -191,7 +190,13 @@ fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
 /// Render a markdown string to HTML using pulldown-cmark.
 ///
 /// Options enabled: tables, strikethrough, task lists, footnotes.
+///
+/// Raw HTML in the markdown source (`Event::Html`, `Event::InlineHtml`) is
+/// escaped to prevent XSS — LLM responses or user content cannot inject
+/// arbitrary HTML/JS into the webview.
 pub(crate) fn render_html(markdown: &str) -> String {
+    use pulldown_cmark::{Event, Tag, TagEnd};
+
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -199,8 +204,22 @@ pub(crate) fn render_html(markdown: &str) -> String {
     options.insert(Options::ENABLE_FOOTNOTES);
 
     let parser = Parser::new_ext(markdown, options);
+
+    // Sanitize: convert raw HTML events to escaped text so untrusted
+    // content cannot inject scripts or arbitrary markup.
+    let sanitized = parser.flat_map(|event| match event {
+        Event::Html(raw) | Event::InlineHtml(raw) => {
+            vec![
+                Event::Start(Tag::CodeBlock(pulldown_cmark::CodeBlockKind::Indented)),
+                Event::Text(raw),
+                Event::End(TagEnd::CodeBlock),
+            ]
+        }
+        other => vec![other],
+    });
+
     let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, sanitized);
     html_output
 }
 
@@ -442,5 +461,65 @@ mod tests {
         let (out, links) = resolve_wiki_links("[[]] is not a link.", |_| None);
         assert_eq!(out, "[[]] is not a link.");
         assert!(links.is_empty());
+    }
+
+    // ── HTML sanitization ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_raw_html_script_is_escaped() {
+        let html = render_html("<script>alert('xss')</script>");
+        assert!(
+            !html.contains("<script>"),
+            "raw <script> must not pass through: {html}"
+        );
+    }
+
+    #[test]
+    fn test_inline_html_is_escaped() {
+        let html = render_html("Hello <b>bold</b> world");
+        assert!(
+            !html.contains("<b>bold</b>"),
+            "inline HTML tags must not pass through: {html}"
+        );
+    }
+
+    #[test]
+    fn test_img_onerror_is_escaped() {
+        let html = render_html("<img src=x onerror=alert(1)>");
+        assert!(
+            !html.contains("<img"),
+            "raw <img> tags must not pass through: {html}"
+        );
+    }
+
+    #[test]
+    fn test_raw_html_content_is_visible() {
+        let html = render_html("<div>some content</div>");
+        assert!(
+            html.contains("some content"),
+            "text inside raw HTML should still be visible: {html}"
+        );
+    }
+
+    #[test]
+    fn test_markdown_formatting_still_works() {
+        let html = render_html("**bold** and `code`");
+        assert!(html.contains("<strong>bold</strong>"), "got: {html}");
+        assert!(html.contains("<code>code</code>"), "got: {html}");
+    }
+
+    #[test]
+    fn test_broken_wiki_link_renders_without_raw_html() {
+        let result = render_note("See [[nonexistent]].", "test", |_| None);
+        assert!(
+            result.html.contains("nonexistent"),
+            "broken link text should be visible: {}",
+            result.html
+        );
+        assert!(
+            result.html.contains("broken-link"),
+            "broken-link title should be in the rendered link: {}",
+            result.html
+        );
     }
 }
