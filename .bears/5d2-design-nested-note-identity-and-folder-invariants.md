@@ -1,7 +1,7 @@
 ---
 id: 5d2
 title: Design nested note identity and folder invariants
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:42:05.040118Z
 updated: 2026-03-27T12:44:25.734535Z
@@ -18,6 +18,44 @@ depends_on:
 - n59
 parent: ph5
 ---
+
+## Design Decisions (Settled)
+
+### Identity model
+
+- **Primary key** for all operations = `relative_path` — the POSIX-style path from the cave root (e.g. `notes/foo.md`, or just `foo.md` for root notes). This is what every backend command and IPC call uses to address a note.
+- **Slug** = filename without `.md` extension (e.g. `foo`). Globally unique across the entire cave tree. Used for wiki-link resolution only.
+- **Title** = slug (filename-derived), unchanged from current behaviour.
+
+### Uniqueness rule
+
+- No two `.md` files anywhere in the cave may share the same filename (slug). This is enforced at `create_note` and future `rename_note` / `move_note` time.
+- The in-memory index (`Cave.notes`) maps `slug → absolute PathBuf`. Slug-uniqueness is the invariant; relative_path is derived from the absolute path.
+
+### Path representation
+
+- `NoteMeta.relative_path` carries the full relative path from cave root with forward slashes (e.g. `folder/sub/note.md`). For root notes this is just `note.md` (same as before).
+- `NoteMeta.slug` stays filename-only (no directory component).
+- IPC commands that previously took `name: String` (slug) are changed to take `path: String` (relative_path). The frontend always has the `NoteMeta` in hand, so it passes `meta.relative_path`.
+
+### list_notes
+
+- Returns a flat `Vec<NoteMeta>` with `relative_path` fully populated for all notes recursively. The frontend builds the display tree from these flat data.
+
+### Folder operations
+
+- New command `create_folder(path: String)` creates a subdirectory within the cave. Path is relative from cave root.
+- No explicit folder-delete command in this iteration (deferred).
+
+### Backend index
+
+- `Cave.notes` remains `HashMap<String, PathBuf>` keyed by slug. Recursive scan populates it.
+- `scan_dir` becomes recursive, visiting subdirectories (skipping `.granit/` and hidden dirs).
+- Duplicate slug detection on scan: log a warning, skip the duplicate (first one wins).
+
+### Error variants
+
+- No new error variants needed for this phase; `CaveError::AlreadyExists` and `CaveError::NotFound` continue to carry the slug string.
 
 ## Summary
 
