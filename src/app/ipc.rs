@@ -15,8 +15,14 @@ extern "C" {
 // ── Argument structs ───────────────────────────────────────────────
 
 #[derive(Serialize)]
-struct NameArg {
+struct CreateNoteArgs {
     name: String,
+    folder: Option<String>,
+}
+
+#[derive(Serialize)]
+struct FolderPathArg {
+    path: String,
 }
 
 #[derive(Serialize)]
@@ -97,9 +103,10 @@ pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-pub async fn create_note(name: &str) -> Result<NoteMeta, String> {
-    let args = serde_wasm_bindgen::to_value(&NameArg {
+pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
+    let args = serde_wasm_bindgen::to_value(&CreateNoteArgs {
         name: name.to_string(),
+        folder: folder.map(str::to_string),
     })
     .map_err(|e| format!("{e}"))?;
     let val = invoke("create_note", args)
@@ -108,8 +115,24 @@ pub async fn create_note(name: &str) -> Result<NoteMeta, String> {
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
+#[allow(dead_code)]
+pub async fn create_folder(path: &str) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&FolderPathArg {
+        path: path.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("create_folder", args)
+        .await
+        .map_err(js_err_to_string)?;
+    Ok(())
+}
+
 pub async fn read_note(name: &str) -> Result<Note, String> {
-    let args = serde_wasm_bindgen::to_value(&NameArg {
+    #[derive(Serialize)]
+    struct Args {
+        name: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
         name: name.to_string(),
     })
     .map_err(|e| format!("{e}"))?;
@@ -118,7 +141,11 @@ pub async fn read_note(name: &str) -> Result<Note, String> {
 }
 
 pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
-    let args = serde_wasm_bindgen::to_value(&NameArg {
+    #[derive(Serialize)]
+    struct Args {
+        name: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
         name: name.to_string(),
     })
     .map_err(|e| format!("{e}"))?;

@@ -146,6 +146,11 @@ fn create_note(
 }
 
 #[tauri::command]
+fn create_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| cave.create_folder(&path))
+}
+
+#[tauri::command]
 fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError> {
     with_cave(&state, |cave| cave.list_notes())
 }
@@ -316,6 +321,7 @@ pub fn run() {
             list_system_fonts,
             open_cave,
             create_note,
+            create_folder,
             list_notes,
             read_note,
             save_note,
