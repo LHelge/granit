@@ -1,3 +1,4 @@
+use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
 use web_sys::{DragEvent, MouseEvent};
 
@@ -172,6 +173,7 @@ fn handle_drop(
 enum ContextTarget {
     Note(String),   // slug
     Folder(String), // relative path from cave root
+    Root,           // cave root (empty area)
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +181,13 @@ struct ContextMenu {
     x: i32,
     y: i32,
     target: ContextTarget,
+}
+
+/// What is currently being renamed inline.
+#[derive(Clone, Debug)]
+enum RenameTarget {
+    Note(String),   // slug
+    Folder(String), // relative path
 }
 
 // ── Components ─────────────────────────────────────────────────────
@@ -193,6 +202,7 @@ pub fn NoteList(
     let context_menu: RwSignal<Option<ContextMenu>> = RwSignal::new(None);
     let drag_payload: RwSignal<Option<DragPayload>> = RwSignal::new(None);
     let folders: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
+    let renaming: RwSignal<Option<RenameTarget>> = RwSignal::new(None);
 
     // Fetch folder list on mount.
     leptos::task::spawn_local(async move {
@@ -204,6 +214,15 @@ pub fn NoteList(
     view! {
         <div
             class="relative min-h-full"
+            on:contextmenu=move |e: MouseEvent| {
+                // Root-level right-click — show "New folder" at cave root.
+                e.prevent_default();
+                context_menu.set(Some(ContextMenu {
+                    x: e.client_x(),
+                    y: e.client_y(),
+                    target: ContextTarget::Root,
+                }));
+            }
             on:dragover=move |e: DragEvent| {
                 // Allow drop anywhere — this is the cave-root drop target.
                 // Folder drop handlers call stop_propagation so this only fires
@@ -245,7 +264,7 @@ pub fn NoteList(
                             {tree
                                 .into_iter()
                                 .map(|node| {
-                                    render_node(node, active_note, error_msg, notes, folders, context_menu, drag_payload, 0)
+                                    render_node(node, active_note, error_msg, notes, folders, context_menu, drag_payload, renaming, 0)
                                 })
                                 .collect_view()}
                         </ul>
@@ -276,8 +295,18 @@ pub fn NoteList(
                         >
                             {match target {
                                 ContextTarget::Note(slug) => {
+                                    let slug_rename = slug.clone();
                                     let slug_del = slug.clone();
                                     view! {
+                                        <button
+                                            class="w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors"
+                                            on:click=move |_| {
+                                                context_menu.set(None);
+                                                renaming.set(Some(RenameTarget::Note(slug_rename.clone())));
+                                            }
+                                        >
+                                            "Rename"
+                                        </button>
                                         <button
                                             class="w-full text-left px-3 py-1.5 text-red-400 hover:bg-stone-700 transition-colors"
                                             on:click=move |_| {
@@ -305,13 +334,15 @@ pub fn NoteList(
                                     .into_any()
                                 }
                                 ContextTarget::Folder(path) => {
-                                    let path_new = path.clone();
+                                    let path_new_note = path.clone();
+                                    let path_new_folder = path.clone();
+                                    let path_rename = path.clone();
                                     let path_del = path.clone();
                                     view! {
                                         <button
                                             class="w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors"
                                             on:click=move |_| {
-                                                let p = path_new.clone();
+                                                let p = path_new_note.clone();
                                                 context_menu.set(None);
                                                 leptos::task::spawn_local(async move {
                                                     match ipc::create_note("untitled", Some(&p)).await {
@@ -334,6 +365,40 @@ pub fn NoteList(
                                             "New note here"
                                         </button>
                                         <button
+                                            class="w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors"
+                                            on:click=move |_| {
+                                                let p = path_new_folder.clone();
+                                                context_menu.set(None);
+                                                leptos::task::spawn_local(async move {
+                                                    let new_path = if p.is_empty() {
+                                                        "new-folder".to_string()
+                                                    } else {
+                                                        format!("{p}/new-folder")
+                                                    };
+                                                    match ipc::create_folder(&new_path).await {
+                                                        Ok(()) => {
+                                                            refresh_tree(notes, folders, error_msg).await;
+                                                            renaming.set(Some(RenameTarget::Folder(new_path)));
+                                                        }
+                                                        Err(e) => error_msg.set(Some(format!(
+                                                            "Failed to create folder: {e}"
+                                                        ))),
+                                                    }
+                                                });
+                                            }
+                                        >
+                                            "New folder here"
+                                        </button>
+                                        <button
+                                            class="w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors"
+                                            on:click=move |_| {
+                                                context_menu.set(None);
+                                                renaming.set(Some(RenameTarget::Folder(path_rename.clone())));
+                                            }
+                                        >
+                                            "Rename"
+                                        </button>
+                                        <button
                                             class="w-full text-left px-3 py-1.5 text-red-400 hover:bg-stone-700 transition-colors"
                                             on:click=move |_| {
                                                 let p = path_del.clone();
@@ -345,7 +410,6 @@ pub fn NoteList(
                                                         )));
                                                         return;
                                                     }
-                                                    // Clear active note if it was inside the deleted folder
                                                     if active_note
                                                         .get()
                                                         .map(|n| {
@@ -362,6 +426,30 @@ pub fn NoteList(
                                             }
                                         >
                                             "Delete folder"
+                                        </button>
+                                    }
+                                    .into_any()
+                                }
+                                ContextTarget::Root => {
+                                    view! {
+                                        <button
+                                            class="w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors"
+                                            on:click=move |_| {
+                                                context_menu.set(None);
+                                                leptos::task::spawn_local(async move {
+                                                    match ipc::create_folder("new-folder").await {
+                                                        Ok(()) => {
+                                                            refresh_tree(notes, folders, error_msg).await;
+                                                            renaming.set(Some(RenameTarget::Folder("new-folder".to_string())));
+                                                        }
+                                                        Err(e) => error_msg.set(Some(format!(
+                                                            "Failed to create folder: {e}"
+                                                        ))),
+                                                    }
+                                                });
+                                            }
+                                        >
+                                            "New folder"
                                         </button>
                                     }
                                     .into_any()
@@ -386,6 +474,7 @@ fn render_node(
     folders: RwSignal<Vec<String>>,
     context_menu: RwSignal<Option<ContextMenu>>,
     drag_payload: RwSignal<Option<DragPayload>>,
+    renaming: RwSignal<Option<RenameTarget>>,
     depth: usize,
 ) -> impl IntoView {
     let indent_px = depth * 12;
@@ -394,33 +483,11 @@ fn render_node(
     match node {
         TreeNode::Note(meta) => {
             let slug = meta.slug.clone();
-            let display = meta.slug.clone();
-            let is_active = move || {
-                active_note
-                    .get()
-                    .map(|n| n.meta.slug == slug)
-                    .unwrap_or(false)
-            };
-            let slug_click = meta.slug.clone();
-            let slug_ctx = meta.slug.clone();
             let slug_drag = meta.slug.clone();
-            let on_click = move |_| {
-                let s = slug_click.clone();
-                leptos::task::spawn_local(async move {
-                    match ipc::read_note(&s).await {
-                        Ok(note) => active_note.set(Some(note)),
-                        Err(e) => error_msg.set(Some(format!("Failed to load note: {e}"))),
-                    }
-                });
-            };
-            let on_contextmenu = move |e: MouseEvent| {
-                e.prevent_default();
-                context_menu.set(Some(ContextMenu {
-                    x: e.client_x(),
-                    y: e.client_y(),
-                    target: ContextTarget::Note(slug_ctx.clone()),
-                }));
-            };
+            let slug_rename = meta.slug.clone();
+            let slug_rename_check = meta.slug.clone();
+            let display = meta.slug.clone();
+            let is_renaming = move || matches!(renaming.get(), Some(RenameTarget::Note(ref s)) if *s == slug_rename_check);
             let on_dragstart = move |e: DragEvent| {
                 e.stop_propagation();
                 drag_payload.set(Some(DragPayload::Note(slug_drag.clone())));
@@ -430,27 +497,80 @@ fn render_node(
                     draggable="true"
                     on:dragstart=on_dragstart
                 >
-                    <button
-                        class=move || {
-                            let base = "w-full text-left py-1 text-sm truncate transition-colors flex items-center gap-1";
-                            if is_active() {
-                                format!("{base} bg-stone-700 text-stone-100")
-                            } else {
-                                format!("{base} text-stone-300 hover:bg-stone-700/50")
-                            }
+                    {move || {
+                        if is_renaming() {
+                            let slug_for_rename = slug_rename.clone();
+                            view! {
+                                <RenameInput
+                                    initial=slug_for_rename.clone()
+                                    indent_style=indent_style.clone()
+                                    icon="note"
+                                    on_confirm=Callback::new(move |new_name: String| {
+                                        let old = slug_for_rename.clone();
+                                        renaming.set(None);
+                                        if new_name == old || new_name.is_empty() {
+                                            return;
+                                        }
+                                        leptos::task::spawn_local(async move {
+                                            match ipc::rename_note(&old, &new_name).await {
+                                                Ok(new_meta) => {
+                                                    if active_note.get().map(|n| n.meta.slug == old).unwrap_or(false) {
+                                                        if let Ok(note) = ipc::read_note(&new_meta.slug).await {
+                                                            active_note.set(Some(note));
+                                                        }
+                                                    }
+                                                    refresh_tree(notes, folders, error_msg).await;
+                                                }
+                                                Err(e) => error_msg.set(Some(format!("Failed to rename note: {e}"))),
+                                            }
+                                        });
+                                    })
+                                    on_cancel=Callback::new(move |()| renaming.set(None))
+                                />
+                            }.into_any()
+                        } else {
+                            let slug_click = display.clone();
+                            let slug_ctx = display.clone();
+                            let slug_active = slug.clone();
+                            view! {
+                                <button
+                                    class=move || {
+                                        let base = "w-full text-left py-1 text-sm truncate transition-colors flex items-center gap-1";
+                                        if active_note.get().map(|n| n.meta.slug == slug_active).unwrap_or(false) {
+                                            format!("{base} bg-stone-700 text-stone-100")
+                                        } else {
+                                            format!("{base} text-stone-300 hover:bg-stone-700/50")
+                                        }
+                                    }
+                                    style=indent_style.clone()
+                                    on:click=move |_| {
+                                        let s = slug_click.clone();
+                                        leptos::task::spawn_local(async move {
+                                            match ipc::read_note(&s).await {
+                                                Ok(note) => active_note.set(Some(note)),
+                                                Err(e) => error_msg.set(Some(format!("Failed to load note: {e}"))),
+                                            }
+                                        });
+                                    }
+                                    on:contextmenu=move |e: MouseEvent| {
+                                        e.prevent_default();
+                                        e.stop_propagation();
+                                        context_menu.set(Some(ContextMenu {
+                                            x: e.client_x(),
+                                            y: e.client_y(),
+                                            target: ContextTarget::Note(slug_ctx.clone()),
+                                        }));
+                                    }
+                                >
+                                    <span class="w-3 shrink-0" />
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    {display.clone()}
+                                </button>
+                            }.into_any()
                         }
-                        style=indent_style.clone()
-                        on:click=on_click
-                        on:contextmenu=on_contextmenu
-                    >
-                        // Spacer matching the chevron width so the note icon aligns with the folder icon
-                        <span class="w-3 shrink-0" />
-                        // Note icon
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        {display}
-                    </button>
+                    }}
                 </li>
             }
             .into_any()
@@ -474,21 +594,15 @@ fn render_node(
                         folders,
                         context_menu,
                         drag_payload,
+                        renaming,
                         depth + 1,
                     )
                 })
                 .collect_view();
-            let path_ctx = path.clone();
             let path_drag = path.clone();
-            let path_drop = path.clone();
-            let on_contextmenu = move |e: MouseEvent| {
-                e.prevent_default();
-                context_menu.set(Some(ContextMenu {
-                    x: e.client_x(),
-                    y: e.client_y(),
-                    target: ContextTarget::Folder(path_ctx.clone()),
-                }));
-            };
+            let path_rename = path.clone();
+            let path_rename_check = path.clone();
+            let name_for_rename = name.clone();
             let on_dragstart = move |e: DragEvent| {
                 e.stop_propagation();
                 drag_payload.set(Some(DragPayload::Folder(path_drag.clone())));
@@ -501,56 +615,95 @@ fn render_node(
                 }
             };
             let on_dragleave = move |_| drag_over.set(false);
-            let on_drop = move |e: DragEvent| {
-                e.prevent_default();
-                e.stop_propagation();
-                drag_over.set(false);
-                if let Some(payload) = drag_payload.get() {
-                    drag_payload.set(None);
-                    handle_drop(
-                        payload,
-                        Some(path_drop.clone()),
-                        notes,
-                        folders,
-                        active_note,
-                        error_msg,
-                    );
-                }
-            };
+            let is_renaming = move || matches!(renaming.get(), Some(RenameTarget::Folder(ref p)) if *p == path_rename_check);
             view! {
                 <li
                     draggable="true"
                     on:dragstart=on_dragstart
                 >
-                    <button
-                        class=move || {
-                            let base = "w-full text-left py-1 text-sm text-stone-400 hover:text-stone-200 transition-colors flex items-center gap-1";
-                            if drag_over.get() { format!("{base} bg-stone-600/40") } else { base.to_string() }
+                    {move || {
+                        if is_renaming() {
+                            let pr = path_rename.clone();
+                            let nm = name_for_rename.clone();
+                            view! {
+                                <RenameInput
+                                    initial=nm
+                                    indent_style=indent_style.clone()
+                                    icon="folder"
+                                    on_confirm=Callback::new(move |new_name: String| {
+                                        let source = pr.clone();
+                                        renaming.set(None);
+                                        let old_name = source.rsplit('/').next().unwrap_or(&source).to_string();
+                                        if new_name == old_name || new_name.is_empty() {
+                                            return;
+                                        }
+                                        leptos::task::spawn_local(async move {
+                                            match ipc::rename_folder(&source, &new_name).await {
+                                                Ok(()) => refresh_tree(notes, folders, error_msg).await,
+                                                Err(e) => error_msg.set(Some(format!("Failed to rename folder: {e}"))),
+                                            }
+                                        });
+                                    })
+                                    on_cancel=Callback::new(move |()| renaming.set(None))
+                                />
+                            }.into_any()
+                        } else {
+                            let path_ctx = path.clone();
+                            let path_drop = path.clone();
+                            view! {
+                                <button
+                                    class=move || {
+                                        let base = "w-full text-left py-1 text-sm text-stone-400 hover:text-stone-200 transition-colors flex items-center gap-1";
+                                        if drag_over.get() { format!("{base} bg-stone-600/40") } else { base.to_string() }
+                                    }
+                                    style=indent_style.clone()
+                                    on:click=move |_| open.update(|v| *v = !*v)
+                                    on:contextmenu=move |e: MouseEvent| {
+                                        e.prevent_default();
+                                        e.stop_propagation();
+                                        context_menu.set(Some(ContextMenu {
+                                            x: e.client_x(),
+                                            y: e.client_y(),
+                                            target: ContextTarget::Folder(path_ctx.clone()),
+                                        }));
+                                    }
+                                    on:dragover=on_dragover
+                                    on:dragleave=on_dragleave
+                                    on:drop=move |e: DragEvent| {
+                                        e.prevent_default();
+                                        e.stop_propagation();
+                                        drag_over.set(false);
+                                        if let Some(payload) = drag_payload.get() {
+                                            drag_payload.set(None);
+                                            handle_drop(
+                                                payload,
+                                                Some(path_drop.clone()),
+                                                notes,
+                                                folders,
+                                                active_note,
+                                                error_msg,
+                                            );
+                                        }
+                                    }
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        class=move || {
+                                            let base = "w-3 h-3 shrink-0 transition-transform";
+                                            if open.get() { format!("{base} rotate-90") } else { base.to_string() }
+                                        }
+                                        fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"
+                                    >
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                                    </svg>
+                                    {name.clone()}
+                                </button>
+                            }.into_any()
                         }
-                        style=indent_style
-                        on:click=move |_| open.update(|v| *v = !*v)
-                        on:contextmenu=on_contextmenu
-                        on:dragover=on_dragover
-                        on:dragleave=on_dragleave
-                        on:drop=on_drop
-                    >
-                        // Chevron
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class=move || {
-                                let base = "w-3 h-3 shrink-0 transition-transform";
-                                if open.get() { format!("{base} rotate-90") } else { base.to_string() }
-                            }
-                            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"
-                        >
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                        // Folder icon
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                        </svg>
-                        {name}
-                    </button>
+                    }}
                     <ul class=move || if open.get() { "" } else { "hidden" }>
                         {children_views}
                     </ul>
@@ -558,5 +711,78 @@ fn render_node(
             }
             .into_any()
         }
+    }
+}
+
+/// Inline rename input component. Shows a text input with the current name,
+/// commits on Enter, cancels on Escape or blur.
+#[component]
+fn RenameInput(
+    initial: String,
+    indent_style: String,
+    /// "note" or "folder" — determines which icon to show.
+    icon: &'static str,
+    on_confirm: Callback<String>,
+    on_cancel: Callback<()>,
+) -> impl IntoView {
+    let (text, set_text) = signal(initial);
+    let input_ref = NodeRef::<leptos::html::Input>::new();
+
+    // Auto-focus after mount.
+    Effect::new(move || {
+        if let Some(el) = input_ref.get() {
+            let el: &web_sys::HtmlInputElement = &el;
+            let _ = el.focus();
+            el.select();
+        }
+    });
+
+    let on_keydown = move |e: KeyboardEvent| match e.key().as_str() {
+        "Enter" => {
+            e.prevent_default();
+            on_confirm.run(text.get().trim().to_string());
+        }
+        "Escape" => {
+            e.prevent_default();
+            on_cancel.run(());
+        }
+        _ => {}
+    };
+
+    let on_blur = move |_| {
+        on_confirm.run(text.get().trim().to_string());
+    };
+
+    let note_icon = icon == "note";
+
+    view! {
+        <div class="flex items-center gap-1 py-0.5 text-sm" style=indent_style>
+            {if note_icon {
+                view! {
+                    <span class="w-3 shrink-0" />
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                }.into_any()
+            } else {
+                view! {
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                    </svg>
+                }.into_any()
+            }}
+            <input
+                type="text"
+                prop:value=move || text.get()
+                node_ref=input_ref
+                class="flex-1 bg-stone-700 text-stone-100 text-sm px-1 py-0 rounded border border-stone-500 focus:outline-none focus:border-stone-400 min-w-0"
+                on:input=move |ev| set_text.set(event_target_value(&ev))
+                on:keydown=on_keydown
+                on:blur=on_blur
+            />
+        </div>
     }
 }

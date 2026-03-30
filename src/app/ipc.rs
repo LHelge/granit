@@ -122,13 +122,48 @@ pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, S
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
-#[allow(dead_code)]
 pub async fn create_folder(path: &str) -> Result<(), String> {
     let args = serde_wasm_bindgen::to_value(&FolderPathArg {
         path: path.to_string(),
     })
     .map_err(|e| format!("{e}"))?;
     invoke("create_folder", args)
+        .await
+        .map_err(js_err_to_string)?;
+    Ok(())
+}
+
+pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        old_name: String,
+        new_name: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
+        old_name: old_name.to_string(),
+        new_name: new_name.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    let val = invoke("rename_note", args)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+pub async fn rename_folder(source: &str, new_name: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        source: String,
+        new_name: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
+        source: source.to_string(),
+        new_name: new_name.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("rename_folder", args)
         .await
         .map_err(js_err_to_string)?;
     Ok(())
