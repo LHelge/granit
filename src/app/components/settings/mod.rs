@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 use crate::app::ipc;
 use agent::AgentSettings;
+use super::icons::XCloseIcon;
 use granit_types::{AgentConfig, AppConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
@@ -144,9 +145,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
                         on:click=move |_| set_open.set(false)
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <XCloseIcon />
                     </button>
                 </div>
 

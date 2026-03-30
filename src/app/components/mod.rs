@@ -1,6 +1,7 @@
 mod agent_panel;
 mod cave_selector;
 mod editor;
+pub mod icons;
 mod settings;
 mod sidebar;
 mod tree_view;

@@ -16,6 +16,79 @@ use tree_model::{build_tree, TreeNode};
 
 use crate::app::ipc;
 
+// ── Shared state via context ───────────────────────────────────────
+
+/// Shared reactive state for the entire tree, provided via Leptos context
+/// so child components can `use_context::<TreeCtx>()` instead of prop drilling.
+#[derive(Clone, Copy)]
+pub(super) struct TreeCtx {
+    pub notes: RwSignal<Vec<NoteMeta>>,
+    pub folders: RwSignal<Vec<String>>,
+    pub active_note: RwSignal<Option<Note>>,
+    pub error_msg: RwSignal<Option<String>>,
+    pub context_menu: RwSignal<Option<ContextMenu>>,
+    pub drag_payload: RwSignal<Option<DragPayload>>,
+    pub renaming: RwSignal<Option<RenameTarget>>,
+}
+
+impl TreeCtx {
+    /// Process a drop event targeted at `dest_folder` (None = cave root).
+    pub fn handle_drop(self, payload: DragPayload, dest_folder: Option<String>) {
+        match payload {
+            DragPayload::Note(slug) => {
+                leptos::task::spawn_local(async move {
+                    if let Err(e) = ipc::move_note(&slug, dest_folder.as_deref()).await {
+                        self.error_msg
+                            .set(Some(format!("Failed to move note: {e}")));
+                        return;
+                    }
+                    if self
+                        .active_note
+                        .get()
+                        .map(|n| n.meta.slug == slug)
+                        .unwrap_or(false)
+                    {
+                        if let Ok(note) = ipc::read_note(&slug).await {
+                            self.active_note.set(Some(note));
+                        }
+                    }
+                    self.refresh_async().await;
+                });
+            }
+            DragPayload::Folder(src_path) => {
+                leptos::task::spawn_local(async move {
+                    if let Err(e) = ipc::move_folder(&src_path, dest_folder.as_deref()).await {
+                        self.error_msg
+                            .set(Some(format!("Failed to move folder: {e}")));
+                        return;
+                    }
+                    self.refresh_async().await;
+                });
+            }
+        }
+    }
+
+    /// Async version of refresh (for use inside spawn_local blocks).
+    async fn refresh_async(self) {
+        match ipc::fetch_notes().await {
+            Ok(list) => self.notes.set(list),
+            Err(e) => {
+                self.error_msg
+                    .set(Some(format!("Failed to refresh notes: {e}")));
+                return;
+            }
+        }
+        if let Ok(list) = ipc::fetch_folders().await {
+            self.folders.set(list);
+        }
+    }
+}
+
+/// Retrieve the tree context from a child component.
+pub(super) fn use_tree_ctx() -> TreeCtx {
+    expect_context::<TreeCtx>()
+}
+
 // ── Shared types ───────────────────────────────────────────────────
 
 /// What is being dragged: a note (by slug) or a folder (by relative path).
@@ -47,101 +120,16 @@ pub(super) enum RenameTarget {
     Folder(String), // relative path
 }
 
-// ── Shared helpers ─────────────────────────────────────────────────
-
-/// Refresh both the notes list and the folder list.
-pub(super) async fn refresh_tree(
-    notes: RwSignal<Vec<NoteMeta>>,
-    folders: RwSignal<Vec<String>>,
-    error_msg: RwSignal<Option<String>>,
-) {
-    match ipc::fetch_notes().await {
-        Ok(list) => notes.set(list),
-        Err(e) => {
-            error_msg.set(Some(format!("Failed to refresh notes: {e}")));
-            return;
-        }
-    }
-    if let Ok(list) = ipc::fetch_folders().await {
-        folders.set(list);
-    }
-}
-
-/// Process a drop event targeted at `dest_folder` (None = cave root).
-pub(super) fn handle_drop(
-    payload: DragPayload,
-    dest_folder: Option<String>,
-    notes: RwSignal<Vec<NoteMeta>>,
-    folders: RwSignal<Vec<String>>,
-    active_note: RwSignal<Option<Note>>,
-    error_msg: RwSignal<Option<String>>,
-) {
-    match payload {
-        DragPayload::Note(slug) => {
-            let dest = dest_folder.clone();
-            leptos::task::spawn_local(async move {
-                if let Err(e) = ipc::move_note(&slug, dest.as_deref()).await {
-                    error_msg.set(Some(format!("Failed to move note: {e}")));
-                    return;
-                }
-                if active_note
-                    .get()
-                    .map(|n| n.meta.slug == slug)
-                    .unwrap_or(false)
-                {
-                    if let Ok(note) = ipc::read_note(&slug).await {
-                        active_note.set(Some(note));
-                    }
-                }
-                refresh_tree(notes, folders, error_msg).await;
-            });
-        }
-        DragPayload::Folder(src_path) => {
-            let dest = dest_folder.clone();
-            leptos::task::spawn_local(async move {
-                if let Err(e) = ipc::move_folder(&src_path, dest.as_deref()).await {
-                    error_msg.set(Some(format!("Failed to move folder: {e}")));
-                    return;
-                }
-                refresh_tree(notes, folders, error_msg).await;
-            });
-        }
-    }
-}
-
 // ── Render helper (dispatches to NoteNode / FolderNode) ────────────
 
-#[allow(clippy::too_many_arguments)]
-fn render_node(
-    node: TreeNode,
-    active_note: RwSignal<Option<Note>>,
-    error_msg: RwSignal<Option<String>>,
-    notes: RwSignal<Vec<NoteMeta>>,
-    folders: RwSignal<Vec<String>>,
-    context_menu: RwSignal<Option<ContextMenu>>,
-    drag_payload: RwSignal<Option<DragPayload>>,
-    renaming: RwSignal<Option<RenameTarget>>,
-    depth: usize,
-) -> impl IntoView {
+fn render_node(node: TreeNode, depth: usize) -> impl IntoView {
     let indent_px = depth * 12;
     let indent_style = format!("padding-left: {}px", 12 + indent_px);
 
     match node {
-        TreeNode::Note(meta) => view! {
-            <NoteNode
-                meta=meta
-                active_note=active_note
-                error_msg=error_msg
-                notes=notes
-                folders=folders
-                context_menu=context_menu
-                drag_payload=drag_payload
-                renaming=renaming
-                indent_style=indent_style
-            />
+        TreeNode::Note(meta) => {
+            view! { <NoteNode meta=meta indent_style=indent_style /> }.into_any()
         }
-        .into_any(),
-
         TreeNode::Folder {
             name,
             path,
@@ -151,13 +139,6 @@ fn render_node(
                 name=name
                 path=path
                 children=children
-                active_note=active_note
-                error_msg=error_msg
-                notes=notes
-                folders=folders
-                context_menu=context_menu
-                drag_payload=drag_payload
-                renaming=renaming
                 indent_style=indent_style
                 depth=depth
             />
@@ -175,15 +156,21 @@ pub fn TreeView(
     error_msg: RwSignal<Option<String>>,
     notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
-    let context_menu: RwSignal<Option<ContextMenu>> = RwSignal::new(None);
-    let drag_payload: RwSignal<Option<DragPayload>> = RwSignal::new(None);
-    let folders: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
-    let renaming: RwSignal<Option<RenameTarget>> = RwSignal::new(None);
+    let ctx = TreeCtx {
+        notes,
+        folders: RwSignal::new(Vec::new()),
+        active_note,
+        error_msg,
+        context_menu: RwSignal::new(None),
+        drag_payload: RwSignal::new(None),
+        renaming: RwSignal::new(None),
+    };
+    provide_context(ctx);
 
     // Fetch folder list on mount.
     leptos::task::spawn_local(async move {
         if let Ok(list) = ipc::fetch_folders().await {
-            folders.set(list);
+            ctx.folders.set(list);
         }
     });
 
@@ -192,26 +179,26 @@ pub fn TreeView(
             class="relative min-h-full"
             on:contextmenu=move |e: MouseEvent| {
                 e.prevent_default();
-                context_menu.set(Some(ContextMenu {
+                ctx.context_menu.set(Some(ContextMenu {
                     x: e.client_x(),
                     y: e.client_y(),
                     target: ContextTarget::Root,
                 }));
             }
             on:dragover=move |e: DragEvent| {
-                if drag_payload.get().is_some() {
+                if ctx.drag_payload.get().is_some() {
                     e.prevent_default();
                 }
             }
             on:drop=move |e: DragEvent| {
                 e.prevent_default();
-                if let Some(payload) = drag_payload.get() {
-                    drag_payload.set(None);
-                    handle_drop(payload, None, notes, folders, active_note, error_msg);
+                if let Some(payload) = ctx.drag_payload.get() {
+                    ctx.drag_payload.set(None);
+                    ctx.handle_drop(payload, None);
                 }
             }
             on:dragend=move |_| {
-                drag_payload.set(None);
+                ctx.drag_payload.set(None);
             }
         >
             {move || {
@@ -223,8 +210,8 @@ pub fn TreeView(
                     }
                     .into_any();
                 }
-                let note_list = notes.get();
-                let folder_list = folders.get();
+                let note_list = ctx.notes.get();
+                let folder_list = ctx.folders.get();
                 if note_list.is_empty() && folder_list.is_empty() {
                     view! { <p class="p-2 text-sm text-stone-500 italic">"No notes yet"</p> }
                         .into_any()
@@ -232,25 +219,13 @@ pub fn TreeView(
                     let tree = build_tree(note_list, folder_list);
                     view! {
                         <ul class="py-1">
-                            {tree
-                                .into_iter()
-                                .map(|node| {
-                                    render_node(node, active_note, error_msg, notes, folders, context_menu, drag_payload, renaming, 0)
-                                })
-                                .collect_view()}
+                            {tree.into_iter().map(|node| render_node(node, 0)).collect_view()}
                         </ul>
                     }
                     .into_any()
                 }
             }}
-            <TreeContextMenu
-                context_menu=context_menu
-                renaming=renaming
-                notes=notes
-                folders=folders
-                active_note=active_note
-                error_msg=error_msg
-            />
+            <TreeContextMenu />
         </div>
     }
 }
