@@ -8,15 +8,24 @@ Built for personal use. No plugins, no sync, no bloat.
 
 - **Cave-based storage** — Any directory is a cave. Open, switch, and track recently opened caves.
 - **Note CRUD** — Create, read, rename, and delete markdown notes. Filenames are the source of truth for note identity.
+- **Nested folders** — Notes can live in any subdirectory of the cave. The sidebar shows the full folder hierarchy with collapsible folder nodes. See [Nested folder rules](#nested-folder-rules) below.
 - **Edit / Preview toggle** — Raw markdown editing with plaintext preview.
 - **Global settings** — Configurable AI agent provider and model saved to `~/.config/granit/config.yml`.
 - **Layered config** — Global config can be overridden per-cave via `<cave>/.granit/config.yml` (UI editing not yet exposed).
+
+## Nested Folder Rules
+
+- **Filenames are globally unique across the entire cave.** Two notes in different subfolders cannot share the same filename (e.g., `projects/foo.md` and `archive/foo.md` cannot coexist). The cave will log a warning and skip duplicates on scan.
+- **The filename is the note's identity and title.** Frontmatter `title` fields and markdown headings do not override the displayed title. `projects/meeting.md` is always displayed as `meeting`.
+- **Slugs are filename stems** (no extension, no path). All lookups and IPC calls use the slug. The `relative_path` field is available for display and tree building only.
+- **Hidden directories and `.granit/`** are excluded from the scan.
+- **Cave operations accept an optional folder path.** `create_note(name, folder)` places the new note in the specified subfolder. `create_folder(path)` creates a (possibly nested) directory.
 
 ## Planned / Not Yet Implemented
 
 - **Rendered markdown preview** — Preview currently shows raw text. `pulldown-cmark` HTML rendering is planned.
 - **AI Agent** — Side panel UI is scaffolded but not yet connected. `rig-core` integration, cave CRUD tools, and RAG over notes are roadmap items.
-- **Nested folders** — Notes are currently flat in the cave root. Hierarchical folder support is planned.
+- **Create note in folder from UI** — The backend supports `create_note(name, folder)` but the UI always creates notes at the cave root for now.
 - **Wiki-links** — `[[note-name]]` link resolution is planned but not yet implemented.
 - **Full-text search** — Not yet implemented.
 - **Backlinks panel** — Not yet implemented.
