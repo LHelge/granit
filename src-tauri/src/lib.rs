@@ -160,6 +160,31 @@ fn delete_folder(path: String, state: tauri::State<AppState>) -> Result<(), Cave
 }
 
 #[tauri::command]
+fn move_note(
+    name: String,
+    destination: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<NoteMeta, CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.move_note(&name, destination.as_deref().map(std::path::Path::new))
+    })
+}
+
+#[tauri::command]
+fn move_folder(
+    source: String,
+    destination: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.move_folder(
+            std::path::Path::new(&source),
+            destination.as_deref().map(std::path::Path::new),
+        )
+    })
+}
+
+#[tauri::command]
 fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError> {
     with_cave(&state, |cave| cave.list_notes())
 }
@@ -332,6 +357,8 @@ pub fn run() {
             create_note,
             create_folder,
             delete_folder,
+            move_note,
+            move_folder,
             list_notes,
             read_note,
             save_note,
