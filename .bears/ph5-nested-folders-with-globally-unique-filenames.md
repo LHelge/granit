@@ -2,10 +2,10 @@
 id: ph5
 title: Nested folders with globally unique filenames
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:19:07.613106Z
-updated: 2026-03-27T12:19:07.613106Z
+updated: 2026-03-30T12:47:57.665614Z
 ---
 
 ## Scope

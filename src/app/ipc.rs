@@ -127,6 +127,32 @@ pub async fn create_folder(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub async fn delete_note(slug: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args {
+        name: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
+        name: slug.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("delete_note", args)
+        .await
+        .map_err(js_err_to_string)?;
+    Ok(())
+}
+
+pub async fn delete_folder(path: &str) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&FolderPathArg {
+        path: path.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("delete_folder", args)
+        .await
+        .map_err(js_err_to_string)?;
+    Ok(())
+}
+
 pub async fn read_note(name: &str) -> Result<Note, String> {
     #[derive(Serialize)]
     struct Args {
