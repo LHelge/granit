@@ -135,8 +135,14 @@ where
 }
 
 #[tauri::command]
-fn create_note(name: String, state: tauri::State<AppState>) -> Result<NoteMeta, CaveError> {
-    with_cave_mut(&state, |cave| cave.create_note(&name))
+fn create_note(
+    name: String,
+    folder: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<NoteMeta, CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.create_note(&name, folder.as_deref().map(std::path::Path::new))
+    })
 }
 
 #[tauri::command]
