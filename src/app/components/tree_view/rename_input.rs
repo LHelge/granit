@@ -1,14 +1,16 @@
 use leptos::ev::KeyboardEvent;
 use leptos::prelude::*;
 
+use crate::app::components::icons::{ChevronIcon, FolderIcon, NoteIcon};
+
 /// Inline rename input component. Shows a text input with the current name,
 /// commits on Enter, cancels on Escape or blur.
 #[component]
 pub(super) fn RenameInput(
     initial: String,
     indent_style: String,
-    /// "note" or "folder" — determines which icon to show.
-    icon: &'static str,
+    /// `true` for a note icon, `false` for chevron + folder icon.
+    note: bool,
     on_confirm: Callback<String>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
@@ -40,25 +42,19 @@ pub(super) fn RenameInput(
         on_confirm.run(text.get().trim().to_string());
     };
 
-    let note_icon = icon == "note";
-
     view! {
         <div class="flex items-center gap-1 py-0.5 text-sm" style=indent_style>
-            {if note_icon {
+            {if note {
                 view! {
                     <span class="w-3 shrink-0" />
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <NoteIcon />
                 }.into_any()
             } else {
+                // Static chevron (always pointing right during rename).
+                let always_closed = Signal::derive(|| false);
                 view! {
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 shrink-0 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                    </svg>
+                    <ChevronIcon open=always_closed />
+                    <FolderIcon />
                 }.into_any()
             }}
             <input

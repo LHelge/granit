@@ -1,5 +1,7 @@
 use leptos::prelude::*;
 
+use crate::app::components::icons::ChevronDownIcon;
+
 #[component]
 pub fn FontPicker(
     /// All available system font families.
@@ -59,13 +61,7 @@ pub fn FontPicker(
                         if v.is_empty() { "Select font…".to_string() } else { v }
                     }}
                 </span>
-                <svg
-                    class="w-3.5 h-3.5 text-stone-400 shrink-0 ml-2"
-                    class=("rotate-180", move || open.get())
-                    xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
-                >
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDownIcon class="w-3.5 h-3.5 text-stone-400 shrink-0 ml-2" open=open />
             </button>
 
             // Dropdown
