@@ -1,9 +1,9 @@
 mod agent_panel;
 mod cave_selector;
 mod editor;
-mod note_list;
 mod settings;
 mod sidebar;
+mod tree_view;
 
 pub use agent_panel::AgentPanel;
 pub use editor::Editor;
