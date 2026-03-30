@@ -515,6 +515,54 @@ impl Cave {
         let rel = self.relative_path(&final_abs);
         Ok(note_meta_from_relative_path(&rel))
     }
+
+    /// Rename a folder in-place (same parent directory, new name).
+    ///
+    /// `source` is the relative path of the folder to rename.
+    /// `new_name` is the new name for the folder (just the final component, not a path).
+    pub fn rename_folder(&mut self, source: &Path, new_name: &str) -> Result<(), CaveError> {
+        validate_folder_path(source)?;
+        validate_name(new_name)?;
+
+        let src_abs = self.path.join(source);
+        if !src_abs.is_dir() {
+            return Err(CaveError::NotFound(source.to_string_lossy().into_owned()));
+        }
+
+        let parent = src_abs
+            .parent()
+            .unwrap_or(&self.path);
+        let new_abs = parent.join(new_name);
+
+        // No-op if nothing changed.
+        if src_abs == new_abs {
+            return Ok(());
+        }
+
+        if new_abs.exists() {
+            return Err(CaveError::AlreadyExists(
+                new_abs.to_string_lossy().into_owned(),
+            ));
+        }
+
+        std::fs::rename(&src_abs, &new_abs)?;
+
+        // Update all indexed note paths that were under the old location.
+        let updates: Vec<(String, PathBuf)> = self
+            .notes
+            .iter()
+            .filter(|(_, abs)| abs.starts_with(&src_abs))
+            .map(|(slug, abs)| {
+                let suffix = abs.strip_prefix(&src_abs).unwrap();
+                (slug.clone(), new_abs.join(suffix))
+            })
+            .collect();
+        for (slug, new_path) in updates {
+            self.notes.insert(slug, new_path);
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

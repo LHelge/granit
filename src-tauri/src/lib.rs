@@ -230,6 +230,17 @@ fn update_note(
 }
 
 #[tauri::command]
+fn rename_folder(
+    source: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.rename_folder(std::path::Path::new(&source), &new_name)
+    })
+}
+
+#[tauri::command]
 fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
     with_cave_mut(&state, |cave| cave.delete_note(&name))
 }
@@ -370,6 +381,7 @@ pub fn run() {
             save_note,
             delete_note,
             rename_note,
+            rename_folder,
             update_note,
             render_note,
             render_markdown,
