@@ -1,10 +1,10 @@
 ---
 id: uyq
 title: Implement recursive cave indexing and filename uniqueness checks
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:42:05.126552Z
-updated: 2026-03-27T12:44:25.802934Z
+updated: 2026-03-30T12:26:47.061607Z
 depends_on:
 - 5d2
 parent: ph5

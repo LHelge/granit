@@ -184,7 +184,7 @@ pub fn Editor(
         leptos::task::spawn_local(async move {
             if is_broken {
                 // Create the note, open it in edit mode
-                if let Ok(meta) = ipc::create_note(&slug).await {
+                if let Ok(meta) = ipc::create_note(&slug, None).await {
                     if let Ok(note) = ipc::read_note(&meta.slug).await {
                         set_open_in_edit.set(true);
                         active_note.set(Some(note));

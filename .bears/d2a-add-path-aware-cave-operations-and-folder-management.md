@@ -1,10 +1,10 @@
 ---
 id: d2a
 title: Add path-aware cave operations and folder management
-status: open
+status: done
 priority: P1
 created: 2026-03-27T12:42:05.213431Z
-updated: 2026-03-27T12:44:25.918920Z
+updated: 2026-03-30T12:26:47.069267Z
 depends_on:
 - uyq
 parent: ph5

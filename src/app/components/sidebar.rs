@@ -17,7 +17,7 @@ pub fn Sidebar(
 ) -> impl IntoView {
     let on_new_note = move |_| {
         leptos::task::spawn_local(async move {
-            let meta = match ipc::create_note("untitled").await {
+            let meta = match ipc::create_note("untitled", None).await {
                 Ok(m) => m,
                 Err(e) => {
                     error_msg.set(Some(format!("Failed to create note: {e}")));
