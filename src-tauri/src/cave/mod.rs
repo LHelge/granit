@@ -160,15 +160,33 @@ impl Cave {
 
     /// Create a subdirectory within the cave.
     ///
-    /// `path` is a relative path from the cave root (e.g. `"notes"` or `"projects/2026"`).
+    /// `path` is a relative path from the cave root (e.g. `Path::new("notes")` or `Path::new("projects/2026")`).
     #[allow(dead_code)]
-    pub fn create_folder(&mut self, path: &str) -> Result<(), CaveError> {
-        validate_folder_path(Path::new(path))?;
+    pub fn create_folder(&mut self, path: &Path) -> Result<(), CaveError> {
+        validate_folder_path(path)?;
         let abs = self.path.join(path);
         if abs.exists() {
-            return Err(CaveError::AlreadyExists(path.to_string()));
+            return Err(CaveError::AlreadyExists(
+                path.to_string_lossy().into_owned(),
+            ));
         }
         std::fs::create_dir_all(&abs)?;
+        Ok(())
+    }
+
+    /// Delete a folder and all notes within it.
+    ///
+    /// `path` is a relative path from the cave root (e.g. `Path::new("notes")` or `Path::new("projects/2026")`).
+    /// All notes indexed under this folder are removed from the cave index before deletion.
+    pub fn delete_folder(&mut self, path: &Path) -> Result<(), CaveError> {
+        validate_folder_path(path)?;
+        let abs = self.path.join(path);
+        if !abs.exists() {
+            return Err(CaveError::NotFound(path.to_string_lossy().into_owned()));
+        }
+        // Remove all indexed notes under this folder from the in-memory index.
+        self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
+        std::fs::remove_dir_all(&abs)?;
         Ok(())
     }
 
@@ -446,7 +464,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf());
 
-        cave.create_folder("projects").unwrap();
+        cave.create_folder(Path::new("projects")).unwrap();
         assert!(dir.path().join("projects").is_dir());
     }
 
@@ -455,7 +473,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf());
 
-        cave.create_folder("a/b/c").unwrap();
+        cave.create_folder(Path::new("a/b/c")).unwrap();
         assert!(dir.path().join("a/b/c").is_dir());
     }
 
@@ -465,8 +483,44 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf());
 
         std::fs::create_dir(dir.path().join("existing")).unwrap();
-        let err = cave.create_folder("existing").unwrap_err();
+        let err = cave.create_folder(Path::new("existing")).unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn test_delete_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
+        std::fs::write(dir.path().join("root.md"), "").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+        assert!(cave.notes.contains_key("note"));
+        cave.delete_folder(Path::new("sub")).unwrap();
+        assert!(
+            !cave.notes.contains_key("note"),
+            "note should be removed from index"
+        );
+        assert!(cave.notes.contains_key("root"), "root note should remain");
+        assert!(
+            !dir.path().join("sub").exists(),
+            "folder should be deleted from disk"
+        );
+    }
+
+    #[test]
+    fn test_delete_folder_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+        let err = cave.delete_folder(Path::new("ghost")).unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_delete_folder_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+        let err = cave.delete_folder(Path::new("../escape")).unwrap_err();
+        assert!(matches!(err, CaveError::InvalidName(_)));
     }
 
     #[test]

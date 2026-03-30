@@ -1,10 +1,10 @@
 ---
 id: jyk
 title: Extend shared IPC types for nested cave structure
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:42:05.294299Z
-updated: 2026-03-27T12:44:25.988166Z
+updated: 2026-03-30T12:30:54.007489Z
 depends_on:
 - d2a
 parent: ph5

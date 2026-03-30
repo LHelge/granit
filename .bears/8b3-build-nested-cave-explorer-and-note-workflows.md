@@ -1,10 +1,10 @@
 ---
 id: 8b3
 title: Build nested cave explorer and note workflows
-status: open
+status: done
 priority: P2
 created: 2026-03-27T12:42:05.377809Z
-updated: 2026-03-27T12:44:26.123087Z
+updated: 2026-03-30T12:45:40.471705Z
 depends_on:
 - d2a
 - jyk

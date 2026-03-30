@@ -147,7 +147,16 @@ fn create_note(
 
 #[tauri::command]
 fn create_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    with_cave_mut(&state, |cave| cave.create_folder(&path))
+    with_cave_mut(&state, |cave| {
+        cave.create_folder(std::path::Path::new(&path))
+    })
+}
+
+#[tauri::command]
+fn delete_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.delete_folder(std::path::Path::new(&path))
+    })
 }
 
 #[tauri::command]
@@ -322,6 +331,7 @@ pub fn run() {
             open_cave,
             create_note,
             create_folder,
+            delete_folder,
             list_notes,
             read_note,
             save_note,
