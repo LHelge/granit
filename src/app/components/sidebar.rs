@@ -4,7 +4,7 @@ use crate::app::ipc;
 use granit_types::{AppConfig, Note, NoteMeta};
 
 use super::cave_selector::CaveSelector;
-use super::note_list::NoteList;
+use super::tree_view::TreeView;
 
 #[component]
 pub fn Sidebar(
@@ -65,7 +65,7 @@ pub fn Sidebar(
                     when=has_cave
                     fallback=|| view! { <p class="p-2 text-sm text-stone-500 italic">"No cave open"</p> }
                 >
-                    <NoteList
+                    <TreeView
                         notes=notes
                         active_note=active_note
                         error_msg=error_msg

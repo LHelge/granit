@@ -17,6 +17,7 @@ web-sys = { version = "0.3.91", features = [
     "Element",
     "HtmlAnchorElement",
     "EventTarget",
+    "DataTransfer",
     "DragEvent",
 ] }
 granit-types = { path = "granit-types" }

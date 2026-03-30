@@ -529,9 +529,7 @@ impl Cave {
             return Err(CaveError::NotFound(source.to_string_lossy().into_owned()));
         }
 
-        let parent = src_abs
-            .parent()
-            .unwrap_or(&self.path);
+        let parent = src_abs.parent().unwrap_or(&self.path);
         let new_abs = parent.join(new_name);
 
         // No-op if nothing changed.
