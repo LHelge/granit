@@ -201,6 +201,45 @@ impl Cave {
         Ok(notes)
     }
 
+    /// List all subdirectory relative paths in this cave (recursively), sorted.
+    ///
+    /// Hidden directories (starting with `.`) and `.granit/` are excluded.
+    /// Returns paths like `"projects"`, `"projects/2026"`.
+    pub fn list_folders(&self) -> Result<Vec<String>, CaveError> {
+        let mut folders = Vec::new();
+        Self::collect_folders(&self.path, &self.path, &mut folders)?;
+        folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        Ok(folders)
+    }
+
+    /// Recursively collect subdirectory relative paths.
+    fn collect_folders(
+        cave_root: &Path,
+        dir: &Path,
+        out: &mut Vec<String>,
+    ) -> Result<(), CaveError> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let p = entry.path();
+            if !p.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('.') || name_str == ".granit" {
+                continue;
+            }
+            let rel = p
+                .strip_prefix(cave_root)
+                .unwrap_or(&p)
+                .to_string_lossy()
+                .into_owned();
+            out.push(rel);
+            Self::collect_folders(cave_root, &p, out)?;
+        }
+        Ok(())
+    }
+
     /// Read a note by slug.
     pub fn read_note(&self, slug: &str) -> Result<Note, CaveError> {
         validate_name(slug)?;
@@ -1127,5 +1166,43 @@ mod tests {
 
         // restore permissions so tempdir cleanup can delete the file
         std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    #[test]
+    fn test_list_folders_empty_cave() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+        let folders = cave.list_folders().unwrap();
+        assert!(folders.is_empty());
+    }
+
+    #[test]
+    fn test_list_folders_includes_empty_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("empty")).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+        let folders = cave.list_folders().unwrap();
+        assert_eq!(folders, vec!["empty"]);
+    }
+
+    #[test]
+    fn test_list_folders_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        std::fs::create_dir(dir.path().join("c")).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+        let folders = cave.list_folders().unwrap();
+        assert_eq!(folders, vec!["a", "a/b", "c"]);
+    }
+
+    #[test]
+    fn test_list_folders_skips_hidden_and_granit() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".hidden")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".granit")).unwrap();
+        std::fs::create_dir(dir.path().join("visible")).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf());
+        let folders = cave.list_folders().unwrap();
+        assert_eq!(folders, vec!["visible"]);
     }
 }
