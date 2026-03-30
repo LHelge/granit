@@ -190,6 +190,11 @@ fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError>
 }
 
 #[tauri::command]
+fn list_folders(state: tauri::State<AppState>) -> Result<Vec<String>, CaveError> {
+    with_cave(&state, |cave| cave.list_folders())
+}
+
+#[tauri::command]
 fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveError> {
     with_cave(&state, |cave| cave.read_note(&name))
 }
@@ -360,6 +365,7 @@ pub fn run() {
             move_note,
             move_folder,
             list_notes,
+            list_folders,
             read_note,
             save_note,
             delete_note,

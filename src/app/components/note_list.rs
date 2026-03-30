@@ -18,10 +18,19 @@ enum TreeNode {
     },
 }
 
-/// Build a display tree from a flat list of NoteMeta.
+/// Build a display tree from a flat list of NoteMeta and folder paths.
 /// Each `relative_path` like `"a/b/note.md"` is split on `/` to produce the hierarchy.
-fn build_tree(notes: Vec<NoteMeta>) -> Vec<TreeNode> {
+/// `folders` ensures empty directories also appear in the tree.
+fn build_tree(notes: Vec<NoteMeta>, folders: Vec<String>) -> Vec<TreeNode> {
     let mut roots: Vec<TreeNode> = Vec::new();
+
+    // Ensure all folder paths exist in the tree (including empty ones).
+    let mut sorted_folders = folders;
+    sorted_folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    for folder_path in sorted_folders {
+        let parts: Vec<&str> = folder_path.split('/').collect();
+        ensure_folder(&mut roots, &parts, 0);
+    }
 
     // Sort so folders and notes appear deterministically.
     let mut sorted = notes;
@@ -38,6 +47,29 @@ fn build_tree(notes: Vec<NoteMeta>) -> Vec<TreeNode> {
     }
 
     roots
+}
+
+/// Ensure a folder path exists in the tree, creating empty folder nodes as needed.
+fn ensure_folder(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize) {
+    if depth >= parts.len() {
+        return;
+    }
+    let folder_name = parts[depth].to_string();
+    let folder_path = parts[0..=depth].join("/");
+    if let Some(TreeNode::Folder { children, .. }) = nodes
+        .iter_mut()
+        .find(|n| matches!(n, TreeNode::Folder { name, .. } if *name == folder_name))
+    {
+        ensure_folder(children, parts, depth + 1);
+    } else {
+        let mut children = Vec::new();
+        ensure_folder(&mut children, parts, depth + 1);
+        nodes.push(TreeNode::Folder {
+            name: folder_name,
+            path: folder_path,
+            children,
+        });
+    }
 }
 
 fn insert_node(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize, meta: NoteMeta) {
@@ -74,11 +106,30 @@ enum DragPayload {
     Folder(String),
 }
 
+/// Refresh both the notes list and the folder list.
+async fn refresh_tree(
+    notes: RwSignal<Vec<NoteMeta>>,
+    folders: RwSignal<Vec<String>>,
+    error_msg: RwSignal<Option<String>>,
+) {
+    match ipc::fetch_notes().await {
+        Ok(list) => notes.set(list),
+        Err(e) => {
+            error_msg.set(Some(format!("Failed to refresh notes: {e}")));
+            return;
+        }
+    }
+    if let Ok(list) = ipc::fetch_folders().await {
+        folders.set(list);
+    }
+}
+
 /// Process a drop event targeted at `dest_folder` (None = cave root).
 fn handle_drop(
     payload: DragPayload,
     dest_folder: Option<String>,
     notes: RwSignal<Vec<NoteMeta>>,
+    folders: RwSignal<Vec<String>>,
     active_note: RwSignal<Option<Note>>,
     error_msg: RwSignal<Option<String>>,
 ) {
@@ -99,10 +150,7 @@ fn handle_drop(
                         active_note.set(Some(note));
                     }
                 }
-                match ipc::fetch_notes().await {
-                    Ok(list) => notes.set(list),
-                    Err(e) => error_msg.set(Some(format!("Failed to refresh notes: {e}"))),
-                }
+                refresh_tree(notes, folders, error_msg).await;
             });
         }
         DragPayload::Folder(src_path) => {
@@ -112,10 +160,7 @@ fn handle_drop(
                     error_msg.set(Some(format!("Failed to move folder: {e}")));
                     return;
                 }
-                match ipc::fetch_notes().await {
-                    Ok(list) => notes.set(list),
-                    Err(e) => error_msg.set(Some(format!("Failed to refresh notes: {e}"))),
-                }
+                refresh_tree(notes, folders, error_msg).await;
             });
         }
     }
@@ -147,6 +192,14 @@ pub fn NoteList(
 ) -> impl IntoView {
     let context_menu: RwSignal<Option<ContextMenu>> = RwSignal::new(None);
     let drag_payload: RwSignal<Option<DragPayload>> = RwSignal::new(None);
+    let folders: RwSignal<Vec<String>> = RwSignal::new(Vec::new());
+
+    // Fetch folder list on mount.
+    leptos::task::spawn_local(async move {
+        if let Ok(list) = ipc::fetch_folders().await {
+            folders.set(list);
+        }
+    });
 
     view! {
         <div
@@ -163,7 +216,7 @@ pub fn NoteList(
                 e.prevent_default();
                 if let Some(payload) = drag_payload.get() {
                     drag_payload.set(None);
-                    handle_drop(payload, None, notes, active_note, error_msg);
+                    handle_drop(payload, None, notes, folders, active_note, error_msg);
                 }
             }
             on:dragend=move |_| {
@@ -181,17 +234,18 @@ pub fn NoteList(
                     .into_any();
                 }
                 let note_list = notes.get();
-                if note_list.is_empty() {
+                let folder_list = folders.get();
+                if note_list.is_empty() && folder_list.is_empty() {
                     view! { <p class="p-2 text-sm text-stone-500 italic">"No notes yet"</p> }
                         .into_any()
                 } else {
-                    let tree = build_tree(note_list);
+                    let tree = build_tree(note_list, folder_list);
                     view! {
                         <ul class="py-1">
                             {tree
                                 .into_iter()
                                 .map(|node| {
-                                    render_node(node, active_note, error_msg, notes, context_menu, drag_payload, 0)
+                                    render_node(node, active_note, error_msg, notes, folders, context_menu, drag_payload, 0)
                                 })
                                 .collect_view()}
                         </ul>
@@ -241,10 +295,7 @@ pub fn NoteList(
                                                     {
                                                         active_note.set(None);
                                                     }
-                                                    match ipc::fetch_notes().await {
-                                                        Ok(list) => notes.set(list),
-                                                        Err(e) => error_msg.set(Some(format!("Failed to refresh notes: {e}"))),
-                                                    }
+                                                    refresh_tree(notes, folders, error_msg).await;
                                                 });
                                             }
                                         >
@@ -265,13 +316,7 @@ pub fn NoteList(
                                                 leptos::task::spawn_local(async move {
                                                     match ipc::create_note("untitled", Some(&p)).await {
                                                         Ok(meta) => {
-                                                            match ipc::fetch_notes().await {
-                                                                Ok(list) => notes.set(list),
-                                                                Err(e) => {
-                                                                    error_msg.set(Some(format!("Failed to refresh notes: {e}")));
-                                                                    return;
-                                                                }
-                                                            }
+                                                            refresh_tree(notes, folders, error_msg).await;
                                                             match ipc::read_note(&meta.slug).await {
                                                                 Ok(note) => active_note.set(Some(note)),
                                                                 Err(e) => error_msg.set(Some(
@@ -312,12 +357,7 @@ pub fn NoteList(
                                                     {
                                                         active_note.set(None);
                                                     }
-                                                    match ipc::fetch_notes().await {
-                                                        Ok(list) => notes.set(list),
-                                                        Err(e) => error_msg.set(Some(format!(
-                                                            "Failed to refresh notes: {e}"
-                                                        ))),
-                                                    }
+                                                    refresh_tree(notes, folders, error_msg).await;
                                                 });
                                             }
                                         >
@@ -337,12 +377,13 @@ pub fn NoteList(
 
 // `notes` is passed recursively AND captured by context-menu closures inside the
 // `view!` macro — clippy can't see the latter, so suppress the false positive.
-#[allow(clippy::only_used_in_recursion)]
+#[allow(clippy::only_used_in_recursion, clippy::too_many_arguments)]
 fn render_node(
     node: TreeNode,
     active_note: RwSignal<Option<Note>>,
     error_msg: RwSignal<Option<String>>,
     notes: RwSignal<Vec<NoteMeta>>,
+    folders: RwSignal<Vec<String>>,
     context_menu: RwSignal<Option<ContextMenu>>,
     drag_payload: RwSignal<Option<DragPayload>>,
     depth: usize,
@@ -430,6 +471,7 @@ fn render_node(
                         active_note,
                         error_msg,
                         notes,
+                        folders,
                         context_menu,
                         drag_payload,
                         depth + 1,
@@ -469,6 +511,7 @@ fn render_node(
                         payload,
                         Some(path_drop.clone()),
                         notes,
+                        folders,
                         active_note,
                         error_msg,
                     );

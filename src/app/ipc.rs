@@ -103,6 +103,13 @@ pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
     serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
 }
 
+pub async fn fetch_folders() -> Result<Vec<String>, String> {
+    let val = invoke("list_folders", JsValue::NULL)
+        .await
+        .map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
 pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
     let args = serde_wasm_bindgen::to_value(&CreateNoteArgs {
         name: name.to_string(),
