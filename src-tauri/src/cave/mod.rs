@@ -272,6 +272,130 @@ impl Cave {
         Ok(())
     }
 
+    /// Move a note to a different folder within the cave.
+    ///
+    /// `destination` is a relative path from the cave root (e.g. `Path::new("projects")`).
+    /// Passing `None` moves the note to the cave root.
+    pub fn move_note(
+        &mut self,
+        slug: &str,
+        destination: Option<&Path>,
+    ) -> Result<NoteMeta, CaveError> {
+        validate_name(slug)?;
+        let old_abs = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
+            .clone();
+
+        let dest_dir = if let Some(d) = destination {
+            validate_folder_path(d)?;
+            let abs = self.path.join(d);
+            if !abs.is_dir() {
+                return Err(CaveError::NotFound(d.to_string_lossy().into_owned()));
+            }
+            abs
+        } else {
+            self.path.clone()
+        };
+
+        let filename = old_abs
+            .file_name()
+            .ok_or_else(|| CaveError::InvalidName("note has no filename".into()))?;
+        let new_abs = dest_dir.join(filename);
+
+        // No-op if already in the target dir.
+        if old_abs == new_abs {
+            let rel = self.relative_path(&old_abs);
+            return Ok(note_meta_from_relative_path(&rel));
+        }
+
+        // Prevent overwriting an existing file at the destination.
+        if new_abs.exists() {
+            return Err(CaveError::AlreadyExists(
+                new_abs.to_string_lossy().into_owned(),
+            ));
+        }
+
+        std::fs::rename(&old_abs, &new_abs)?;
+        self.notes.insert(slug.to_string(), new_abs.clone());
+
+        let rel = self.relative_path(&new_abs);
+        Ok(note_meta_from_relative_path(&rel))
+    }
+
+    /// Move a folder under a new parent within the cave.
+    ///
+    /// `source` is the relative path of the folder to move.
+    /// `destination` is the relative path of the new parent directory (`None` = cave root).
+    pub fn move_folder(
+        &mut self,
+        source: &Path,
+        destination: Option<&Path>,
+    ) -> Result<(), CaveError> {
+        validate_folder_path(source)?;
+        if let Some(d) = destination {
+            validate_folder_path(d)?;
+        }
+
+        let src_abs = self.path.join(source);
+        if !src_abs.is_dir() {
+            return Err(CaveError::NotFound(source.to_string_lossy().into_owned()));
+        }
+
+        let folder_name = source
+            .file_name()
+            .ok_or_else(|| CaveError::InvalidName("folder has no name".into()))?;
+
+        let dest_parent = if let Some(d) = destination {
+            let abs = self.path.join(d);
+            if !abs.is_dir() {
+                return Err(CaveError::NotFound(d.to_string_lossy().into_owned()));
+            }
+            abs
+        } else {
+            self.path.clone()
+        };
+
+        let new_abs = dest_parent.join(folder_name);
+
+        // No-op.
+        if src_abs == new_abs {
+            return Ok(());
+        }
+
+        // Prevent moving into itself or a subdirectory of itself.
+        if new_abs.starts_with(&src_abs) {
+            return Err(CaveError::InvalidName(
+                "cannot move a folder into itself".into(),
+            ));
+        }
+
+        if new_abs.exists() {
+            return Err(CaveError::AlreadyExists(
+                new_abs.to_string_lossy().into_owned(),
+            ));
+        }
+
+        std::fs::rename(&src_abs, &new_abs)?;
+
+        // Update all indexed note paths that were under the old location.
+        let updates: Vec<(String, PathBuf)> = self
+            .notes
+            .iter()
+            .filter(|(_, abs)| abs.starts_with(&src_abs))
+            .map(|(slug, abs)| {
+                let suffix = abs.strip_prefix(&src_abs).unwrap();
+                (slug.clone(), new_abs.join(suffix))
+            })
+            .collect();
+        for (slug, new_path) in updates {
+            self.notes.insert(slug, new_path);
+        }
+
+        Ok(())
+    }
+
     /// Rename an existing note in-place (same directory, new filename).
     /// The new slug must not already exist anywhere in the cave.
     pub fn rename_note(&mut self, old_slug: &str, new_name: &str) -> Result<NoteMeta, CaveError> {
@@ -713,6 +837,165 @@ mod tests {
 
         let err = cave.delete_note("../escape").unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
+    }
+
+    // ── move_note tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_move_note_to_subfolder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "# Note").unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let meta = cave.move_note("note", Some(Path::new("sub"))).unwrap();
+        assert_eq!(meta.slug, "note");
+        assert_eq!(meta.relative_path, "sub/note.md");
+        assert!(!dir.path().join("note.md").exists());
+        assert!(dir.path().join("sub/note.md").exists());
+    }
+
+    #[test]
+    fn test_move_note_to_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let meta = cave.move_note("note", None).unwrap();
+        assert_eq!(meta.relative_path, "note.md");
+        assert!(dir.path().join("note.md").exists());
+        assert!(!dir.path().join("sub/note.md").exists());
+    }
+
+    #[test]
+    fn test_move_note_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let meta = cave.move_note("note", Some(Path::new("sub"))).unwrap();
+        assert_eq!(meta.relative_path, "sub/note.md");
+    }
+
+    #[test]
+    fn test_move_note_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave.move_note("ghost", Some(Path::new("sub"))).unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_move_note_dest_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave
+            .move_note("note", Some(Path::new("nonexistent")))
+            .unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_move_note_file_already_exists_at_dest() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("note.md"), "root").unwrap();
+        std::fs::write(dir.path().join("sub/note.md"), "sub").unwrap();
+        // Only the first one ends up in the index (duplicate slug skipped).
+        // We need to test the case where the destination file physically exists.
+        let mut cave = Cave::open(dir.path().to_path_buf());
+        // Whichever slug won, try pushing it to the folder that has the other copy.
+        let err_root = cave.move_note("note", Some(Path::new("sub")));
+        let err_none = cave.move_note("note", None);
+        // One of them must fail with AlreadyExists (the one pointing to the other location).
+        assert!(
+            err_root.is_err() || err_none.is_err(),
+            "at least one move should fail due to existing file"
+        );
+    }
+
+    // ── move_folder tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_move_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::create_dir(dir.path().join("dest")).unwrap();
+        std::fs::write(dir.path().join("src/note.md"), "# Note").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        cave.move_folder(Path::new("src"), Some(Path::new("dest")))
+            .unwrap();
+        assert!(dir.path().join("dest/src/note.md").exists());
+        assert!(!dir.path().join("src").exists());
+        // Index should be updated.
+        let note = cave.read_note("note").unwrap();
+        assert_eq!(note.meta.relative_path, "dest/src/note.md");
+    }
+
+    #[test]
+    fn test_move_folder_to_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("parent/child")).unwrap();
+        std::fs::write(dir.path().join("parent/child/note.md"), "").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        cave.move_folder(Path::new("parent/child"), None).unwrap();
+        assert!(dir.path().join("child/note.md").exists());
+        let note = cave.read_note("note").unwrap();
+        assert_eq!(note.meta.relative_path, "child/note.md");
+    }
+
+    #[test]
+    fn test_move_folder_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("parent/child")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        cave.move_folder(Path::new("parent/child"), Some(Path::new("parent")))
+            .unwrap();
+        assert!(dir.path().join("parent/child").exists());
+    }
+
+    #[test]
+    fn test_move_folder_into_itself_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave
+            .move_folder(Path::new("a"), Some(Path::new("a/b")))
+            .unwrap_err();
+        assert!(matches!(err, CaveError::InvalidName(_)));
+    }
+
+    #[test]
+    fn test_move_folder_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave.move_folder(Path::new("ghost"), None).unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_move_folder_dest_already_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("a")).unwrap();
+        std::fs::create_dir(dir.path().join("b")).unwrap();
+        std::fs::create_dir(dir.path().join("b/a")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf());
+
+        let err = cave
+            .move_folder(Path::new("a"), Some(Path::new("b")))
+            .unwrap_err();
+        assert!(matches!(err, CaveError::AlreadyExists(_)));
     }
 
     #[test]

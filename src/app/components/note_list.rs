@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use web_sys::MouseEvent;
+use web_sys::{DragEvent, MouseEvent};
 
 use crate::app::ipc;
 use granit_types::{Note, NoteMeta};
@@ -65,6 +65,62 @@ fn insert_node(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize, meta: No
     }
 }
 
+// ── Drag-and-drop helpers ──────────────────────────────────────────
+
+/// What is being dragged: a note (by slug) or a folder (by relative path).
+#[derive(Clone, Debug)]
+enum DragPayload {
+    Note(String),
+    Folder(String),
+}
+
+/// Process a drop event targeted at `dest_folder` (None = cave root).
+fn handle_drop(
+    payload: DragPayload,
+    dest_folder: Option<String>,
+    notes: RwSignal<Vec<NoteMeta>>,
+    active_note: RwSignal<Option<Note>>,
+    error_msg: RwSignal<Option<String>>,
+) {
+    match payload {
+        DragPayload::Note(slug) => {
+            let dest = dest_folder.clone();
+            leptos::task::spawn_local(async move {
+                if let Err(e) = ipc::move_note(&slug, dest.as_deref()).await {
+                    error_msg.set(Some(format!("Failed to move note: {e}")));
+                    return;
+                }
+                if active_note
+                    .get()
+                    .map(|n| n.meta.slug == slug)
+                    .unwrap_or(false)
+                {
+                    if let Ok(note) = ipc::read_note(&slug).await {
+                        active_note.set(Some(note));
+                    }
+                }
+                match ipc::fetch_notes().await {
+                    Ok(list) => notes.set(list),
+                    Err(e) => error_msg.set(Some(format!("Failed to refresh notes: {e}"))),
+                }
+            });
+        }
+        DragPayload::Folder(src_path) => {
+            let dest = dest_folder.clone();
+            leptos::task::spawn_local(async move {
+                if let Err(e) = ipc::move_folder(&src_path, dest.as_deref()).await {
+                    error_msg.set(Some(format!("Failed to move folder: {e}")));
+                    return;
+                }
+                match ipc::fetch_notes().await {
+                    Ok(list) => notes.set(list),
+                    Err(e) => error_msg.set(Some(format!("Failed to refresh notes: {e}"))),
+                }
+            });
+        }
+    }
+}
+
 // ── Context menu ───────────────────────────────────────────────────
 
 #[derive(Clone, Debug)]
@@ -90,9 +146,30 @@ pub fn NoteList(
     notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let context_menu: RwSignal<Option<ContextMenu>> = RwSignal::new(None);
+    let drag_payload: RwSignal<Option<DragPayload>> = RwSignal::new(None);
 
     view! {
-        <div class="relative">
+        <div
+            class="relative min-h-full"
+            on:dragover=move |e: DragEvent| {
+                // Allow drop anywhere — this is the cave-root drop target.
+                // Folder drop handlers call stop_propagation so this only fires
+                // when the cursor is NOT over a folder.
+                if drag_payload.get().is_some() {
+                    e.prevent_default();
+                }
+            }
+            on:drop=move |e: DragEvent| {
+                e.prevent_default();
+                if let Some(payload) = drag_payload.get() {
+                    drag_payload.set(None);
+                    handle_drop(payload, None, notes, active_note, error_msg);
+                }
+            }
+            on:dragend=move |_| {
+                drag_payload.set(None);
+            }
+        >
             // Tree — re-renders when notes or notes_error changes
             {move || {
                 if let Some(err) = notes_error.get() {
@@ -114,7 +191,7 @@ pub fn NoteList(
                             {tree
                                 .into_iter()
                                 .map(|node| {
-                                    render_node(node, active_note, error_msg, notes, context_menu, 0)
+                                    render_node(node, active_note, error_msg, notes, context_menu, drag_payload, 0)
                                 })
                                 .collect_view()}
                         </ul>
@@ -267,6 +344,7 @@ fn render_node(
     error_msg: RwSignal<Option<String>>,
     notes: RwSignal<Vec<NoteMeta>>,
     context_menu: RwSignal<Option<ContextMenu>>,
+    drag_payload: RwSignal<Option<DragPayload>>,
     depth: usize,
 ) -> impl IntoView {
     let indent_px = depth * 12;
@@ -284,6 +362,7 @@ fn render_node(
             };
             let slug_click = meta.slug.clone();
             let slug_ctx = meta.slug.clone();
+            let slug_drag = meta.slug.clone();
             let on_click = move |_| {
                 let s = slug_click.clone();
                 leptos::task::spawn_local(async move {
@@ -301,8 +380,15 @@ fn render_node(
                     target: ContextTarget::Note(slug_ctx.clone()),
                 }));
             };
+            let on_dragstart = move |e: DragEvent| {
+                e.stop_propagation();
+                drag_payload.set(Some(DragPayload::Note(slug_drag.clone())));
+            };
             view! {
-                <li>
+                <li
+                    draggable="true"
+                    on:dragstart=on_dragstart
+                >
                     <button
                         class=move || {
                             let base = "w-full text-left py-1 text-sm truncate transition-colors flex items-center gap-1";
@@ -335,6 +421,7 @@ fn render_node(
             children,
         } => {
             let open = RwSignal::new(true);
+            let drag_over = RwSignal::new(false);
             let children_views = children
                 .into_iter()
                 .map(|child| {
@@ -344,25 +431,65 @@ fn render_node(
                         error_msg,
                         notes,
                         context_menu,
+                        drag_payload,
                         depth + 1,
                     )
                 })
                 .collect_view();
+            let path_ctx = path.clone();
+            let path_drag = path.clone();
+            let path_drop = path.clone();
             let on_contextmenu = move |e: MouseEvent| {
                 e.prevent_default();
                 context_menu.set(Some(ContextMenu {
                     x: e.client_x(),
                     y: e.client_y(),
-                    target: ContextTarget::Folder(path.clone()),
+                    target: ContextTarget::Folder(path_ctx.clone()),
                 }));
             };
+            let on_dragstart = move |e: DragEvent| {
+                e.stop_propagation();
+                drag_payload.set(Some(DragPayload::Folder(path_drag.clone())));
+            };
+            let on_dragover = move |e: DragEvent| {
+                if drag_payload.get().is_some() {
+                    e.prevent_default();
+                    e.stop_propagation();
+                    drag_over.set(true);
+                }
+            };
+            let on_dragleave = move |_| drag_over.set(false);
+            let on_drop = move |e: DragEvent| {
+                e.prevent_default();
+                e.stop_propagation();
+                drag_over.set(false);
+                if let Some(payload) = drag_payload.get() {
+                    drag_payload.set(None);
+                    handle_drop(
+                        payload,
+                        Some(path_drop.clone()),
+                        notes,
+                        active_note,
+                        error_msg,
+                    );
+                }
+            };
             view! {
-                <li>
+                <li
+                    draggable="true"
+                    on:dragstart=on_dragstart
+                >
                     <button
-                        class="w-full text-left py-1 text-sm text-stone-400 hover:text-stone-200 transition-colors flex items-center gap-1"
+                        class=move || {
+                            let base = "w-full text-left py-1 text-sm text-stone-400 hover:text-stone-200 transition-colors flex items-center gap-1";
+                            if drag_over.get() { format!("{base} bg-stone-600/40") } else { base.to_string() }
+                        }
                         style=indent_style
                         on:click=move |_| open.update(|v| *v = !*v)
                         on:contextmenu=on_contextmenu
+                        on:dragover=on_dragover
+                        on:dragleave=on_dragleave
+                        on:drop=on_drop
                     >
                         // Chevron
                         <svg
