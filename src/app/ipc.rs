@@ -42,6 +42,7 @@ struct UpdateNoteArgs {
     old_name: String,
     new_name: String,
     content: String,
+    tags: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -259,11 +260,13 @@ pub async fn update_note(
     old_name: &str,
     new_name: &str,
     content: &str,
+    tags: Option<Vec<String>>,
 ) -> Result<NoteMeta, String> {
     let args = serde_wasm_bindgen::to_value(&UpdateNoteArgs {
         old_name: old_name.to_string(),
         new_name: new_name.to_string(),
         content: content.to_string(),
+        tags,
     })
     .map_err(|e| format!("{e}"))?;
     let val = invoke("update_note", args)

@@ -117,16 +117,23 @@ pub fn strip_frontmatter(raw: &str) -> &str {
 }
 
 /// Read the existing frontmatter from `existing_raw`, update `modified_at`,
-/// and prepend it to `new_body`.
+/// optionally override tags, and prepend it to `new_body`.
 ///
 /// If the existing content has no parseable frontmatter the body is returned
 /// unchanged.
-pub fn rebuild_with_frontmatter(existing_raw: &str, new_body: &str) -> String {
+pub fn rebuild_with_frontmatter(
+    existing_raw: &str,
+    new_body: &str,
+    tags: Option<Vec<String>>,
+) -> String {
     let (fm, _) = extract_frontmatter(existing_raw);
     let Some(mut fm) = fm else {
         return new_body.to_string();
     };
     fm.modified_at = Some(Utc::now());
+    if let Some(tags) = tags {
+        fm.tags = tags;
+    }
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
     format!("---\n{yaml}---\n{new_body}")
 }

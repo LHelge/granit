@@ -50,24 +50,33 @@ pub(super) fn Reader() -> impl IntoView {
         </h1>
         {move || {
             let note = ctx.rendered_note.get()?;
-            let items: Vec<(&str, String)> = [
-                note.created_display.as_deref().map(|s| ("Created", s.to_string())),
-                note.modified_display.as_deref().map(|s| ("Edited", s.to_string())),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            if items.is_empty() {
+            let tags = note
+                .frontmatter
+                .map(|fm| fm.tags)
+                .unwrap_or_default();
+            let created = note.created_display;
+            let modified = note.modified_display;
+            if tags.is_empty() && created.is_none() && modified.is_none() {
                 return None;
             }
             Some(view! {
-                <ul class="not-prose list-none p-0 !mt-0 !mb-6">
-                    {items.into_iter().map(|(label, ts)| view! {
-                        <li class="text-sm italic text-stone-500">
-                            {format!("{label}: {ts}")}
-                        </li>
-                    }).collect_view()}
-                </ul>
+                <div class="not-prose !mt-0 !mb-4 flex flex-col gap-0.5">
+                    {(!tags.is_empty()).then(|| view! {
+                        <div class="flex flex-wrap items-center gap-2 mb-2">
+                            {tags.into_iter().map(|tag| view! {
+                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-stone-700 text-stone-300">
+                                    {tag}
+                                </span>
+                            }).collect_view()}
+                        </div>
+                    })}
+                    {created.map(|ts| view! {
+                        <span class="text-xs italic text-stone-500">{format!("Created: {ts}")}</span>
+                    })}
+                    {modified.map(|ts| view! {
+                        <span class="text-xs italic text-stone-500">{format!("Modified: {ts}")}</span>
+                    })}
+                </div>
             })
         }}
         <div
