@@ -13,6 +13,15 @@ use granit_types::{AgentConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 
+/// Map a provider name to its secrets.env key, if it requires an API key.
+fn api_key_name(provider: &str) -> Option<&'static str> {
+    match provider {
+        "anthropic" => Some("ANTHROPIC_API_KEY"),
+        "mistral" => Some("MISTRAL_API_KEY"),
+        _ => None,
+    }
+}
+
 /// Settings sections available in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsSection {
@@ -63,10 +72,14 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
     // System fonts — loaded once when the modal opens
     let (system_fonts, set_system_fonts) = signal(Vec::<String>::new());
 
-    // Check if Anthropic API key is configured on modal open
+    // Check if API key is configured for the current provider on modal open
     leptos::task::spawn_local(async move {
-        if let Ok(Some(true)) = ipc::get_secret("ANTHROPIC_API_KEY").await {
-            set_api_key_is_set.set(true);
+        let current_provider = provider.get_untracked();
+        let secret_key = api_key_name(&current_provider);
+        if let Some(key) = secret_key {
+            if let Ok(Some(true)) = ipc::get_secret(key).await {
+                set_api_key_is_set.set(true);
+            }
         }
         if let Ok(fonts) = ipc::list_system_fonts().await {
             set_system_fonts.set(fonts);
@@ -79,6 +92,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         let model = model.get();
         let base_url = base_url.get();
         let api_key_val = api_key.get();
+        let max_history = config.get_untracked().agent.max_history;
         let markdown_font = FontConfig {
             font_family: md_font_family.get(),
             font_size: md_font_size.get(),
@@ -97,10 +111,12 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         leptos::task::spawn_local(async move {
             // Save API key if the user entered a new one
             if !api_key_val.is_empty() {
-                if let Err(e) = ipc::set_secret("ANTHROPIC_API_KEY", &api_key_val).await {
-                    set_save_error.set(Some(e));
-                    set_saving.set(false);
-                    return;
+                if let Some(key_name) = api_key_name(&provider) {
+                    if let Err(e) = ipc::set_secret(key_name, &api_key_val).await {
+                        set_save_error.set(Some(e));
+                        set_saving.set(false);
+                        return;
+                    }
                 }
             }
 
@@ -112,7 +128,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 } else {
                     Some(base_url.clone())
                 },
-                ..AgentConfig::default()
+                max_history,
             };
             match ipc::save_config(agent, markdown_font, reading_font, agent_font).await {
                 Ok(new_config) => {
