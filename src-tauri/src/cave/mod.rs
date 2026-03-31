@@ -197,7 +197,7 @@ impl Cave {
             .values()
             .map(|abs| note_meta_from_relative_path(&self.relative_path(abs)))
             .collect();
-        notes.sort_by(|a, b| a.slug.to_lowercase().cmp(&b.slug.to_lowercase()));
+        notes.sort_by_key(|n| n.slug.to_lowercase());
         Ok(notes)
     }
 
@@ -208,7 +208,7 @@ impl Cave {
     pub fn list_folders(&self) -> Result<Vec<String>, CaveError> {
         let mut folders = Vec::new();
         Self::collect_folders(&self.path, &self.path, &mut folders)?;
-        folders.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+        folders.sort_by_key(|f| f.to_lowercase());
         Ok(folders)
     }
 
