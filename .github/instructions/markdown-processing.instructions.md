@@ -8,7 +8,7 @@ Instructions for the markdown parsing pipeline in the backend.
 
 ## Pipeline
 
-Raw markdown → frontmatter extraction → wiki-link resolution → pulldown-cmark → HTML
+Raw markdown → frontmatter extraction → pulldown-cmark (with `ENABLE_WIKILINKS`) → HTML
 
 ### 1. Frontmatter Extraction
 
@@ -26,35 +26,22 @@ struct Frontmatter {
 
 The note title is always derived from the filename. It is included in `RenderedNote` for the frontend to render as a page header above the HTML body.
 
-### 2. Wiki-Link Resolution
+### 2. Rendering with Wiki-Link Resolution
 
-Before parsing markdown, find `[[note-name]]` patterns and resolve them:
+Wiki-links (`[[note-name]]`) are resolved **during** pulldown-cmark event processing
+using the `ENABLE_WIKILINKS` parser option. This means code blocks and inline code
+are handled automatically by the parser — no separate text preprocessing step needed.
 
-- Search the entire cave for a file matching `note-name.md` (case-insensitive, any subdirectory)
-- Replace `[[note-name]]` with a standard markdown link: `[note-name](resolved-path)`
-- If no match is found, render as a "broken link" (e.g., red text or strikethrough)
-- Filenames are unique across the cave — if duplicates exist, match the first found
+The `render_with_wiki_links` function intercepts `Event::Start(Tag::Link { link_type: WikiLink { .. }, .. })` events:
 
-### 3. Rendering
+- **Resolved**: lookup matches a cave note → rewrite to `LinkType::Inline` with the slug as href, collect into `outgoing_links`
+- **Unresolved**: no match → render with `class="broken-link"` for frontend styling
+- **Piped links**: `[[target|display text]]` are supported natively (`has_pothole: true`)
 
-Use `pulldown-cmark` with these options enabled:
-- Tables
-- Strikethrough
-- Task lists
-- Footnotes (if needed)
+Options enabled: tables, strikethrough, task lists, footnotes, **wikilinks**.
 
-```rust
-use pulldown_cmark::{Parser, Options, html};
-
-let mut options = Options::empty();
-options.insert(Options::ENABLE_TABLES);
-options.insert(Options::ENABLE_STRIKETHROUGH);
-options.insert(Options::ENABLE_TASKLISTS);
-
-let parser = Parser::new_ext(&markdown, options);
-let mut html_output = String::new();
-html::push_html(&mut html_output, parser);
-```
+For plain markdown without wiki-link resolution (e.g., agent chat messages), use
+`render_html()` which does not enable `ENABLE_WIKILINKS`.
 
 ## Return Type
 
