@@ -5,9 +5,9 @@ mod reading;
 
 use leptos::prelude::*;
 
+use super::icons::XCloseIcon;
 use crate::app::ipc;
 use agent::AgentSettings;
-use super::icons::XCloseIcon;
 use granit_types::{AgentConfig, AppConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;

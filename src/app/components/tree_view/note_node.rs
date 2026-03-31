@@ -3,9 +3,9 @@ use web_sys::{DragEvent, MouseEvent};
 
 use granit_types::NoteMeta;
 
-use crate::app::components::icons::NoteIcon;
 use super::rename_input::RenameInput;
 use super::{use_tree_ctx, ContextMenu, ContextTarget, DragPayload, RenameTarget};
+use crate::app::components::icons::NoteIcon;
 use crate::app::ipc;
 
 /// Renders a single note row in the tree, with drag, context menu, and rename support.

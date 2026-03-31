@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
-use crate::app::ipc;
 use super::icons::{ChevronDownIcon, GearIcon};
+use crate::app::ipc;
 use granit_types::{AppConfig, Note, NoteMeta};
 
 #[component]

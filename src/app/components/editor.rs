@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::app::ipc;
 use super::icons::{PencilIcon, SaveIcon, XCloseIcon};
+use crate::app::ipc;
 use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
 
 #[component]
