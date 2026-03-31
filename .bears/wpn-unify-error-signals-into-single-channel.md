@@ -1,10 +1,10 @@
 ---
 id: wpn
 title: Unify error signals into single channel
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:33:19.406421967Z
-updated: 2026-03-31T16:33:47.546369492Z
+updated: 2026-03-31T20:08:49.575917776Z
 tags:
 - frontend
 - refactor

@@ -16,14 +16,19 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                     ctx.config.set(new_config);
                     match ipc::fetch_notes().await {
                         Ok(n) => {
-                            ctx.notes_error.set(None);
+                            ctx.clear_source("notes");
                             ctx.notes.set(n);
                         }
-                        Err(e) => ctx.notes_error.set(Some(e)),
+                        Err(e) => {
+                            ctx.clear_source("notes");
+                            ctx.push_error("notes", e);
+                        }
                     }
                     ctx.active_note.set(None);
                 }
-                Err(e) => ctx.error_msg.set(Some(format!("Failed to open cave: {e}"))),
+                Err(e) => {
+                    ctx.push_error("cave", format!("Failed to open cave: {e}"));
+                }
             }
             set_dropdown_open.set(false);
         });

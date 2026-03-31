@@ -72,7 +72,7 @@ pub(super) fn FolderNode(
                                 leptos::task::spawn_local(async move {
                                     match ipc::rename_folder(&source, &new_name).await {
                                         Ok(()) => ctx.refresh_async().await,
-                                        Err(e) => ctx.error_msg.set(Some(format!("Failed to rename folder: {e}"))),
+                                        Err(e) => ctx.push_error(format!("Failed to rename folder: {e}")),
                                     }
                                 });
                             })

@@ -10,6 +10,14 @@ use granit_types::{AppConfig, Note, NoteMeta};
 
 // ── App-wide shared state via context ──────────────────────────────
 
+/// A single error entry in the unified error channel.
+#[derive(Clone, PartialEq)]
+pub struct AppError {
+    id: u32,
+    pub source: &'static str,
+    pub message: String,
+}
+
 /// Shared reactive state provided via Leptos context so child components can
 /// `expect_context::<AppCtx>()` instead of receiving these signals as props.
 #[derive(Clone, Copy)]
@@ -17,8 +25,50 @@ pub struct AppCtx {
     pub config: RwSignal<AppConfig>,
     pub notes: RwSignal<Vec<NoteMeta>>,
     pub active_note: RwSignal<Option<Note>>,
-    pub error_msg: RwSignal<Option<String>>,
-    pub notes_error: RwSignal<Option<String>>,
+    pub is_mac: bool,
+    errors: RwSignal<Vec<AppError>>,
+    next_id: RwSignal<u32>,
+}
+
+impl AppCtx {
+    /// Push an error and return its id (for later dismissal).
+    pub fn push_error(&self, source: &'static str, message: impl Into<String>) -> u32 {
+        let id = self.next_id.get_untracked();
+        self.next_id.set(id + 1);
+        self.errors.update(|v| {
+            v.push(AppError {
+                id,
+                source,
+                message: message.into(),
+            })
+        });
+        // Auto-dismiss after 8 seconds
+        let ctx = *self;
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::sleep(std::time::Duration::from_secs(8)).await;
+            ctx.dismiss(id);
+        });
+        id
+    }
+
+    /// Dismiss a single error by id.
+    pub fn dismiss(&self, id: u32) {
+        self.errors.update(|v| v.retain(|e| e.id != id));
+    }
+
+    /// Remove all errors from a given source.
+    pub fn clear_source(&self, source: &'static str) {
+        self.errors.update(|v| v.retain(|e| e.source != source));
+    }
+
+    /// Get the first error for a source (for inline display).
+    pub fn first_error_for(&self, source: &'static str) -> Option<String> {
+        self.errors
+            .get()
+            .iter()
+            .find(|e| e.source == source)
+            .map(|e| e.message.clone())
+    }
 }
 
 #[component]
@@ -27,12 +77,18 @@ pub fn App() -> impl IntoView {
     let (agent_visible, set_agent_visible) = signal(false);
     let (settings_open, set_settings_open) = signal(false);
 
+    let is_mac = web_sys::window()
+        .and_then(|w| w.navigator().platform().ok())
+        .map(|p: String| p.contains("Mac"))
+        .unwrap_or(false);
+
     let ctx = AppCtx {
         config: RwSignal::new(AppConfig::default()),
         notes: RwSignal::new(Vec::<NoteMeta>::new()),
         active_note: RwSignal::new(None::<Note>),
-        error_msg: RwSignal::new(None::<String>),
-        notes_error: RwSignal::new(None::<String>),
+        is_mac,
+        errors: RwSignal::new(Vec::new()),
+        next_id: RwSignal::new(0),
     };
     provide_context(ctx);
     provide_context(OpenInEdit(RwSignal::new(EditOpen::Preview)));
@@ -42,8 +98,7 @@ pub fn App() -> impl IntoView {
         let cfg = match ipc::fetch_config().await {
             Ok(c) => c,
             Err(e) => {
-                ctx.error_msg
-                    .set(Some(format!("Failed to load config: {e}")));
+                ctx.push_error("config", format!("Failed to load config: {e}"));
                 return;
             }
         };
@@ -57,15 +112,18 @@ pub fn App() -> impl IntoView {
                     ctx.config.set(new_cfg);
                     match ipc::fetch_notes().await {
                         Ok(n) => {
-                            ctx.notes_error.set(None);
+                            ctx.clear_source("notes");
                             ctx.notes.set(n);
                         }
-                        Err(e) => ctx.notes_error.set(Some(e)),
+                        Err(e) => {
+                            ctx.clear_source("notes");
+                            ctx.push_error("notes", e);
+                        }
                     }
                 }
-                Err(e) => ctx
-                    .error_msg
-                    .set(Some(format!("Failed to reopen cave: {e}"))),
+                Err(e) => {
+                    ctx.push_error("cave", format!("Failed to reopen cave: {e}"));
+                }
             }
         }
     });
@@ -74,26 +132,10 @@ pub fn App() -> impl IntoView {
     let toggle_agent = move |_| set_agent_visible.update(|v| *v = !*v);
 
     // macOS needs extra left margin for traffic-light window buttons
-    let title_margin = js_sys::eval("navigator.platform")
-        .ok()
-        .and_then(|v| v.as_string())
-        .map(|p| if p.contains("Mac") { "ml-16" } else { "ml-2" })
-        .unwrap_or("ml-2");
+    let title_margin = if ctx.is_mac { "ml-16" } else { "ml-2" };
 
     view! {
         <div class="flex flex-col h-screen bg-stone-900 text-stone-200 font-sans">
-            // Global error banner
-            <Show when=move || ctx.error_msg.get().is_some()>
-                <div class="px-3 py-1.5 bg-red-900/70 border-b border-red-700 text-red-300 text-xs flex items-center gap-2">
-                    <span class="flex-1">{move || ctx.error_msg.get().unwrap_or_default()}</span>
-                    <button
-                        class="text-red-400 hover:text-red-200"
-                        on:click=move |_| ctx.error_msg.set(None)
-                    >
-                        "✕"
-                    </button>
-                </div>
-            </Show>
             // Top bar
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
                 <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
@@ -135,6 +177,28 @@ pub fn App() -> impl IntoView {
             <Show when=move || settings_open.get()>
                 <SettingsModal set_open=set_settings_open />
             </Show>
+
+            // Toast notifications (bottom-right)
+            <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+                <For
+                    each=move || ctx.errors.get()
+                    key=|e| e.id
+                    let:err
+                >
+                    <div class="pointer-events-auto flex items-start gap-2 px-3 py-2.5 rounded-lg shadow-lg bg-red-950/90 border border-red-800/60 text-red-200 text-xs backdrop-blur-sm animate-[toast-in_0.2s_ease-out]">
+                        <span class="flex-1 leading-relaxed">{err.message.clone()}</span>
+                        <button
+                            class="mt-0.5 text-red-400 hover:text-red-200 shrink-0"
+                            on:click={
+                                let id = err.id;
+                                move |_| ctx.dismiss(id)
+                            }
+                        >
+                            "✕"
+                        </button>
+                    </div>
+                </For>
+            </div>
         </div>
     }
 }

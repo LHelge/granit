@@ -1,10 +1,10 @@
 ---
 id: byz
 title: Centralize platform detection at startup
-status: open
+status: done
 priority: P3
 created: 2026-03-31T16:33:41.284957324Z
-updated: 2026-03-31T16:33:47.556805608Z
+updated: 2026-03-31T20:08:49.586108941Z
 tags:
 - frontend
 - refactor
