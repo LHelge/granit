@@ -3,9 +3,9 @@ use leptos::prelude::*;
 mod components;
 pub(crate) mod ipc;
 
+use components::editor::EditOpen;
 use components::icons::{PanelLeftIcon, PanelRightIcon};
 use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
-use components::editor::EditOpen;
 use granit_types::{AppConfig, Note, NoteMeta};
 
 #[component]

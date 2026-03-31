@@ -48,6 +48,12 @@
   margin-bottom: 0.75em;
 }
 
+/* Remove backtick decorations from inline code */
+.prose :where(code):not(:where(.not-prose, .not-prose *))::before,
+.prose :where(code):not(:where(.not-prose, .not-prose *))::after {
+  content: none;
+}
+
 /* Unresolved wiki-links: styled as muted links */
 /* Title bar drag region for macOS overlay style */
 .titlebar {
