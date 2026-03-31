@@ -1,6 +1,6 @@
 use chrono::{Local, Utc};
 use granit_types::{Frontmatter, RenderedNote};
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{html, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 /// Render a full markdown document to a [`RenderedNote`].
 ///
@@ -12,19 +12,15 @@ use pulldown_cmark::{html, Options, Parser};
 ///
 /// Pipeline:
 /// 1. Strip and parse YAML frontmatter (between `---` fences)
-/// 2. Resolve `[[wiki-links]]` against `cave_notes`
-/// 3. Run the resolved body through pulldown-cmark
+/// 2. Render body through pulldown-cmark with `ENABLE_WIKILINKS`, resolving
+///    wiki-links during event processing against `cave_notes`
 pub fn render_note<'lookup>(
     raw: &str,
     title: &str,
     lookup: impl Fn(&str) -> Option<&'lookup str>,
 ) -> RenderedNote {
     let (frontmatter, body) = extract_frontmatter(raw);
-    let (resolved_body, outgoing_links) = resolve_wiki_links(body, lookup);
-    let html = render_html(&resolved_body);
-    // pulldown-cmark renders link titles as title="…" attributes; convert
-    // our broken-link marker to a class so the frontend can style and detect it.
-    let html = html.replace(" title=\"broken-link\"", " class=\"broken-link\"");
+    let (html, outgoing_links) = render_with_wiki_links(body, lookup);
     let fmt = |d: chrono::DateTime<Utc>| {
         d.with_timezone(&Local)
             .format("%Y-%m-%d %H:%M:%S")
@@ -42,55 +38,74 @@ pub fn render_note<'lookup>(
     }
 }
 
-/// Resolve `[[wiki-links]]` in `body` against the list of cave note slugs.
+/// Render markdown to HTML, resolving `[[wiki-links]]` during event processing.
 ///
-/// For each `[[note-name]]` found:
-/// - If a slug matching `note-name` (case-insensitive) exists in `cave_notes`,
-///   it is replaced with a standard markdown link `[note-name](slug)`.
-/// - If no match is found, it is replaced with an HTML `<span>` carrying the
-///   `broken-link` class so the frontend can style it distinctly.
+/// Uses pulldown-cmark's `ENABLE_WIKILINKS` so wiki-links inside code blocks
+/// and inline code are naturally ignored by the parser.
 ///
-/// Returns `(resolved_body, outgoing_links)` where `outgoing_links` is the
-/// list of resolved slugs (one entry per resolved wiki-link occurrence).
-pub fn resolve_wiki_links<'lookup>(
-    body: &str,
+/// For each wiki-link:
+/// - If the lookup resolves the target, the link href is set to the slug.
+/// - If unresolved, the link gets a `class="broken-link"` so the frontend can
+///   style it distinctly.
+///
+/// Returns `(html, outgoing_links)`.
+fn render_with_wiki_links<'lookup>(
+    markdown: &str,
     lookup: impl Fn(&str) -> Option<&'lookup str>,
 ) -> (String, Vec<String>) {
-    let mut output = String::with_capacity(body.len());
-    let mut outgoing = Vec::new();
-    let mut remaining = body;
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_WIKILINKS);
 
-    while let Some(open) = remaining.find("[[") {
-        // Append everything before the opening `[[`
-        output.push_str(&remaining[..open]);
-        let after_open = &remaining[open + 2..];
+    let parser = Parser::new_ext(markdown, options);
+    let mut outgoing_links = Vec::new();
 
-        // Find the matching closing `]]`
-        if let Some(close) = after_open.find("]]") {
-            let link_text = &after_open[..close];
-            // link_text must be non-empty and contain no nested `[` or `]`
-            if !link_text.is_empty() && !link_text.contains('[') && !link_text.contains(']') {
-                if let Some(slug) = lookup(link_text) {
-                    // Resolved: standard markdown link; angle-bracket URL handles slugs with spaces
-                    output.push_str(&format!("[{link_text}](<{slug}>)"));
-                    outgoing.push(slug.to_string());
-                } else {
-                    // Unresolved: markdown link with a broken-link marker as title.
-                    // The frontend can style links whose title equals "broken-link".
-                    output.push_str(&format!("[{link_text}](<{link_text}> \"broken-link\")"));
-                }
-                remaining = &after_open[close + 2..];
-                continue;
+    let events = parser.flat_map(|event| match event {
+        // Resolve wiki-links against the cave
+        Event::Start(Tag::Link {
+            link_type: LinkType::WikiLink { .. },
+            dest_url,
+            title: _,
+            id,
+        }) => {
+            if let Some(slug) = lookup(&dest_url) {
+                outgoing_links.push(slug.to_string());
+                vec![Event::Start(Tag::Link {
+                    link_type: LinkType::Inline,
+                    dest_url: slug.to_string().into(),
+                    title: "".into(),
+                    id,
+                })]
+            } else {
+                vec![Event::Start(Tag::Link {
+                    link_type: LinkType::Inline,
+                    dest_url,
+                    title: "broken-link".into(),
+                    id,
+                })]
             }
         }
+        // Sanitize: convert raw HTML events to escaped text so untrusted
+        // content cannot inject scripts or arbitrary markup.
+        Event::Html(raw) | Event::InlineHtml(raw) => {
+            vec![
+                Event::Start(Tag::CodeBlock(pulldown_cmark::CodeBlockKind::Indented)),
+                Event::Text(raw),
+                Event::End(TagEnd::CodeBlock),
+            ]
+        }
+        other => vec![other],
+    });
 
-        // Not a valid wiki-link — emit `[[` literally and advance past it
-        output.push_str("[[");
-        remaining = after_open;
-    }
-
-    output.push_str(remaining);
-    (output, outgoing)
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, events);
+    // pulldown-cmark renders link titles as title="…" attributes; convert
+    // our broken-link marker to a class so the frontend can style and detect it.
+    let html_output = html_output.replace(" title=\"broken-link\"", " class=\"broken-link\"");
+    (html_output, outgoing_links)
 }
 
 /// Generate the initial file content for a new note.
@@ -186,8 +201,6 @@ fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
 /// escaped to prevent XSS — LLM responses or user content cannot inject
 /// arbitrary HTML/JS into the webview.
 pub(crate) fn render_html(markdown: &str) -> String {
-    use pulldown_cmark::{Event, Tag, TagEnd};
-
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -376,64 +389,65 @@ mod tests {
         assert!(result.html.contains("<h1>"));
     }
 
-    // ── resolve_wiki_links ────────────────────────────────────────────────────
+    // ── wiki-link resolution (via render_with_wiki_links) ──────────────────────
 
     #[test]
     fn test_wiki_link_no_links() {
-        let (out, links) = resolve_wiki_links("Just plain text.", |_| None);
-        assert_eq!(out, "Just plain text.");
+        let (html, links) = render_with_wiki_links("Just plain text.", |_| None);
+        assert!(html.contains("Just plain text."), "got: {html}");
         assert!(links.is_empty());
     }
 
     #[test]
     fn test_wiki_link_resolved() {
-        let (out, links) = resolve_wiki_links("See [[my-note]] for details.", |s| {
+        let (html, links) = render_with_wiki_links("See [[my-note]] for details.", |s| {
             ["my-note"]
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert_eq!(out, "See [my-note](<my-note>) for details.");
+        assert!(html.contains("<a href=\"my-note\">my-note</a>"), "got: {html}");
         assert_eq!(links, ["my-note"]);
     }
 
     #[test]
     fn test_wiki_link_resolved_case_insensitive() {
-        let (out, links) = resolve_wiki_links("See [[My-Note]] for details.", |s| {
+        let (html, links) = render_with_wiki_links("See [[My-Note]] for details.", |s| {
             ["my-note"]
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert_eq!(out, "See [My-Note](<my-note>) for details.");
+        assert!(html.contains("href=\"my-note\""), "got: {html}");
+        assert!(html.contains("My-Note"), "got: {html}");
         assert_eq!(links, ["my-note"]);
     }
 
     #[test]
     fn test_wiki_link_unresolved() {
-        let (out, links) = resolve_wiki_links("See [[ghost]] here.", |s| {
+        let (html, links) = render_with_wiki_links("See [[ghost]] here.", |s| {
             ["real-note"]
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert!(out.contains("broken-link"), "got: {out}");
-        assert!(out.contains("ghost"), "got: {out}");
+        assert!(html.contains("broken-link"), "got: {html}");
+        assert!(html.contains("ghost"), "got: {html}");
         assert!(links.is_empty());
     }
 
     #[test]
     fn test_wiki_link_multiple() {
         let notes = ["alpha", "gamma"];
-        let (out, links) = resolve_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", |s| {
+        let (html, links) = render_with_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", |s| {
             notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert!(out.contains("[alpha](<alpha>)"), "got: {out}");
+        assert!(html.contains("<a href=\"alpha\">alpha</a>"), "got: {html}");
         assert!(
-            out.contains("broken-link") && out.contains("beta"),
-            "got: {out}"
+            html.contains("broken-link") && html.contains("beta"),
+            "got: {html}"
         );
-        assert!(out.contains("[gamma](<gamma>)"), "got: {out}");
+        assert!(html.contains("<a href=\"gamma\">gamma</a>"), "got: {html}");
         assert_eq!(links, ["alpha", "gamma"]);
     }
 
@@ -449,9 +463,99 @@ mod tests {
 
     #[test]
     fn test_wiki_link_empty_brackets_passthrough() {
-        let (out, links) = resolve_wiki_links("[[]] is not a link.", |_| None);
-        assert_eq!(out, "[[]] is not a link.");
+        let (html, links) = render_with_wiki_links("[[]] is not a link.", |_| None);
+        // pulldown-cmark treats [[]] as literal text
+        assert!(html.contains("[[]]"), "got: {html}");
         assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_wiki_link_in_fenced_code_block() {
+        let input = "before\n```\n[[not-a-link]]\n```\nafter [[real]]";
+        let (html, links) = render_with_wiki_links(input, |s| {
+            ["not-a-link", "real"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
+        // The fenced block should not contain a resolved link
+        assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
+        // The normal link should be resolved
+        assert!(html.contains("<a href=\"real\">"), "got: {html}");
+        assert_eq!(links, ["real"]);
+    }
+
+    #[test]
+    fn test_wiki_link_in_tilde_code_block() {
+        let input = "~~~\n[[not-a-link]]\n~~~\n[[yes]]";
+        let (html, links) = render_with_wiki_links(input, |s| {
+            ["not-a-link", "yes"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
+        assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
+        assert!(html.contains("<a href=\"yes\">"), "got: {html}");
+        assert_eq!(links, ["yes"]);
+    }
+
+    #[test]
+    fn test_wiki_link_in_inline_code() {
+        let input = "See `[[not-a-link]]` and [[real]]";
+        let (html, links) = render_with_wiki_links(input, |s| {
+            ["not-a-link", "real"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
+        assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
+        assert!(html.contains("<a href=\"real\">"), "got: {html}");
+        assert_eq!(links, ["real"]);
+    }
+
+    #[test]
+    fn test_wiki_link_in_double_backtick_inline_code() {
+        let input = "See ``[[not-a-link]]`` here";
+        let (html, links) = render_with_wiki_links(input, |_| Some("not-a-link"));
+        assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn test_wiki_link_piped() {
+        let (html, links) = render_with_wiki_links("See [[target|display text]] here.", |s| {
+            ["target"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
+        assert!(html.contains("href=\"target\""), "got: {html}");
+        assert!(html.contains("display text"), "got: {html}");
+        assert_eq!(links, ["target"]);
+    }
+
+    #[test]
+    fn test_wiki_link_in_fenced_code_full_pipeline() {
+        let input = "```\n[[skip-me]]\n```\n\n[[resolve-me]]";
+        let result = render_note(input, "test", |s| {
+            ["resolve-me"]
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+        });
+        // The code block should render [[skip-me]] as text, not a link
+        assert!(
+            !result.html.contains("<a href=\"skip-me\">"),
+            "got: {}",
+            result.html
+        );
+        // The normal link should resolve
+        assert!(
+            result.html.contains("<a href=\"resolve-me\">"),
+            "got: {}",
+            result.html
+        );
+        assert_eq!(result.outgoing_links, ["resolve-me"]);
     }
 
     // ── HTML sanitization ─────────────────────────────────────────────────────
