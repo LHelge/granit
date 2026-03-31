@@ -14,6 +14,7 @@ use folder_node::FolderNode;
 use note_node::NoteNode;
 use tree_model::{build_tree, TreeNode};
 
+use crate::app::components::editor::OpenInEdit;
 use crate::app::ipc;
 
 // ── Shared state via context ───────────────────────────────────────
@@ -29,6 +30,7 @@ pub(super) struct TreeCtx {
     pub context_menu: RwSignal<Option<ContextMenu>>,
     pub drag_payload: RwSignal<Option<DragPayload>>,
     pub renaming: RwSignal<Option<RenameTarget>>,
+    pub open_in_edit: RwSignal<bool>,
 }
 
 impl TreeCtx {
@@ -164,6 +166,7 @@ pub fn TreeView(
         context_menu: RwSignal::new(None),
         drag_payload: RwSignal::new(None),
         renaming: RwSignal::new(None),
+        open_in_edit: expect_context::<OpenInEdit>().0,
     };
     provide_context(ctx);
 
