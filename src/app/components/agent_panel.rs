@@ -87,11 +87,6 @@ pub fn AgentPanel(config: RwSignal<AppConfig>) -> impl IntoView {
 
     view! {
         <aside class="w-80 shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden">
-            // Header
-            <div class="flex items-center px-3 py-2 border-b border-stone-700">
-                <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">"Agent"</span>
-            </div>
-
             // Message list
             <div
                 class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col"

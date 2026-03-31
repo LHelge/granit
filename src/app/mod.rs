@@ -3,7 +3,7 @@ use leptos::prelude::*;
 mod components;
 pub(crate) mod ipc;
 
-use components::icons::{ChatBubbleIcon, HamburgerIcon};
+use components::icons::{PanelLeftIcon, PanelRightIcon};
 use components::{AgentPanel, Editor, SettingsModal, Sidebar};
 use granit_types::{AppConfig, Note, NoteMeta};
 
@@ -66,24 +66,24 @@ pub fn App() -> impl IntoView {
                 </div>
             </Show>
             // Top bar
-            <header class="flex items-center justify-between h-10 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
-                <div class="flex items-center gap-2">
+            <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
+                <span class="text-sm font-semibold tracking-wide text-stone-300 ml-16 mt-1">"Granit"</span>
+                <div class="flex items-center gap-1">
                     <button
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
                         on:click=toggle_sidebar
                         title="Toggle sidebar"
                     >
-                        <HamburgerIcon />
+                        <PanelLeftIcon />
                     </button>
-                    <span class="text-sm font-semibold tracking-wide text-stone-300">"Granit"</span>
+                    <button
+                        class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                        on:click=toggle_agent
+                        title="Toggle agent"
+                    >
+                        <PanelRightIcon />
+                    </button>
                 </div>
-                <button
-                    class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
-                    on:click=toggle_agent
-                    title="Toggle agent"
-                >
-                    <ChatBubbleIcon />
-                </button>
             </header>
 
             // Main content area
@@ -105,7 +105,9 @@ pub fn App() -> impl IntoView {
 
                 // Agent panel (right)
                 <Show when=move || agent_visible.get()>
-                    <AgentPanel config=config />
+                    <AgentPanel
+                        config=config
+                    />
                 </Show>
             </div>
 
