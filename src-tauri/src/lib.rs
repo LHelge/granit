@@ -248,10 +248,8 @@ fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveEr
 #[tauri::command]
 fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
     with_cave(&state, |cave| {
-        let note = cave.read_note(&name)?;
-        Ok(markdown::render_note(&note.content, &note.meta.slug, |s| {
-            cave.lookup_slug(s)
-        }))
+        let raw = cave.read_note_raw(&name)?;
+        Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
     })
 }
 

@@ -107,44 +107,25 @@ pub fn initial_content(slug: &str) -> String {
 
 /// Update the `modified_at` field in the YAML frontmatter of `raw` to the
 /// current UTC time.
+/// Return only the body of a note, stripping any YAML frontmatter.
+pub fn strip_frontmatter(raw: &str) -> &str {
+    let (_fm, body) = extract_frontmatter(raw);
+    body
+}
+
+/// Read the existing frontmatter from `existing_raw`, update `modified_at`,
+/// and prepend it to `new_body`.
 ///
-/// If `raw` contains no frontmatter (or it cannot be parsed) the original
-/// content is returned unchanged — callers that save user-edited content
-/// without frontmatter are not affected.
-pub fn update_modified_at(raw: &str) -> String {
-    let after_open = match raw.strip_prefix("---") {
-        Some(rest) => rest,
-        None => return raw.to_string(),
-    };
-    let after_open = match after_open
-        .strip_prefix('\n')
-        .or_else(|| after_open.strip_prefix("\r\n"))
-    {
-        Some(rest) => rest,
-        None => return raw.to_string(),
-    };
-
-    let close_pattern = "\n---";
-    let close_pos = match after_open.find(close_pattern) {
-        Some(pos) => pos,
-        None => return raw.to_string(),
-    };
-
-    let yaml = &after_open[..close_pos];
-    let after_close = &after_open[close_pos + close_pattern.len()..];
-
-    let mut fm: Frontmatter = match serde_yml::from_str(yaml) {
-        Ok(fm) => fm,
-        Err(_) => return raw.to_string(),
+/// If the existing content has no parseable frontmatter the body is returned
+/// unchanged.
+pub fn rebuild_with_frontmatter(existing_raw: &str, new_body: &str) -> String {
+    let (fm, _) = extract_frontmatter(existing_raw);
+    let Some(mut fm) = fm else {
+        return new_body.to_string();
     };
     fm.modified_at = Some(Utc::now());
-
-    let new_yaml = match serde_yml::to_string(&fm) {
-        Ok(s) => s,
-        Err(_) => return raw.to_string(),
-    };
-
-    format!("---\n{}---{}", new_yaml, after_close)
+    let yaml = serde_yml::to_string(&fm).unwrap_or_default();
+    format!("---\n{yaml}---\n{new_body}")
 }
 
 /// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.
