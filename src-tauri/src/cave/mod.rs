@@ -248,12 +248,23 @@ impl Cave {
             .get(slug)
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
-        let content = std::fs::read_to_string(abs_path)?;
+        let raw = std::fs::read_to_string(abs_path)?;
+        let body = crate::markdown::strip_frontmatter(&raw).to_string();
         let rel = self.relative_path(abs_path);
         Ok(Note {
             meta: note_meta_from_relative_path(&rel),
-            content,
+            content: body,
         })
+    }
+
+    /// Read the raw file content of a note (including frontmatter).
+    pub fn read_note_raw(&self, slug: &str) -> Result<String, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+        Ok(std::fs::read_to_string(abs_path)?)
     }
 
     /// Save new content to an existing note (looked up by slug).
@@ -264,7 +275,8 @@ impl Cave {
             .get(slug)
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
-        let updated = crate::markdown::update_modified_at(content);
+        let existing_raw = std::fs::read_to_string(abs_path)?;
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content);
         std::fs::write(abs_path, updated.as_str())?;
         let rel = self.relative_path(abs_path);
         Ok(note_meta_from_relative_path(&rel))
@@ -509,7 +521,8 @@ impl Cave {
             old_abs
         };
 
-        let updated = crate::markdown::update_modified_at(content);
+        let existing_raw = std::fs::read_to_string(&final_abs)?;
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content);
         std::fs::write(&final_abs, updated.as_str())?;
 
         let rel = self.relative_path(&final_abs);
