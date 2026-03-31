@@ -1,5 +1,6 @@
 mod frontmatter;
 mod reader;
+pub(crate) mod text_editing;
 mod writer;
 
 use leptos::prelude::*;

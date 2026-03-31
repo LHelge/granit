@@ -95,7 +95,8 @@ Agent logic lives entirely in the backend. The frontend only renders the chat UI
 cd src-tauri && cargo tauri dev    # Full app (launches Trunk + Tauri)
 trunk serve                        # Frontend only (port 1420)
 cargo test -p granit               # Backend unit tests
-wasm-pack test --headless --firefox # Frontend WASM tests
+cargo test -p granit-types         # Shared types tests
+wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing)
 ```
  
 ### Workflow
