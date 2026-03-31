@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
+use super::frontmatter::FrontmatterEditor;
 use super::{use_editor_ctx, EditorCtx};
 
 fn request_animation_frame(f: impl FnOnce() + 'static) {
@@ -470,6 +471,7 @@ pub(super) fn Writer() -> impl IntoView {
                 }
             }
         />
+        <FrontmatterEditor />
         <textarea
             node_ref=content_ref
             class="not-prose w-full flex-1 bg-transparent text-stone-300 resize-none outline-none leading-relaxed"

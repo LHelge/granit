@@ -1,3 +1,4 @@
+mod frontmatter;
 mod reader;
 mod writer;
 
@@ -53,12 +54,20 @@ pub(super) struct EditorCtx {
     open_in_edit: RwSignal<EditOpen>,
     /// Tracks the slug of the previously active note to detect real switches.
     prev_slug: RwSignal<Option<String>>,
+    /// Frontmatter tags for the current note.
+    pub tags: RwSignal<Vec<String>>,
 }
 
 impl EditorCtx {
     /// Persist a note to disk and refresh the sidebar note list.
-    async fn persist(self, slug: &str, name: &str, content: &str) -> Result<NoteMeta, String> {
-        let meta = ipc::update_note(slug, name, content).await?;
+    async fn persist(
+        self,
+        slug: &str,
+        name: &str,
+        content: &str,
+        tags: Option<Vec<String>>,
+    ) -> Result<NoteMeta, String> {
+        let meta = ipc::update_note(slug, name, content, tags).await?;
         if let Ok(notes) = ipc::fetch_notes().await {
             self.notes.set(notes);
         }
@@ -77,13 +86,14 @@ impl EditorCtx {
     fn auto_save(self, slug: String) {
         let content = self.content.get_untracked();
         let title = self.title_input.get_untracked().trim().to_string();
+        let tags = self.tags.get_untracked();
         let name = if title.is_empty() {
             slug.clone()
         } else {
             title
         };
         leptos::task::spawn_local(async move {
-            if let Err(e) = self.persist(&slug, &name, &content).await {
+            if let Err(e) = self.persist(&slug, &name, &content, Some(tags)).await {
                 self.error.set(Some(format!("Autosave failed: {e}")));
             }
         });
@@ -104,9 +114,10 @@ impl EditorCtx {
         self.saving.set(true);
         self.error.set(None);
         let old_slug = note.meta.slug.clone();
+        let tags = self.tags.get_untracked();
 
         leptos::task::spawn_local(async move {
-            match self.persist(&old_slug, &name, &content).await {
+            match self.persist(&old_slug, &name, &content, Some(tags)).await {
                 Ok(meta) => {
                     self.prev_slug.set(Some(meta.slug.clone()));
                     let slug = meta.slug.clone();
@@ -183,6 +194,7 @@ pub fn Editor(
         focus_content: RwSignal::new(false),
         open_in_edit: expect_context::<OpenInEdit>().0,
         prev_slug: RwSignal::new(None),
+        tags: RwSignal::new(Vec::new()),
     };
     provide_context(ctx);
 
@@ -234,8 +246,20 @@ pub fn Editor(
             ctx.prev_slug.set(None);
             ctx.content.set(String::new());
             ctx.title_input.set(String::new());
+            ctx.tags.set(Vec::new());
         }
         ctx.error.set(None);
+    });
+
+    // Sync tags from rendered note frontmatter whenever it changes.
+    Effect::new(move || {
+        let tags = ctx
+            .rendered_note
+            .get()
+            .and_then(|r| r.frontmatter)
+            .map(|fm| fm.tags)
+            .unwrap_or_default();
+        ctx.tags.set(tags);
     });
 
     let has_note = move || ctx.active_note.get().is_some();
