@@ -9,7 +9,7 @@ use super::icons::XCloseIcon;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use agent::AgentSettings;
-use granit_types::{AgentConfig, FontConfig};
+use granit_types::{AgentConfig, AppConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 
@@ -19,6 +19,40 @@ fn api_key_name(provider: &str) -> Option<&'static str> {
         "anthropic" => Some("ANTHROPIC_API_KEY"),
         "mistral" => Some("MISTRAL_API_KEY"),
         _ => None,
+    }
+}
+
+/// All editable settings live in a single struct behind one `RwSignal`.
+/// Adding a new setting = add a field here + add the UI widget.
+#[derive(Clone)]
+pub(super) struct SettingsForm {
+    // Agent
+    pub provider: String,
+    pub model: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub api_key_is_set: bool,
+    // Fonts
+    pub markdown_font: FontConfig,
+    pub reading_font: FontConfig,
+    pub agent_font: FontConfig,
+    // System fonts (loaded async, read-only after init)
+    pub system_fonts: Vec<String>,
+}
+
+impl SettingsForm {
+    fn from_config(config: &AppConfig) -> Self {
+        Self {
+            provider: config.agent.provider.clone(),
+            model: config.agent.model.clone(),
+            base_url: config.agent.base_url.clone().unwrap_or_default(),
+            api_key: String::new(),
+            api_key_is_set: false,
+            markdown_font: config.markdown_font.clone(),
+            reading_font: config.reading_font.clone(),
+            agent_font: config.agent_font.clone(),
+            system_fonts: Vec::new(),
+        }
     }
 }
 
@@ -48,71 +82,37 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
     // Active section in the sidebar
     let (active_section, set_active_section) = signal(SettingsSection::Agent);
 
-    // Agent form state, initialized from current config
-    let (provider, set_provider) = signal(config.get_untracked().agent.provider);
-    let (model, set_model) = signal(config.get_untracked().agent.model);
-    let (base_url, set_base_url) =
-        signal(config.get_untracked().agent.base_url.unwrap_or_default());
-    let (api_key, set_api_key) = signal(String::new());
-    let (api_key_is_set, set_api_key_is_set) = signal(false);
+    // All form state in a single signal
+    let form = RwSignal::new(SettingsForm::from_config(&config.get_untracked()));
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
 
-    // Font signals for each section
-    let (md_font_family, set_md_font_family) =
-        signal(config.get_untracked().markdown_font.font_family);
-    let (md_font_size, set_md_font_size) = signal(config.get_untracked().markdown_font.font_size);
-    let (rd_font_family, set_rd_font_family) =
-        signal(config.get_untracked().reading_font.font_family);
-    let (rd_font_size, set_rd_font_size) = signal(config.get_untracked().reading_font.font_size);
-    let (ag_font_family, set_ag_font_family) =
-        signal(config.get_untracked().agent_font.font_family);
-    let (ag_font_size, set_ag_font_size) = signal(config.get_untracked().agent_font.font_size);
-
-    // System fonts — loaded once when the modal opens
-    let (system_fonts, set_system_fonts) = signal(Vec::<String>::new());
-
     // Check if API key is configured for the current provider on modal open
     leptos::task::spawn_local(async move {
-        let current_provider = provider.get_untracked();
+        let current_provider = form.get_untracked().provider;
         let secret_key = api_key_name(&current_provider);
         if let Some(key) = secret_key {
             if let Ok(Some(true)) = ipc::get_secret(key).await {
-                set_api_key_is_set.set(true);
+                form.update(|f| f.api_key_is_set = true);
             }
         }
         if let Ok(fonts) = ipc::list_system_fonts().await {
-            set_system_fonts.set(fonts);
+            form.update(|f| f.system_fonts = fonts);
         }
     });
 
     let on_save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        let provider = provider.get();
-        let model = model.get();
-        let base_url = base_url.get();
-        let api_key_val = api_key.get();
+        let f = form.get();
         let max_history = config.get_untracked().agent.max_history;
-        let markdown_font = FontConfig {
-            font_family: md_font_family.get(),
-            font_size: md_font_size.get(),
-        };
-        let reading_font = FontConfig {
-            font_family: rd_font_family.get(),
-            font_size: rd_font_size.get(),
-        };
-        let agent_font = FontConfig {
-            font_family: ag_font_family.get(),
-            font_size: ag_font_size.get(),
-        };
         let set_open = set_open;
         set_saving.set(true);
         set_save_error.set(None);
         leptos::task::spawn_local(async move {
             // Save API key if the user entered a new one
-            if !api_key_val.is_empty() {
-                if let Some(key_name) = api_key_name(&provider) {
-                    if let Err(e) = ipc::set_secret(key_name, &api_key_val).await {
+            if !f.api_key.is_empty() {
+                if let Some(key_name) = api_key_name(&f.provider) {
+                    if let Err(e) = ipc::set_secret(key_name, &f.api_key).await {
                         set_save_error.set(Some(e));
                         set_saving.set(false);
                         return;
@@ -121,16 +121,16 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             }
 
             let agent = AgentConfig {
-                provider: provider.clone(),
-                model: model.clone(),
-                base_url: if base_url.trim().is_empty() {
+                provider: f.provider,
+                model: f.model,
+                base_url: if f.base_url.trim().is_empty() {
                     None
                 } else {
-                    Some(base_url.clone())
+                    Some(f.base_url)
                 },
                 max_history,
             };
-            match ipc::save_config(agent, markdown_font, reading_font, agent_font).await {
+            match ipc::save_config(agent, f.markdown_font, f.reading_font, f.agent_font).await {
                 Ok(new_config) => {
                     config.set(new_config);
                     set_open.set(false);
@@ -203,42 +203,15 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Markdown>
-                                <MarkdownSettings
-                                    fonts=system_fonts
-                                    font_family=md_font_family
-                                    set_font_family=set_md_font_family
-                                    font_size=md_font_size
-                                    set_font_size=set_md_font_size
-                                />
+                                <MarkdownSettings form=form />
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Reading>
-                                <ReadingSettings
-                                    fonts=system_fonts
-                                    font_family=rd_font_family
-                                    set_font_family=set_rd_font_family
-                                    font_size=rd_font_size
-                                    set_font_size=set_rd_font_size
-                                />
+                                <ReadingSettings form=form />
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Agent>
-                                <AgentSettings
-                                    provider=provider
-                                    set_provider=set_provider
-                                    model=model
-                                    set_model=set_model
-                                    base_url=base_url
-                                    set_base_url=set_base_url
-                                    api_key=api_key
-                                    set_api_key=set_api_key
-                                    api_key_is_set=api_key_is_set
-                                    fonts=system_fonts
-                                    font_family=ag_font_family
-                                    set_font_family=set_ag_font_family
-                                    font_size=ag_font_size
-                                    set_font_size=set_ag_font_size
-                                />
+                                <AgentSettings form=form />
                             </Show>
                         </div>
 

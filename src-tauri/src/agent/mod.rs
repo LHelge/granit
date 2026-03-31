@@ -109,14 +109,12 @@ impl Agent {
         Ok(ProviderAgent::Anthropic(agent))
     }
 
-    fn build_mistral(
-        config: &AgentConfig,
-        secrets: &Secrets,
-    ) -> Result<ProviderAgent, AgentError> {
+    fn build_mistral(config: &AgentConfig, secrets: &Secrets) -> Result<ProviderAgent, AgentError> {
         let api_key = secrets
             .get("MISTRAL_API_KEY")
             .ok_or(AgentError::MissingApiKey(
-                "Mistral API key not configured \u{2014} set MISTRAL_API_KEY in secrets".to_string(),
+                "Mistral API key not configured \u{2014} set MISTRAL_API_KEY in secrets"
+                    .to_string(),
             ))?;
 
         let client = mistral::Client::builder()

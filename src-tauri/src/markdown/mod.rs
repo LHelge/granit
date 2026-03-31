@@ -406,7 +406,10 @@ mod tests {
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
         });
-        assert!(html.contains("<a href=\"my-note\">my-note</a>"), "got: {html}");
+        assert!(
+            html.contains("<a href=\"my-note\">my-note</a>"),
+            "got: {html}"
+        );
         assert_eq!(links, ["my-note"]);
     }
 

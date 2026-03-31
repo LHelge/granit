@@ -1,40 +1,38 @@
 use leptos::prelude::*;
 
 use super::font_picker::FontPicker;
+use super::SettingsForm;
 use crate::app::components::icons::ChevronDownIcon;
+use leptos::prelude::Callback;
 
 #[component]
-pub fn AgentSettings(
-    provider: ReadSignal<String>,
-    set_provider: WriteSignal<String>,
-    model: ReadSignal<String>,
-    set_model: WriteSignal<String>,
-    base_url: ReadSignal<String>,
-    set_base_url: WriteSignal<String>,
-    api_key: ReadSignal<String>,
-    set_api_key: WriteSignal<String>,
-    api_key_is_set: ReadSignal<bool>,
-    fonts: ReadSignal<Vec<String>>,
-    font_family: ReadSignal<String>,
-    set_font_family: WriteSignal<String>,
-    font_size: ReadSignal<u8>,
-    set_font_size: WriteSignal<u8>,
-) -> impl IntoView {
+pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
+    // Derived read signals for the font picker
+    let fonts = Memo::new(move |_| form.get().system_fonts);
+    let font_family = Memo::new(move |_| form.get().agent_font.font_family);
+    let font_size = Memo::new(move |_| form.get().agent_font.font_size);
+
     // When provider changes, reset model to a sensible default
     let on_provider_change = move |ev: leptos::ev::Event| {
         let new_provider = event_target_value(&ev);
-        set_provider.set(new_provider.clone());
-        match new_provider.as_str() {
-            "ollama" => set_model.set("qwen3.5:9b".to_string()),
-            "anthropic" => set_model.set("claude-sonnet-4-20250514".to_string()),
-            "mistral" => set_model.set("mistral-small-latest".to_string()),
-            _ => {}
-        }
+        let default_model = match new_provider.as_str() {
+            "ollama" => "qwen3.5:9b",
+            "anthropic" => "claude-sonnet-4-20250514",
+            "mistral" => "mistral-small-latest",
+            _ => "",
+        };
+        form.update(|f| {
+            f.provider = new_provider;
+            f.model = default_model.to_string();
+        });
     };
 
-    let is_ollama = move || provider.get() == "ollama";
-    let is_anthropic = move || provider.get() == "anthropic";
-    let needs_api_key = move || provider.get() == "anthropic" || provider.get() == "mistral";
+    let is_ollama = move || form.get().provider == "ollama";
+    let is_anthropic = move || form.get().provider == "anthropic";
+    let needs_api_key = move || {
+        let p = form.get().provider;
+        p == "anthropic" || p == "mistral"
+    };
 
     view! {
         <fieldset class="space-y-3">
@@ -46,7 +44,7 @@ pub fn AgentSettings(
                 <FontPicker
                     fonts=fonts
                     value=font_family
-                    set_value=set_font_family
+                    set_value=Callback::new(move |v| form.update(|f| f.agent_font.font_family = v))
                     id="ag-font-family"
                 />
             </div>
@@ -63,7 +61,7 @@ pub fn AgentSettings(
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {
-                            set_font_size.set(v);
+                            form.update(|f| f.agent_font.font_size = v);
                         }
                     }
                 />
@@ -79,13 +77,12 @@ pub fn AgentSettings(
                         id="settings-provider"
                         class="w-full appearance-none bg-stone-900 border border-stone-600 rounded px-3 py-1.5 pr-8 text-sm text-stone-200 outline-none focus:border-stone-400 transition-colors cursor-pointer"
                         on:change=on_provider_change
-                        prop:value=move || provider.get()
+                        prop:value=move || form.get().provider
                     >
                         <option class="bg-stone-900 text-stone-200" value="ollama" selected=is_ollama>"Ollama"</option>
                         <option class="bg-stone-900 text-stone-200" value="anthropic" selected=is_anthropic>"Anthropic"</option>
-                        <option class="bg-stone-900 text-stone-200" value="mistral" selected=move || provider.get() == "mistral">"Mistral"</option>
+                        <option class="bg-stone-900 text-stone-200" value="mistral" selected=move || form.get().provider == "mistral">"Mistral"</option>
                     </select>
-                    // Custom chevron
                     <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
                 </div>
             </div>
@@ -97,14 +94,14 @@ pub fn AgentSettings(
                     id="settings-model"
                     type="text"
                     class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                    placeholder=move || match provider.get().as_str() {
+                    placeholder=move || match form.get().provider.as_str() {
                         "ollama" => "qwen3.5:9b".to_string(),
                         "anthropic" => "claude-sonnet-4-20250514".to_string(),
                         "mistral" => "mistral-small-latest".to_string(),
                         _ => String::new(),
                     }
-                    prop:value=move || model.get()
-                    on:input=move |ev| set_model.set(event_target_value(&ev))
+                    prop:value=move || form.get().model
+                    on:input=move |ev| form.update(|f| f.model = event_target_value(&ev))
                 />
             </div>
 
@@ -117,8 +114,8 @@ pub fn AgentSettings(
                         type="text"
                         class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
                         placeholder="http://localhost:11434"
-                        prop:value=move || base_url.get()
-                        on:input=move |ev| set_base_url.set(event_target_value(&ev))
+                        prop:value=move || form.get().base_url
+                        on:input=move |ev| form.update(|f| f.base_url = event_target_value(&ev))
                     />
                     <p class="text-xs text-stone-500">"Leave blank to use the default (http://localhost:11434)"</p>
                 </div>
@@ -132,12 +129,12 @@ pub fn AgentSettings(
                         id="settings-api-key"
                         type="password"
                         class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                        placeholder=move || if api_key_is_set.get() { "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} (configured)" } else { "sk-ant-..." }
-                        prop:value=move || api_key.get()
-                        on:input=move |ev| set_api_key.set(event_target_value(&ev))
+                        placeholder=move || if form.get().api_key_is_set { "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} (configured)" } else { "sk-ant-..." }
+                        prop:value=move || form.get().api_key
+                        on:input=move |ev| form.update(|f| f.api_key = event_target_value(&ev))
                     />
                     <p class="text-xs text-stone-500">
-                        {move || if api_key_is_set.get() {
+                        {move || if form.get().api_key_is_set {
                             "Key is configured. Enter a new value to replace it."
                         } else {
                             "Stored in secrets.env, never in config.yml."

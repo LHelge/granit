@@ -74,10 +74,12 @@ pub fn AgentPanel() -> impl IntoView {
                 if !content.is_empty() {
                     spawn_local(async move {
                         let html = ipc::render_markdown(&content).await.ok();
-                        messages.update(|m| m.push(DisplayMessage {
-                            message: ChatMessage::assistant(content),
-                            rendered_html: html,
-                        }));
+                        messages.update(|m| {
+                            m.push(DisplayMessage {
+                                message: ChatMessage::assistant(content),
+                                rendered_html: html,
+                            })
+                        });
                         streaming_content.set(String::new());
                         is_streaming.set(false);
                     });
@@ -114,10 +116,12 @@ pub fn AgentPanel() -> impl IntoView {
         }
         set_input.set(String::new());
         stream_error.set(None);
-        messages.update(|m| m.push(DisplayMessage {
-            message: ChatMessage::user(msg.clone()),
-            rendered_html: None,
-        }));
+        messages.update(|m| {
+            m.push(DisplayMessage {
+                message: ChatMessage::user(msg.clone()),
+                rendered_html: None,
+            })
+        });
         is_streaming.set(true);
 
         spawn_local(async move {
