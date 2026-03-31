@@ -2,10 +2,10 @@
 id: 82y
 title: Frontend testing infrastructure
 type: epic
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:31:55.822601542Z
-updated: 2026-03-31T16:31:55.822601542Z
+updated: 2026-03-31T21:42:47.484334523Z
 ---
 
 ## Scope
