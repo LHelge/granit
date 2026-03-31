@@ -6,6 +6,48 @@
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
+/* Tighten prose typography spacing */
+.prose :where(p):not(:where(.not-prose, .not-prose *)) {
+  line-height: 1.5;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose :where(h1):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+}
+
+.prose :where(h2):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+
+.prose :where(h3):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.prose :where(h4):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.prose :where(li):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
 /* Unresolved wiki-links: styled as muted links */
 /* Title bar drag region for macOS overlay style */
 .titlebar {
@@ -18,6 +60,7 @@
   text-decoration-style: dashed;
   cursor: pointer;
 }
+
 .broken-link:hover {
   color: var(--color-stone-300);
 }
