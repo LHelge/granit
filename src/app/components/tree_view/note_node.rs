@@ -56,7 +56,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                                             }
                                             ctx.refresh_async().await;
                                         }
-                                        Err(e) => ctx.error_msg.set(Some(format!("Failed to rename note: {e}"))),
+                                        Err(e) => ctx.push_error(format!("Failed to rename note: {e}")),
                                     }
                                 });
                             })
@@ -84,7 +84,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                                 leptos::task::spawn_local(async move {
                                     match ipc::read_note(&s).await {
                                         Ok(note) => ctx.active_note.set(Some(note)),
-                                        Err(e) => ctx.error_msg.set(Some(format!("Failed to load note: {e}"))),
+                                        Err(e) => ctx.push_error(format!("Failed to load note: {e}")),
                                     }
                                 });
                             }

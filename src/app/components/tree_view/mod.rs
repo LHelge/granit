@@ -26,7 +26,7 @@ pub(super) struct TreeCtx {
     pub notes: RwSignal<Vec<NoteMeta>>,
     pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<Note>>,
-    pub error_msg: RwSignal<Option<String>>,
+    app: crate::app::AppCtx,
     pub context_menu: RwSignal<Option<ContextMenu>>,
     pub drag_payload: RwSignal<Option<DragPayload>>,
     pub renaming: RwSignal<Option<RenameTarget>>,
@@ -34,14 +34,18 @@ pub(super) struct TreeCtx {
 }
 
 impl TreeCtx {
+    /// Push an error to the app-wide error channel.
+    pub fn push_error(&self, msg: impl Into<String>) {
+        self.app.push_error("tree", msg);
+    }
+
     /// Process a drop event targeted at `dest_folder` (None = cave root).
     pub fn handle_drop(self, payload: DragPayload, dest_folder: Option<String>) {
         match payload {
             DragPayload::Note(slug) => {
                 leptos::task::spawn_local(async move {
                     if let Err(e) = ipc::move_note(&slug, dest_folder.as_deref()).await {
-                        self.error_msg
-                            .set(Some(format!("Failed to move note: {e}")));
+                        self.push_error(format!("Failed to move note: {e}"));
                         return;
                     }
                     if self
@@ -60,8 +64,7 @@ impl TreeCtx {
             DragPayload::Folder(src_path) => {
                 leptos::task::spawn_local(async move {
                     if let Err(e) = ipc::move_folder(&src_path, dest_folder.as_deref()).await {
-                        self.error_msg
-                            .set(Some(format!("Failed to move folder: {e}")));
+                        self.push_error(format!("Failed to move folder: {e}"));
                         return;
                     }
                     self.refresh_async().await;
@@ -75,8 +78,7 @@ impl TreeCtx {
         match ipc::fetch_notes().await {
             Ok(list) => self.notes.set(list),
             Err(e) => {
-                self.error_msg
-                    .set(Some(format!("Failed to refresh notes: {e}")));
+                self.push_error(format!("Failed to refresh notes: {e}"));
                 return;
             }
         }
@@ -158,7 +160,7 @@ pub fn TreeView() -> impl IntoView {
         notes: app.notes,
         folders: RwSignal::new(Vec::new()),
         active_note: app.active_note,
-        error_msg: app.error_msg,
+        app,
         context_menu: RwSignal::new(None),
         drag_payload: RwSignal::new(None),
         renaming: RwSignal::new(None),
@@ -201,7 +203,7 @@ pub fn TreeView() -> impl IntoView {
             }
         >
             {move || {
-                if let Some(err) = app.notes_error.get() {
+                if let Some(err) = app.first_error_for("notes") {
                     return view! {
                         <p class="p-2 text-sm text-red-400 italic">
                             {format!("Error loading notes: {err}")}

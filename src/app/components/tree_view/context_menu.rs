@@ -63,7 +63,7 @@ fn render_note_menu(ctx: super::TreeCtx, slug: String) -> impl IntoView {
                 ctx.context_menu.set(None);
                 leptos::task::spawn_local(async move {
                     if let Err(e) = ipc::delete_note(&s).await {
-                        ctx.error_msg.set(Some(format!("Failed to delete note: {e}")));
+                        ctx.push_error(format!("Failed to delete note: {e}"));
                         return;
                     }
                     if ctx.active_note.get().map(|n| n.meta.slug == s).unwrap_or(false) {
@@ -98,10 +98,10 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                                     ctx.open_in_edit.set(crate::app::components::editor::EditOpen::EditFocusTitle);
                                     ctx.active_note.set(Some(note));
                                 }
-                                Err(e) => ctx.error_msg.set(Some(format!("Failed to open note: {e}"))),
+                                Err(e) => ctx.push_error(format!("Failed to open note: {e}")),
                             }
                         }
-                        Err(e) => ctx.error_msg.set(Some(format!("Failed to create note: {e}"))),
+                        Err(e) => ctx.push_error(format!("Failed to create note: {e}")),
                     }
                 });
             }
@@ -124,7 +124,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                             ctx.refresh_async().await;
                             ctx.renaming.set(Some(RenameTarget::Folder(new_path)));
                         }
-                        Err(e) => ctx.error_msg.set(Some(format!("Failed to create folder: {e}"))),
+                        Err(e) => ctx.push_error(format!("Failed to create folder: {e}")),
                     }
                 });
             }
@@ -147,7 +147,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                 ctx.context_menu.set(None);
                 leptos::task::spawn_local(async move {
                     if let Err(e) = ipc::delete_folder(&p).await {
-                        ctx.error_msg.set(Some(format!("Failed to delete folder: {e}")));
+                        ctx.push_error(format!("Failed to delete folder: {e}"));
                         return;
                     }
                     if ctx
@@ -179,7 +179,7 @@ fn render_root_menu(ctx: super::TreeCtx) -> impl IntoView {
                             ctx.refresh_async().await;
                             ctx.renaming.set(Some(RenameTarget::Folder("new-folder".to_string())));
                         }
-                        Err(e) => ctx.error_msg.set(Some(format!("Failed to create folder: {e}"))),
+                        Err(e) => ctx.push_error(format!("Failed to create folder: {e}")),
                     }
                 });
             }

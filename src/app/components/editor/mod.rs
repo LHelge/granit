@@ -271,12 +271,7 @@ pub fn Editor() -> impl IntoView {
         }
 
         // Cmd on macOS, Ctrl on Linux/Windows.
-        // Detect platform at runtime since WASM target has no OS info.
-        let is_mac = js_sys::eval("navigator.platform")
-            .ok()
-            .and_then(|v| v.as_string())
-            .map(|p| p.contains("Mac"))
-            .unwrap_or(false);
+        let is_mac = expect_context::<crate::app::AppCtx>().is_mac;
         let modifier = if is_mac { ev.meta_key() } else { ev.ctrl_key() };
         if !modifier {
             return;

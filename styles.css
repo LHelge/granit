@@ -70,3 +70,15 @@
 .broken-link:hover {
   color: var(--color-stone-300);
 }
+
+/* Toast slide-in animation */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
