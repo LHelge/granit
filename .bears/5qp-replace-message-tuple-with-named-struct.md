@@ -1,10 +1,10 @@
 ---
 id: 5qp
 title: Replace message tuple with named struct
-status: open
+status: done
 priority: P3
 created: 2026-03-31T16:33:41.283867095Z
-updated: 2026-03-31T16:33:41.283867095Z
+updated: 2026-03-31T20:20:05.695876058Z
 tags:
 - frontend
 - refactor

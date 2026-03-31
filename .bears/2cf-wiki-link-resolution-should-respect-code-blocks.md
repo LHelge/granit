@@ -1,10 +1,10 @@
 ---
 id: 2cf
 title: Wiki-link resolution should respect code blocks
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:33:19.413375244Z
-updated: 2026-03-31T16:33:19.413375244Z
+updated: 2026-03-31T20:18:50.321303445Z
 tags:
 - backend
 - bug
