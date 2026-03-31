@@ -1,10 +1,12 @@
 use crate::app::ipc;
-use granit_types::{AppConfig, ChatMessage, ChatRole};
+use crate::app::AppCtx;
+use granit_types::{ChatMessage, ChatRole};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 #[component]
-pub fn AgentPanel(config: RwSignal<AppConfig>) -> impl IntoView {
+pub fn AgentPanel() -> impl IntoView {
+    let config = expect_context::<AppCtx>().config;
     let (input, set_input) = signal(String::new());
     // (message, rendered_html) — html is Some for assistant messages after streaming completes
     let messages: RwSignal<Vec<(ChatMessage, Option<String>)>> = RwSignal::new(Vec::new());

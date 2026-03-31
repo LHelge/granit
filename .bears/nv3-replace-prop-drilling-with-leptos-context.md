@@ -1,10 +1,10 @@
 ---
 id: nv3
 title: Replace prop drilling with Leptos context
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:32:52.085499385Z
-updated: 2026-03-31T16:32:52.085499385Z
+updated: 2026-03-31T20:00:24.749001001Z
 tags:
 - frontend
 - refactor

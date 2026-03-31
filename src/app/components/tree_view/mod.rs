@@ -152,17 +152,13 @@ fn render_node(node: TreeNode, depth: usize) -> impl IntoView {
 // ── Main component ─────────────────────────────────────────────────
 
 #[component]
-pub fn TreeView(
-    notes: RwSignal<Vec<NoteMeta>>,
-    active_note: RwSignal<Option<Note>>,
-    error_msg: RwSignal<Option<String>>,
-    notes_error: RwSignal<Option<String>>,
-) -> impl IntoView {
+pub fn TreeView() -> impl IntoView {
+    let app = expect_context::<crate::app::AppCtx>();
     let ctx = TreeCtx {
-        notes,
+        notes: app.notes,
         folders: RwSignal::new(Vec::new()),
-        active_note,
-        error_msg,
+        active_note: app.active_note,
+        error_msg: app.error_msg,
         context_menu: RwSignal::new(None),
         drag_payload: RwSignal::new(None),
         renaming: RwSignal::new(None),
@@ -205,7 +201,7 @@ pub fn TreeView(
             }
         >
             {move || {
-                if let Some(err) = notes_error.get() {
+                if let Some(err) = app.notes_error.get() {
                     return view! {
                         <p class="p-2 text-sm text-red-400 italic">
                             {format!("Error loading notes: {err}")}

@@ -2,34 +2,28 @@ use leptos::prelude::*;
 
 use super::icons::{ChevronDownIcon, GearIcon};
 use crate::app::ipc;
-use granit_types::{AppConfig, Note, NoteMeta};
+use crate::app::AppCtx;
 
 #[component]
-pub fn CaveSelector(
-    config: RwSignal<AppConfig>,
-    notes: RwSignal<Vec<NoteMeta>>,
-    active_note: RwSignal<Option<Note>>,
-    set_settings_open: WriteSignal<bool>,
-    error_msg: RwSignal<Option<String>>,
-    notes_error: RwSignal<Option<String>>,
-) -> impl IntoView {
+pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
+    let ctx = expect_context::<AppCtx>();
     let (dropdown_open, set_dropdown_open) = signal(false);
 
     let open_and_refresh = move |path: String| {
         leptos::task::spawn_local(async move {
             match ipc::open_cave(&path).await {
                 Ok(new_config) => {
-                    config.set(new_config);
+                    ctx.config.set(new_config);
                     match ipc::fetch_notes().await {
                         Ok(n) => {
-                            notes_error.set(None);
-                            notes.set(n);
+                            ctx.notes_error.set(None);
+                            ctx.notes.set(n);
                         }
-                        Err(e) => notes_error.set(Some(e)),
+                        Err(e) => ctx.notes_error.set(Some(e)),
                     }
-                    active_note.set(None);
+                    ctx.active_note.set(None);
                 }
-                Err(e) => error_msg.set(Some(format!("Failed to open cave: {e}"))),
+                Err(e) => ctx.error_msg.set(Some(format!("Failed to open cave: {e}"))),
             }
             set_dropdown_open.set(false);
         });
@@ -46,7 +40,7 @@ pub fn CaveSelector(
     };
 
     let cave_label = move || {
-        let cfg = config.get();
+        let cfg = ctx.config.get();
         cfg.active_cave
             .as_deref()
             .and_then(|p| p.rsplit('/').next().or_else(|| p.rsplit('\\').next()))
@@ -72,7 +66,7 @@ pub fn CaveSelector(
                         <div class="absolute bottom-full left-0 right-0 mb-1 bg-stone-800 border border-stone-600 rounded shadow-lg z-50 max-h-60 overflow-y-auto">
                             // Recent caves
                             {move || {
-                                let cfg = config.get();
+                                let cfg = ctx.config.get();
                                 cfg.recent_caves.iter().map(|path| {
                                     let path_clone = path.clone();
                                     let display = path.rsplit('/').next()

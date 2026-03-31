@@ -7,8 +7,9 @@ use leptos::prelude::*;
 
 use super::icons::XCloseIcon;
 use crate::app::ipc;
+use crate::app::AppCtx;
 use agent::AgentSettings;
-use granit_types::{AgentConfig, AppConfig, FontConfig};
+use granit_types::{AgentConfig, FontConfig};
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 
@@ -33,7 +34,8 @@ impl SettingsSection {
 }
 
 #[component]
-pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -> impl IntoView {
+pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
+    let config = expect_context::<AppCtx>().config;
     // Active section in the sidebar
     let (active_section, set_active_section) = signal(SettingsSection::Agent);
 
