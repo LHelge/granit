@@ -1,6 +1,6 @@
 mod agent_panel;
 mod cave_selector;
-mod editor;
+pub(crate) mod editor;
 pub mod icons;
 mod settings;
 mod sidebar;

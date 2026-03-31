@@ -13,10 +13,22 @@ use crate::app::ipc;
 
 // ── Shared context: open next note in edit mode ────────────────────
 
+/// How the editor should open when switching to a new note.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub enum EditOpen {
+    /// Open in read/preview mode (default).
+    #[default]
+    Preview,
+    /// Open in edit mode with the title input focused and selected.
+    EditFocusTitle,
+    /// Open in edit mode with the content textarea focused.
+    EditFocusContent,
+}
+
 /// Signal provided via Leptos context so any component (e.g. tree view)
-/// can request the next note switch to open in edit mode.
+/// can request a specific editor mode on the next note switch.
 #[derive(Clone, Copy)]
-pub struct OpenInEdit(pub RwSignal<bool>);
+pub struct OpenInEdit(pub RwSignal<EditOpen>);
 
 // ── Shared state via context ───────────────────────────────────────
 
@@ -35,6 +47,10 @@ pub(super) struct EditorCtx {
     pub rendered_note: RwSignal<Option<RenderedNote>>,
     /// When true, the Writer should focus and select the title input.
     pub focus_title: RwSignal<bool>,
+    /// When true, the Writer should focus the content textarea.
+    pub focus_content: RwSignal<bool>,
+    /// Shared signal for how the next note switch should open.
+    open_in_edit: RwSignal<EditOpen>,
     /// Tracks the slug of the previously active note to detect real switches.
     prev_slug: RwSignal<Option<String>>,
 }
@@ -124,12 +140,13 @@ impl EditorCtx {
         leptos::task::spawn_local(async move {
             if is_broken {
                 if let Ok(meta) = ipc::create_note(&slug, None).await {
+                    if let Ok(all) = ipc::fetch_notes().await {
+                        self.notes.set(all);
+                    }
                     if let Ok(note) = ipc::read_note(&meta.slug).await {
-                        expect_context::<OpenInEdit>().0.set(true);
+                        self.open_in_edit.set(EditOpen::EditFocusContent);
+                        self.focus_content.set(true);
                         self.active_note.set(Some(note));
-                        if let Ok(all) = ipc::fetch_notes().await {
-                            self.notes.set(all);
-                        }
                     }
                 }
             } else if let Ok(note) = ipc::read_note(&slug).await {
@@ -163,6 +180,8 @@ pub fn Editor(
         error: RwSignal::new(None),
         rendered_note: RwSignal::new(None),
         focus_title: RwSignal::new(false),
+        focus_content: RwSignal::new(false),
+        open_in_edit: expect_context::<OpenInEdit>().0,
         prev_slug: RwSignal::new(None),
     };
     provide_context(ctx);
@@ -185,11 +204,15 @@ pub fn Editor(
                 }
             }
             // Open new note in preview or edit mode depending on flag
-            let open_in_edit = expect_context::<OpenInEdit>().0;
-            let edit_next = open_in_edit.get_untracked();
-            open_in_edit.set(false);
-            ctx.editing.set(edit_next);
-            ctx.focus_title.set(edit_next);
+            let mode = ctx.open_in_edit.get_untracked();
+            ctx.open_in_edit.set(EditOpen::Preview);
+            let editing = mode != EditOpen::Preview;
+            ctx.editing.set(editing);
+            match mode {
+                EditOpen::EditFocusTitle => ctx.focus_title.set(true),
+                EditOpen::EditFocusContent => ctx.focus_content.set(true),
+                EditOpen::Preview => {}
+            }
 
             match &new_note {
                 Some(note) => {

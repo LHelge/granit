@@ -5,6 +5,7 @@ pub(crate) mod ipc;
 
 use components::icons::{PanelLeftIcon, PanelRightIcon};
 use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
+use components::editor::EditOpen;
 use granit_types::{AppConfig, Note, NoteMeta};
 
 #[component]
@@ -18,7 +19,7 @@ pub fn App() -> impl IntoView {
     let error_msg = RwSignal::new(None::<String>);
     let notes_error = RwSignal::new(None::<String>);
 
-    provide_context(OpenInEdit(RwSignal::new(false)));
+    provide_context(OpenInEdit(RwSignal::new(EditOpen::Preview)));
 
     // Load config from backend on mount, and re-open the most recent cave if any
     leptos::task::spawn_local(async move {

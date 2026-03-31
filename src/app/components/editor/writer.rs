@@ -16,17 +16,30 @@ fn request_animation_frame(f: impl FnOnce() + 'static) {
 pub(super) fn Writer() -> impl IntoView {
     let ctx = use_editor_ctx();
     let title_ref = NodeRef::<leptos::html::Input>::new();
+    let content_ref = NodeRef::<leptos::html::Textarea>::new();
 
     // Focus and select the title input when requested.
     Effect::new(move || {
         if ctx.focus_title.get() {
             ctx.focus_title.set(false);
-            // Defer to next frame so the DOM value is populated before selecting.
             request_animation_frame(move || {
                 if let Some(el) = title_ref.get() {
                     let input: &web_sys::HtmlInputElement = el.as_ref();
                     let _ = input.focus();
                     input.select();
+                }
+            });
+        }
+    });
+
+    // Focus the content textarea when requested.
+    Effect::new(move || {
+        if ctx.focus_content.get() {
+            ctx.focus_content.set(false);
+            request_animation_frame(move || {
+                if let Some(el) = content_ref.get() {
+                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                    let _ = textarea.focus();
                 }
             });
         }
@@ -40,8 +53,18 @@ pub(super) fn Writer() -> impl IntoView {
             placeholder="Untitled"
             prop:value=move || ctx.title_input.get()
             on:input=move |ev| ctx.title_input.set(event_target_value(&ev))
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                if ev.key() == "Enter" {
+                    ev.prevent_default();
+                    if let Some(el) = content_ref.get() {
+                        let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                        let _ = textarea.focus();
+                    }
+                }
+            }
         />
         <textarea
+            node_ref=content_ref
             class="not-prose w-full flex-1 bg-transparent text-stone-300 resize-none outline-none leading-relaxed"
             placeholder="Start writing..."
             style:font-family=move || ctx.config.get().markdown_font.font_family
