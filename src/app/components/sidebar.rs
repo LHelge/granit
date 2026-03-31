@@ -1,11 +1,7 @@
-use leptos::prelude::*;
-
-use crate::app::ipc;
-use granit_types::{AppConfig, Note, NoteMeta};
-
 use super::cave_selector::CaveSelector;
-use super::icons::PlusIcon;
 use super::tree_view::TreeView;
+use granit_types::{AppConfig, Note, NoteMeta};
+use leptos::prelude::*;
 
 #[component]
 pub fn Sidebar(
@@ -16,48 +12,10 @@ pub fn Sidebar(
     error_msg: RwSignal<Option<String>>,
     notes_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
-    let on_new_note = move |_| {
-        leptos::task::spawn_local(async move {
-            let meta = match ipc::create_note("untitled", None).await {
-                Ok(m) => m,
-                Err(e) => {
-                    error_msg.set(Some(format!("Failed to create note: {e}")));
-                    return;
-                }
-            };
-            let slug = meta.slug.clone();
-            match ipc::fetch_notes().await {
-                Ok(n) => {
-                    notes_error.set(None);
-                    notes.set(n);
-                }
-                Err(e) => notes_error.set(Some(e)),
-            }
-            match ipc::read_note(&slug).await {
-                Ok(note) => active_note.set(Some(note)),
-                Err(e) => error_msg.set(Some(format!("Failed to open note: {e}"))),
-            }
-        });
-    };
-
     let has_cave = move || config.get().active_cave.is_some();
 
     view! {
         <aside class="w-64 shrink-0 bg-stone-850 border-r border-stone-700 flex flex-col overflow-hidden">
-            // Header
-            <div class="flex items-center justify-between px-3 py-2 border-b border-stone-700">
-                <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">"Explorer"</span>
-                <Show when=has_cave>
-                    <button
-                        class="p-0.5 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
-                        title="New note"
-                        on:click=on_new_note
-                    >
-                        <PlusIcon />
-                    </button>
-                </Show>
-            </div>
-
             // Note list
             <div class="flex-1 overflow-y-auto">
                 <Show

@@ -81,12 +81,12 @@ pub fn XCloseIcon() -> impl IntoView {
     }
 }
 
-/// Hamburger menu icon (☰).
+/// Tree view / file-tree icon.
 #[component]
-pub fn HamburgerIcon() -> impl IntoView {
+pub fn TreeViewIcon() -> impl IntoView {
     view! {
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7h4m0 0V5a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 01-1 1H8a1 1 0 01-1-1zm0 0v5m0 0h4m-4 0v5m0 0h4m-4 0V12m4 5v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 01-1 1h-2a1 1 0 01-1-1zm0-5v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 01-1 1h-2a1 1 0 01-1-1z" />
         </svg>
     }
 }
@@ -120,6 +120,28 @@ pub fn SaveIcon() -> impl IntoView {
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
             <polyline points="17 21 17 13 7 13 7 21"/>
             <polyline points="7 3 7 8 15 8"/>
+        </svg>
+    }
+}
+
+/// Sidebar left (panel-left) icon — close/hide tree view panel.
+#[component]
+pub fn PanelLeftIcon() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 3v18"/>
+        </svg>
+    }
+}
+
+/// Sidebar right (panel-right) icon — close/hide agent panel.
+#[component]
+pub fn PanelRightIcon() -> impl IntoView {
+    view! {
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M15 3v18"/>
         </svg>
     }
 }
