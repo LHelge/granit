@@ -69,6 +69,7 @@ pub async fn save_config(
     agent_font: FontConfig,
 ) -> Result<AppConfig, String> {
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Args {
         agent: granit_types::AgentConfig,
         markdown_font: FontConfig,
