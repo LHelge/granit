@@ -94,7 +94,7 @@ pub fn resolve_wiki_links<'lookup>(
 ///
 /// Produces a YAML frontmatter block with `created_at` and `modified_at` set
 /// to the current UTC time, followed by a level-1 heading using the slug.
-pub fn initial_content(slug: &str) -> String {
+pub fn initial_content(_slug: &str) -> String {
     let now = Utc::now();
     let fm = Frontmatter {
         tags: Vec::new(),
@@ -102,7 +102,7 @@ pub fn initial_content(slug: &str) -> String {
         modified_at: Some(now),
     };
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
-    format!("---\n{}---\n# {slug}\n", yaml)
+    format!("---\n{yaml}---\n")
 }
 
 /// Update the `modified_at` field in the YAML frontmatter of `raw` to the

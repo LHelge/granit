@@ -592,10 +592,11 @@ mod tests {
         assert_eq!(notes.len(), 1);
 
         let note = cave.read_note("hello").unwrap();
-        assert!(note.content.contains("# hello"));
+        assert!(note.content.is_empty() || !note.content.contains("---"));
 
         cave.save_note("hello", "# Updated\nBody").unwrap();
         let note = cave.read_note("hello").unwrap();
+        assert!(note.content.contains("# Updated"));
         assert_eq!(note.meta.slug, "hello");
 
         cave.rename_note("hello", "world").unwrap();
@@ -616,7 +617,7 @@ mod tests {
         assert_eq!(meta.relative_path, "my-note.md");
 
         let content = std::fs::read_to_string(dir.path().join("my-note.md")).unwrap();
-        assert!(content.contains("# my-note"));
+        assert!(content.contains("created_at"));
     }
 
     #[test]

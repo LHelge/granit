@@ -94,7 +94,10 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                         Ok(meta) => {
                             ctx.refresh_async().await;
                             match ipc::read_note(&meta.slug).await {
-                                Ok(note) => ctx.active_note.set(Some(note)),
+                                Ok(note) => {
+                                    ctx.open_in_edit.set(true);
+                                    ctx.active_note.set(Some(note));
+                                }
                                 Err(e) => ctx.error_msg.set(Some(format!("Failed to open note: {e}"))),
                             }
                         }

@@ -11,6 +11,13 @@ use writer::Writer;
 use super::icons::{PencilIcon, SaveIcon, XCloseIcon};
 use crate::app::ipc;
 
+// ── Shared context: open next note in edit mode ────────────────────
+
+/// Signal provided via Leptos context so any component (e.g. tree view)
+/// can request the next note switch to open in edit mode.
+#[derive(Clone, Copy)]
+pub struct OpenInEdit(pub RwSignal<bool>);
+
 // ── Shared state via context ───────────────────────────────────────
 
 /// Shared reactive state for the editor, provided via Leptos context
@@ -26,8 +33,8 @@ pub(super) struct EditorCtx {
     pub saving: RwSignal<bool>,
     pub error: RwSignal<Option<String>>,
     pub rendered_note: RwSignal<Option<RenderedNote>>,
-    /// When true, the next note switch opens in edit mode.
-    open_in_edit: RwSignal<bool>,
+    /// When true, the Writer should focus and select the title input.
+    pub focus_title: RwSignal<bool>,
     /// Tracks the slug of the previously active note to detect real switches.
     prev_slug: RwSignal<Option<String>>,
 }
@@ -118,7 +125,7 @@ impl EditorCtx {
             if is_broken {
                 if let Ok(meta) = ipc::create_note(&slug, None).await {
                     if let Ok(note) = ipc::read_note(&meta.slug).await {
-                        self.open_in_edit.set(true);
+                        expect_context::<OpenInEdit>().0.set(true);
                         self.active_note.set(Some(note));
                         if let Ok(all) = ipc::fetch_notes().await {
                             self.notes.set(all);
@@ -155,7 +162,7 @@ pub fn Editor(
         saving: RwSignal::new(false),
         error: RwSignal::new(None),
         rendered_note: RwSignal::new(None),
-        open_in_edit: RwSignal::new(false),
+        focus_title: RwSignal::new(false),
         prev_slug: RwSignal::new(None),
     };
     provide_context(ctx);
@@ -178,9 +185,11 @@ pub fn Editor(
                 }
             }
             // Open new note in preview or edit mode depending on flag
-            let edit_next = ctx.open_in_edit.get_untracked();
-            ctx.open_in_edit.set(false);
+            let open_in_edit = expect_context::<OpenInEdit>().0;
+            let edit_next = open_in_edit.get_untracked();
+            open_in_edit.set(false);
             ctx.editing.set(edit_next);
+            ctx.focus_title.set(edit_next);
 
             match &new_note {
                 Some(note) => {
