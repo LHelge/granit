@@ -119,6 +119,10 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, 
     // Ensure cave .granit/ dir and defaults exist
     AppConfig::ensure_cave(&path)?;
 
+    // Persist the recent-caves update to the global config BEFORE loading
+    // the merged config, so cave overrides don't bleed into the global file.
+    AppConfig::save_recent_cave(&path)?;
+
     // Reload config with cave overrides
     let new_config = AppConfig::load(Some(&path))?;
 
@@ -132,11 +136,9 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, 
     // Reset agent so it rebuilds with new config/secrets on next message
     state.reset_agent()?;
 
-    // Update recent caves and persist
+    // Update in-memory config with the merged (global + cave) values
     let mut config = state.lock_config()?;
     *config = new_config;
-    config.add_recent_cave(path.clone());
-    config.save_global()?;
 
     // Return config with active_cave set to the just-opened path
     let mut ipc = config.to_ipc();
@@ -318,12 +320,14 @@ async fn send_message(
             let _ = app.emit("agent:stream-error", e.to_string());
         })?;
 
-    // Persist history.
+    // Persist history (skip empty responses to avoid API rejection).
     {
         let mut guard = state.lock_agent()?;
         if let Some(a) = guard.as_mut() {
-            a.push_history(Message::user(&msg));
-            a.push_history(Message::assistant(&response));
+            if !response.is_empty() {
+                a.push_history(Message::user(&msg));
+                a.push_history(Message::assistant(&response));
+            }
         }
     }
 
