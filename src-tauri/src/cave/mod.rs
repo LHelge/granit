@@ -1162,7 +1162,9 @@ mod tests {
         std::fs::write(dir.path().join("note.md"), "old content").unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf());
 
-        let meta = cave.update_note("note", "note", "new content", None).unwrap();
+        let meta = cave
+            .update_note("note", "note", "new content", None)
+            .unwrap();
         assert_eq!(meta.slug, "note");
 
         let saved = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
@@ -1190,7 +1192,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf());
 
-        let err = cave.update_note("ghost", "ghost", "content", None).unwrap_err();
+        let err = cave
+            .update_note("ghost", "ghost", "content", None)
+            .unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
 

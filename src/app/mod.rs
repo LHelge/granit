@@ -11,7 +11,7 @@ use granit_types::{AppConfig, Note, NoteMeta};
 #[component]
 pub fn App() -> impl IntoView {
     let (sidebar_visible, set_sidebar_visible) = signal(true);
-    let (agent_visible, set_agent_visible) = signal(true);
+    let (agent_visible, set_agent_visible) = signal(false);
     let (settings_open, set_settings_open) = signal(false);
     let config = RwSignal::new(AppConfig::default());
     let notes = RwSignal::new(Vec::<NoteMeta>::new());
