@@ -8,7 +8,7 @@ use crate::config::Secrets;
 use granit_types::AgentConfig;
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
-use rig::providers::{anthropic, ollama};
+use rig::providers::{anthropic, mistral, ollama};
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_SYSTEM_PROMPT: &str =
@@ -18,6 +18,7 @@ const DEFAULT_SYSTEM_PROMPT: &str =
 pub(crate) enum ProviderAgent {
     Ollama(rig::agent::Agent<ollama::CompletionModel>),
     Anthropic(rig::agent::Agent<anthropic::completion::CompletionModel>),
+    Mistral(rig::agent::Agent<mistral::CompletionModel>),
 }
 
 impl Clone for ProviderAgent {
@@ -25,6 +26,7 @@ impl Clone for ProviderAgent {
         match self {
             Self::Ollama(a) => Self::Ollama(a.clone()),
             Self::Anthropic(a) => Self::Anthropic(a.clone()),
+            Self::Mistral(a) => Self::Mistral(a.clone()),
         }
     }
 }
@@ -34,6 +36,7 @@ impl std::fmt::Debug for ProviderAgent {
         match self {
             Self::Ollama(_) => write!(f, "ProviderAgent::Ollama"),
             Self::Anthropic(_) => write!(f, "ProviderAgent::Anthropic"),
+            Self::Mistral(_) => write!(f, "ProviderAgent::Mistral"),
         }
     }
 }
@@ -52,6 +55,7 @@ impl Agent {
         let inner = match config.provider.as_str() {
             "ollama" => Self::build_ollama(config)?,
             "anthropic" => Self::build_anthropic(config, secrets)?,
+            "mistral" => Self::build_mistral(config, secrets)?,
             other => return Err(AgentError::UnknownProvider(other.to_string())),
         };
 
@@ -103,6 +107,29 @@ impl Agent {
             .build();
 
         Ok(ProviderAgent::Anthropic(agent))
+    }
+
+    fn build_mistral(
+        config: &AgentConfig,
+        secrets: &Secrets,
+    ) -> Result<ProviderAgent, AgentError> {
+        let api_key = secrets
+            .get("MISTRAL_API_KEY")
+            .ok_or(AgentError::MissingApiKey(
+                "Mistral API key not configured \u{2014} set MISTRAL_API_KEY in secrets".to_string(),
+            ))?;
+
+        let client = mistral::Client::builder()
+            .api_key(api_key)
+            .build()
+            .map_err(|e| AgentError::Build(e.to_string()))?;
+
+        let agent = client
+            .agent(&config.model)
+            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .build();
+
+        Ok(ProviderAgent::Mistral(agent))
     }
 
     /// Push a message to the conversation history, dropping the oldest
@@ -160,6 +187,19 @@ impl Agent {
                 })
             }
             ProviderAgent::Anthropic(agent) => {
+                let stream = agent
+                    .stream_prompt(prompt)
+                    .with_history(history)
+                    .multi_turn(max_turns)
+                    .await;
+                Ok(AgentStream {
+                    inner: Box::pin(stream.map(|item| {
+                        item.map(map_item)
+                            .map_err(|e| AgentError::Stream(e.to_string()))
+                    })),
+                })
+            }
+            ProviderAgent::Mistral(agent) => {
                 let stream = agent
                     .stream_prompt(prompt)
                     .with_history(history)
@@ -299,5 +339,37 @@ mod tests {
         };
         let result = Agent::from_config(&config, &secrets);
         assert!(result.is_ok(), "Agent should build with Anthropic API key");
+    }
+
+    #[tokio::test]
+    async fn mistral_missing_api_key_returns_error() {
+        let config = AgentConfig {
+            provider: "mistral".to_string(),
+            model: "mistral-small-latest".to_string(),
+            base_url: None,
+            ..AgentConfig::default()
+        };
+        let result = Agent::from_config(&config, &empty_secrets());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, AgentError::MissingApiKey(_)),
+            "Expected MissingApiKey, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mistral_builds_with_api_key() {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("MISTRAL_API_KEY".to_string(), "test-key-456".to_string());
+        let secrets = Secrets::new(vars);
+        let config = AgentConfig {
+            provider: "mistral".to_string(),
+            model: "mistral-small-latest".to_string(),
+            base_url: None,
+            ..AgentConfig::default()
+        };
+        let result = Agent::from_config(&config, &secrets);
+        assert!(result.is_ok(), "Agent should build with Mistral API key");
     }
 }

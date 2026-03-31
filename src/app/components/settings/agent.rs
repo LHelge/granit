@@ -27,12 +27,14 @@ pub fn AgentSettings(
         match new_provider.as_str() {
             "ollama" => set_model.set("qwen3.5:9b".to_string()),
             "anthropic" => set_model.set("claude-sonnet-4-20250514".to_string()),
+            "mistral" => set_model.set("mistral-small-latest".to_string()),
             _ => {}
         }
     };
 
     let is_ollama = move || provider.get() == "ollama";
     let is_anthropic = move || provider.get() == "anthropic";
+    let needs_api_key = move || provider.get() == "anthropic" || provider.get() == "mistral";
 
     view! {
         <fieldset class="space-y-3">
@@ -81,6 +83,7 @@ pub fn AgentSettings(
                     >
                         <option class="bg-stone-900 text-stone-200" value="ollama" selected=is_ollama>"Ollama"</option>
                         <option class="bg-stone-900 text-stone-200" value="anthropic" selected=is_anthropic>"Anthropic"</option>
+                        <option class="bg-stone-900 text-stone-200" value="mistral" selected=move || provider.get() == "mistral">"Mistral"</option>
                     </select>
                     // Custom chevron
                     <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
@@ -94,7 +97,12 @@ pub fn AgentSettings(
                     id="settings-model"
                     type="text"
                     class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                    placeholder=move || if is_ollama() { "qwen3.5:9b" } else { "claude-sonnet-4-20250514" }
+                    placeholder=move || match provider.get().as_str() {
+                        "ollama" => "qwen3.5:9b".to_string(),
+                        "anthropic" => "claude-sonnet-4-20250514".to_string(),
+                        "mistral" => "mistral-small-latest".to_string(),
+                        _ => String::new(),
+                    }
                     prop:value=move || model.get()
                     on:input=move |ev| set_model.set(event_target_value(&ev))
                 />
@@ -116,8 +124,8 @@ pub fn AgentSettings(
                 </div>
             </Show>
 
-            // Anthropic-specific: API key
-            <Show when=is_anthropic>
+            // API key (Anthropic and Mistral)
+            <Show when=needs_api_key>
                 <div class="space-y-1">
                     <label class="block text-xs text-stone-400" for="settings-api-key">"API Key"</label>
                     <input
