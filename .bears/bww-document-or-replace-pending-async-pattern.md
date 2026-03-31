@@ -1,10 +1,10 @@
 ---
 id: bww
 title: Document or replace pending() async pattern
-status: open
+status: done
 priority: P3
 created: 2026-03-31T16:33:41.276152370Z
-updated: 2026-03-31T16:33:41.276152370Z
+updated: 2026-03-31T20:22:21.141957080Z
 tags:
 - frontend
 - refactor

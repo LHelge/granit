@@ -2,10 +2,10 @@
 id: 4cm
 title: Architectural refactoring and bug fixes
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:31:55.818959479Z
-updated: 2026-03-31T16:31:55.818959479Z
+updated: 2026-03-31T20:22:21.142128946Z
 ---
 
 ## Scope

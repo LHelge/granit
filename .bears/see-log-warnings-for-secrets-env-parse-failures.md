@@ -1,10 +1,10 @@
 ---
 id: see
 title: Log warnings for secrets.env parse failures
-status: open
+status: done
 priority: P3
 created: 2026-03-31T16:33:41.283035363Z
-updated: 2026-03-31T16:33:41.283035363Z
+updated: 2026-03-31T20:19:28.089260113Z
 tags:
 - backend
 parent: 4cm
