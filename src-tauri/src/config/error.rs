@@ -15,6 +15,9 @@ pub enum ConfigError {
     #[error("Invalid secret: {0}")]
     InvalidSecret(String),
 
+    #[error("Failed to load {path}: {reason}")]
+    EnvFile { path: String, reason: String },
+
     #[error("Internal state error: mutex poisoned")]
     Poisoned,
 }

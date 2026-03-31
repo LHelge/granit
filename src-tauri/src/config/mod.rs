@@ -128,11 +128,35 @@ impl AppConfig {
     }
 
     /// Add a cave to the recent list (moves to front if already present).
+    #[cfg(test)]
     pub fn add_recent_cave(&mut self, path: PathBuf) {
         self.recent_caves.retain(|p| p != &path);
         self.recent_caves.insert(0, path);
         // Keep a reasonable limit
         self.recent_caves.truncate(10);
+    }
+
+    /// Update only the `recent_caves` list in the global config file.
+    ///
+    /// Unlike `save_global()`, this reads the raw global config, patches
+    /// just the recent-caves field, and writes it back — so cave-layer
+    /// overrides that live in the in-memory merged config are never
+    /// written to the global file.
+    pub fn save_recent_cave(path: &Path) -> Result<(), ConfigError> {
+        let config_path = Self::global_config_path()?;
+        let mut raw = Self::load_raw(&config_path)?;
+        let mut caves = raw.recent_caves.unwrap_or_default();
+        caves.retain(|p| p != path);
+        caves.insert(0, path.to_path_buf());
+        caves.truncate(10);
+        raw.recent_caves = Some(caves);
+
+        if let Some(parent) = config_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let yaml = serde_yml::to_string(&raw)?;
+        std::fs::write(&config_path, yaml)?;
+        Ok(())
     }
 
     /// Convert to the IPC-facing type used at Tauri command boundaries.
@@ -250,13 +274,13 @@ pub fn load_secrets(cave_path: Option<&Path>) -> Result<Secrets, ConfigError> {
     // Load global secrets
     if let Some(config_dir) = dirs::config_dir() {
         let global_path = config_dir.join("granit").join("secrets.env");
-        load_env_file(&global_path, &mut vars);
+        load_env_file(&global_path, &mut vars)?;
     }
 
     // Load cave secrets (override global)
     if let Some(cave) = cave_path {
         let cave_path = cave.join(".granit").join("secrets.env");
-        load_env_file(&cave_path, &mut vars);
+        load_env_file(&cave_path, &mut vars)?;
     }
 
     Ok(Secrets::new(vars))
@@ -344,12 +368,31 @@ fn ensure_cave_gitignore(cave_path: &Path) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn load_env_file(path: &Path, vars: &mut HashMap<String, String>) {
-    if let Ok(iter) = dotenvy::from_path_iter(path) {
-        for item in iter.flatten() {
-            vars.insert(item.0, item.1);
+fn load_env_file(path: &Path, vars: &mut HashMap<String, String>) -> Result<(), ConfigError> {
+    let iter = match dotenvy::from_path_iter(path) {
+        Ok(iter) => iter,
+        Err(e) if e.not_found() => return Ok(()),
+        Err(e) => {
+            return Err(ConfigError::EnvFile {
+                path: path.display().to_string(),
+                reason: e.to_string(),
+            })
+        }
+    };
+    for item in iter {
+        match item {
+            Ok((key, value)) => {
+                vars.insert(key, value);
+            }
+            Err(e) => {
+                return Err(ConfigError::EnvFile {
+                    path: path.display().to_string(),
+                    reason: e.to_string(),
+                })
+            }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
