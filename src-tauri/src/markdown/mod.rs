@@ -22,6 +22,9 @@ pub fn render_note<'lookup>(
     let (frontmatter, body) = extract_frontmatter(raw);
     let (resolved_body, outgoing_links) = resolve_wiki_links(body, lookup);
     let html = render_html(&resolved_body);
+    // pulldown-cmark renders link titles as title="…" attributes; convert
+    // our broken-link marker to a class so the frontend can style and detect it.
+    let html = html.replace(" title=\"broken-link\"", " class=\"broken-link\"");
     let fmt = |d: chrono::DateTime<Utc>| {
         d.with_timezone(&Local)
             .format("%Y-%m-%d %H:%M:%S")
