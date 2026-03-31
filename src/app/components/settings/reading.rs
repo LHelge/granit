@@ -1,15 +1,15 @@
 use leptos::prelude::*;
 
 use super::font_picker::FontPicker;
+use super::SettingsForm;
+use leptos::prelude::Callback;
 
 #[component]
-pub fn ReadingSettings(
-    fonts: ReadSignal<Vec<String>>,
-    font_family: ReadSignal<String>,
-    set_font_family: WriteSignal<String>,
-    font_size: ReadSignal<u8>,
-    set_font_size: WriteSignal<u8>,
-) -> impl IntoView {
+pub fn ReadingSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
+    let fonts = Memo::new(move |_| form.get().system_fonts);
+    let font_family = Memo::new(move |_| form.get().reading_font.font_family);
+    let font_size = Memo::new(move |_| form.get().reading_font.font_size);
+
     view! {
         <fieldset class="space-y-3">
             <legend class="text-xs font-semibold uppercase tracking-wider text-stone-400 mb-2">"Reading"</legend>
@@ -19,7 +19,7 @@ pub fn ReadingSettings(
                 <FontPicker
                     fonts=fonts
                     value=font_family
-                    set_value=set_font_family
+                    set_value=Callback::new(move |v| form.update(|f| f.reading_font.font_family = v))
                     id="rd-font-family"
                 />
             </div>
@@ -35,7 +35,7 @@ pub fn ReadingSettings(
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {
-                            set_font_size.set(v);
+                            form.update(|f| f.reading_font.font_size = v);
                         }
                     }
                 />

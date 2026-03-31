@@ -5,11 +5,14 @@ use crate::app::components::icons::ChevronDownIcon;
 #[component]
 pub fn FontPicker(
     /// All available system font families.
-    fonts: ReadSignal<Vec<String>>,
+    #[prop(into)]
+    fonts: Signal<Vec<String>>,
     /// Currently selected font family.
-    value: ReadSignal<String>,
+    #[prop(into)]
+    value: Signal<String>,
     /// Called when the user selects a font.
-    set_value: WriteSignal<String>,
+    #[prop(into)]
+    set_value: Callback<String>,
     /// HTML id for the wrapper (used for label association).
     #[prop(into)]
     id: String,
@@ -102,7 +105,7 @@ pub fn FontPicker(
                                             class=("bg-stone-700", is_selected)
                                             style:font-family=format!("'{font_style}'")
                                             on:click=move |_| {
-                                                set_value.set(font_select.clone());
+                                                set_value.run(font_select.clone());
                                                 set_open.set(false);
                                             }
                                         >
