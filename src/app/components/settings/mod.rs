@@ -110,6 +110,7 @@ pub fn SettingsModal(config: RwSignal<AppConfig>, set_open: WriteSignal<bool>) -
                 } else {
                     Some(base_url.clone())
                 },
+                ..AgentConfig::default()
             };
             match ipc::save_config(agent, markdown_font, reading_font, agent_font).await {
                 Ok(new_config) => {

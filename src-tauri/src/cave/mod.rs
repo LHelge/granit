@@ -12,6 +12,7 @@ use note::{
 };
 
 /// A cave — an open directory of markdown notes.
+#[derive(Debug)]
 pub struct Cave {
     path: PathBuf,
     /// In-memory index: slug → absolute path. Populated at open and kept in
@@ -23,22 +24,20 @@ pub struct Cave {
 impl Cave {
     /// Open a cave at the given directory path. Eagerly scans recursively for
     /// `.md` files to populate the in-memory notes index.
-    pub fn open(path: PathBuf) -> Self {
-        let notes = Self::scan_recursive(&path, &path).unwrap_or_default();
-        Self { path, notes }
+    ///
+    /// Returns an error if two files share the same slug (filename without `.md`).
+    pub fn open(path: PathBuf) -> Result<Self, CaveError> {
+        let notes = Self::scan_recursive(&path, &path)?;
+        Ok(Self { path, notes })
     }
 
     /// Recursively scan `dir` for `.md` files and return a slug → absolute-path map.
     ///
     /// Subdirectories starting with `.` (hidden) are skipped, as is `.granit/`.
-    /// If two files share the same filename (slug) the second one is skipped with
-    /// a logged warning — first one encountered wins.
+    /// Returns an error if two files share the same slug.
     #[allow(clippy::map_entry)]
-    fn scan_recursive(
-        _cave_root: &Path,
-        dir: &Path,
-    ) -> Result<HashMap<String, PathBuf>, CaveError> {
-        let mut notes = HashMap::new();
+    fn scan_recursive(cave_root: &Path, dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+        let mut notes: HashMap<String, PathBuf> = HashMap::new();
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let p = entry.path();
@@ -50,15 +49,25 @@ impl Cave {
                 if name_str.starts_with('.') || name_str == ".granit" {
                     continue;
                 }
-                let sub = Self::scan_recursive(_cave_root, &p)?;
+                let sub = Self::scan_recursive(cave_root, &p)?;
                 for (slug, abs_path) in sub {
-                    if notes.contains_key(&slug) {
-                        eprintln!(
-                            "granit: duplicate slug {slug:?} found at {abs_path:?}, skipping"
-                        );
-                    } else {
-                        notes.insert(slug, abs_path);
+                    if let Some(existing) = notes.get(&slug) {
+                        let existing_rel = existing
+                            .strip_prefix(cave_root)
+                            .unwrap_or(existing)
+                            .to_string_lossy()
+                            .into_owned();
+                        let new_rel = abs_path
+                            .strip_prefix(cave_root)
+                            .unwrap_or(&abs_path)
+                            .to_string_lossy()
+                            .into_owned();
+                        return Err(CaveError::DuplicateSlug {
+                            slug,
+                            paths: vec![existing_rel, new_rel],
+                        });
                     }
+                    notes.insert(slug, abs_path);
                 }
             } else if p.is_file() {
                 if let Some(ext) = p.extension() {
@@ -67,11 +76,23 @@ impl Cave {
                             .file_stem()
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_default();
-                        if notes.contains_key(&slug) {
-                            eprintln!("granit: duplicate slug {slug:?} found at {p:?}, skipping");
-                        } else {
-                            notes.insert(slug, p);
+                        if let Some(existing) = notes.get(&slug) {
+                            let existing_rel = existing
+                                .strip_prefix(cave_root)
+                                .unwrap_or(existing)
+                                .to_string_lossy()
+                                .into_owned();
+                            let new_rel = p
+                                .strip_prefix(cave_root)
+                                .unwrap_or(&p)
+                                .to_string_lossy()
+                                .into_owned();
+                            return Err(CaveError::DuplicateSlug {
+                                slug,
+                                paths: vec![existing_rel, new_rel],
+                            });
                         }
+                        notes.insert(slug, p);
                     }
                 }
             }
@@ -184,9 +205,9 @@ impl Cave {
         if !abs.exists() {
             return Err(CaveError::NotFound(path.to_string_lossy().into_owned()));
         }
-        // Remove all indexed notes under this folder from the in-memory index.
-        self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
+        // Filesystem first — only update the index after the delete succeeds.
         std::fs::remove_dir_all(&abs)?;
+        self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
         Ok(())
     }
 
@@ -504,7 +525,7 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(old_slug.to_string()))?
             .clone();
 
-        let final_abs = if old_slug != new_name {
+        let (final_abs, renamed) = if old_slug != new_name {
             let new_filename = ensure_md_extension(new_name);
             let new_abs = old_abs
                 .parent()
@@ -516,16 +537,26 @@ impl Cave {
             }
 
             std::fs::rename(&old_abs, &new_abs)?;
-            self.notes.remove(old_slug);
-            self.notes.insert(new_name.to_string(), new_abs.clone());
-            new_abs
+            (new_abs, true)
         } else {
-            old_abs
+            (old_abs.clone(), false)
         };
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
         let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags);
-        std::fs::write(&final_abs, updated.as_str())?;
+        if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
+            // Rollback the rename so index stays consistent with filesystem.
+            if renamed {
+                let _ = std::fs::rename(&final_abs, &old_abs);
+            }
+            return Err(e.into());
+        }
+
+        // Update index only after all filesystem operations succeed.
+        if renamed {
+            self.notes.remove(old_slug);
+            self.notes.insert(new_name.to_string(), final_abs.clone());
+        }
 
         let rel = self.relative_path(&final_abs);
         Ok(note_meta_from_relative_path(&rel))
@@ -585,7 +616,7 @@ mod tests {
     #[test]
     fn test_cave_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.create_note("hello", None).unwrap();
         assert_eq!(meta.slug, "hello");
@@ -612,7 +643,7 @@ mod tests {
     #[test]
     fn test_create_note() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.create_note("my-note", None).unwrap();
         assert_eq!(meta.slug, "my-note");
@@ -625,7 +656,7 @@ mod tests {
     #[test]
     fn test_create_note_in_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         std::fs::create_dir(dir.path().join("notes")).unwrap();
 
         let meta = cave
@@ -639,7 +670,7 @@ mod tests {
     #[test]
     fn test_create_note_folder_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .create_note("note", Some(Path::new("nonexistent")))
@@ -650,7 +681,7 @@ mod tests {
     #[test]
     fn test_create_note_already_exists() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.create_note("test", None).unwrap();
         let err = cave.create_note("test", None).unwrap_err();
@@ -661,7 +692,7 @@ mod tests {
     fn test_create_note_duplicate_slug_across_folders() {
         // Two notes with the same filename in different folders should be rejected.
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
 
         cave.create_note("foo", None).unwrap();
@@ -672,7 +703,7 @@ mod tests {
     #[test]
     fn test_create_untitled_auto_numbering() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let m1 = cave.create_note("untitled", None).unwrap();
         assert_eq!(m1.slug, "untitled");
@@ -687,7 +718,7 @@ mod tests {
     #[test]
     fn test_create_folder() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.create_folder(Path::new("projects")).unwrap();
         assert!(dir.path().join("projects").is_dir());
@@ -696,7 +727,7 @@ mod tests {
     #[test]
     fn test_create_folder_nested() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.create_folder(Path::new("a/b/c")).unwrap();
         assert!(dir.path().join("a/b/c").is_dir());
@@ -705,7 +736,7 @@ mod tests {
     #[test]
     fn test_create_folder_already_exists() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         std::fs::create_dir(dir.path().join("existing")).unwrap();
         let err = cave.create_folder(Path::new("existing")).unwrap_err();
@@ -718,7 +749,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
         std::fs::write(dir.path().join("root.md"), "").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         assert!(cave.notes.contains_key("note"));
         cave.delete_folder(Path::new("sub")).unwrap();
         assert!(
@@ -735,7 +766,7 @@ mod tests {
     #[test]
     fn test_delete_folder_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let err = cave.delete_folder(Path::new("ghost")).unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
@@ -743,7 +774,7 @@ mod tests {
     #[test]
     fn test_delete_folder_rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let err = cave.delete_folder(Path::new("../escape")).unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
     }
@@ -755,7 +786,7 @@ mod tests {
         std::fs::write(dir.path().join("alpha.md"), "# Alpha\n").unwrap();
         std::fs::write(dir.path().join("sub/beta.md"), "# Beta\n").unwrap();
         std::fs::write(dir.path().join("not-a-note.txt"), "ignore").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let notes = cave.list_notes().unwrap();
         assert_eq!(notes.len(), 2);
@@ -773,7 +804,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".hidden")).unwrap();
         std::fs::write(dir.path().join("visible.md"), "").unwrap();
         std::fs::write(dir.path().join(".hidden/secret.md"), "").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let notes = cave.list_notes().unwrap();
         assert_eq!(notes.len(), 1);
@@ -786,7 +817,7 @@ mod tests {
         std::fs::write(dir.path().join("note.md"), "").unwrap();
         std::fs::write(dir.path().join("image.png"), "").unwrap();
         std::fs::write(dir.path().join("readme.txt"), "").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let notes = cave.list_notes().unwrap();
         assert_eq!(notes.len(), 1);
@@ -797,7 +828,7 @@ mod tests {
     fn test_read_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Test Note\nBody").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let note = cave.read_note("test").unwrap();
         assert_eq!(note.meta.slug, "test");
@@ -809,7 +840,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub/deep.md"), "# Deep\nContent").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let note = cave.read_note("deep").unwrap();
         assert_eq!(note.meta.slug, "deep");
@@ -819,7 +850,7 @@ mod tests {
     #[test]
     fn test_read_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.read_note("nonexistent").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -828,7 +859,7 @@ mod tests {
     #[test]
     fn test_read_note_rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.read_note("../etc/passwd").unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
@@ -838,7 +869,7 @@ mod tests {
     fn test_save_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Old\n").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.save_note("test", "# New Title\nNew body").unwrap();
         assert_eq!(meta.slug, "test");
@@ -850,7 +881,7 @@ mod tests {
     #[test]
     fn test_save_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.save_note("missing", "content").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -859,7 +890,7 @@ mod tests {
     #[test]
     fn test_save_note_rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.save_note("../escape", "content").unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
@@ -869,7 +900,7 @@ mod tests {
     fn test_edit_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Hello\nold text here").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.edit_note("test", "old text", "new text").unwrap();
         assert_eq!(meta.slug, "test");
@@ -882,7 +913,7 @@ mod tests {
     #[test]
     fn test_edit_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.edit_note("missing", "old", "new").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -892,7 +923,7 @@ mod tests {
     fn test_edit_note_text_not_found() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Hello\nsome content").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .edit_note("test", "nonexistent text", "replacement")
@@ -904,7 +935,7 @@ mod tests {
     fn test_edit_note_replaces_first_occurrence_only() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "AAA BBB AAA").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.edit_note("test", "AAA", "CCC").unwrap();
         let content = std::fs::read_to_string(dir.path().join("test.md")).unwrap();
@@ -915,7 +946,7 @@ mod tests {
     fn test_delete_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("doomed.md"), "# Bye\n").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         assert!(dir.path().join("doomed.md").exists());
 
         cave.delete_note("doomed").unwrap();
@@ -925,7 +956,7 @@ mod tests {
     #[test]
     fn test_delete_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.delete_note("ghost").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -934,7 +965,7 @@ mod tests {
     #[test]
     fn test_delete_note_rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.delete_note("../escape").unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
@@ -947,7 +978,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("note.md"), "# Note").unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.move_note("note", Some(Path::new("sub"))).unwrap();
         assert_eq!(meta.slug, "note");
@@ -961,7 +992,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.move_note("note", None).unwrap();
         assert_eq!(meta.relative_path, "note.md");
@@ -974,7 +1005,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("sub/note.md"), "# Note").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.move_note("note", Some(Path::new("sub"))).unwrap();
         assert_eq!(meta.relative_path, "sub/note.md");
@@ -984,7 +1015,7 @@ mod tests {
     fn test_move_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.move_note("ghost", Some(Path::new("sub"))).unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -994,7 +1025,7 @@ mod tests {
     fn test_move_note_dest_not_found() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("note.md"), "").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .move_note("note", Some(Path::new("nonexistent")))
@@ -1006,18 +1037,26 @@ mod tests {
     fn test_move_note_file_already_exists_at_dest() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
-        std::fs::write(dir.path().join("note.md"), "root").unwrap();
-        std::fs::write(dir.path().join("sub/note.md"), "sub").unwrap();
-        // Only the first one ends up in the index (duplicate slug skipped).
-        // We need to test the case where the destination file physically exists.
-        let mut cave = Cave::open(dir.path().to_path_buf());
-        // Whichever slug won, try pushing it to the folder that has the other copy.
-        let err_root = cave.move_note("note", Some(Path::new("sub")));
-        let err_none = cave.move_note("note", None);
-        // One of them must fail with AlreadyExists (the one pointing to the other location).
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.create_note("note", None).unwrap();
+        // Place a file at the destination path that isn't in the index.
+        std::fs::write(dir.path().join("sub/note.md"), "conflict").unwrap();
+
+        let err = cave.move_note("note", Some(Path::new("sub"))).unwrap_err();
+        assert!(matches!(err, CaveError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn test_open_cave_rejects_duplicate_slugs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("dup.md"), "root").unwrap();
+        std::fs::write(dir.path().join("sub/dup.md"), "sub").unwrap();
+
+        let err = Cave::open(dir.path().to_path_buf()).unwrap_err();
         assert!(
-            err_root.is_err() || err_none.is_err(),
-            "at least one move should fail due to existing file"
+            matches!(err, CaveError::DuplicateSlug { ref slug, .. } if slug == "dup"),
+            "expected DuplicateSlug error, got: {err:?}"
         );
     }
 
@@ -1029,7 +1068,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("src")).unwrap();
         std::fs::create_dir(dir.path().join("dest")).unwrap();
         std::fs::write(dir.path().join("src/note.md"), "# Note").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.move_folder(Path::new("src"), Some(Path::new("dest")))
             .unwrap();
@@ -1045,7 +1084,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("parent/child")).unwrap();
         std::fs::write(dir.path().join("parent/child/note.md"), "").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.move_folder(Path::new("parent/child"), None).unwrap();
         assert!(dir.path().join("child/note.md").exists());
@@ -1057,7 +1096,7 @@ mod tests {
     fn test_move_folder_noop() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("parent/child")).unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.move_folder(Path::new("parent/child"), Some(Path::new("parent")))
             .unwrap();
@@ -1068,7 +1107,7 @@ mod tests {
     fn test_move_folder_into_itself_rejected() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .move_folder(Path::new("a"), Some(Path::new("a/b")))
@@ -1079,7 +1118,7 @@ mod tests {
     #[test]
     fn test_move_folder_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.move_folder(Path::new("ghost"), None).unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -1091,7 +1130,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("a")).unwrap();
         std::fs::create_dir(dir.path().join("b")).unwrap();
         std::fs::create_dir(dir.path().join("b/a")).unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .move_folder(Path::new("a"), Some(Path::new("b")))
@@ -1103,7 +1142,7 @@ mod tests {
     fn test_rename_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("old.md"), "# Old Note\n").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.rename_note("old", "new-name").unwrap();
         assert_eq!(meta.slug, "new-name");
@@ -1116,7 +1155,7 @@ mod tests {
     fn test_rename_note_noop() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("same.md"), "# Same\n").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.rename_note("same", "same").unwrap();
         assert_eq!(meta.slug, "same");
@@ -1128,7 +1167,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.md"), "# A\n").unwrap();
         std::fs::write(dir.path().join("b.md"), "# B\n").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.rename_note("a", "b").unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
@@ -1141,7 +1180,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         std::fs::write(dir.path().join("a.md"), "# A\n").unwrap();
         std::fs::write(dir.path().join("sub/b.md"), "# B\n").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.rename_note("a", "b").unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
@@ -1150,7 +1189,7 @@ mod tests {
     #[test]
     fn test_rename_note_source_missing() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.rename_note("missing", "new").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -1160,7 +1199,7 @@ mod tests {
     fn test_update_note_content_only() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("note.md"), "old content").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
             .update_note("note", "note", "new content", None)
@@ -1175,7 +1214,7 @@ mod tests {
     fn test_update_note_rename_and_save() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("old.md"), "original content").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
             .update_note("old", "new-name", "updated content", None)
@@ -1190,7 +1229,7 @@ mod tests {
     #[test]
     fn test_update_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .update_note("ghost", "ghost", "content", None)
@@ -1203,7 +1242,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.md"), "a content").unwrap();
         std::fs::write(dir.path().join("b.md"), "b content").unwrap();
-        let mut cave = Cave::open(dir.path().to_path_buf());
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.update_note("a", "b", "new content", None).unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
@@ -1223,7 +1262,7 @@ mod tests {
         std::fs::write(&unreadable, "secret").unwrap();
         std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
         // Open cave after writing so index is populated.
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         // listing still succeeds and includes the entry (slug is in the index from open-time scan)
         let notes = cave.list_notes().unwrap();
@@ -1237,7 +1276,7 @@ mod tests {
     #[test]
     fn test_list_folders_empty_cave() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let folders = cave.list_folders().unwrap();
         assert!(folders.is_empty());
     }
@@ -1246,7 +1285,7 @@ mod tests {
     fn test_list_folders_includes_empty_folder() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("empty")).unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let folders = cave.list_folders().unwrap();
         assert_eq!(folders, vec!["empty"]);
     }
@@ -1256,7 +1295,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
         std::fs::create_dir(dir.path().join("c")).unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let folders = cave.list_folders().unwrap();
         assert_eq!(folders, vec!["a", "a/b", "c"]);
     }
@@ -1267,7 +1306,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".hidden")).unwrap();
         std::fs::create_dir_all(dir.path().join(".granit")).unwrap();
         std::fs::create_dir(dir.path().join("visible")).unwrap();
-        let cave = Cave::open(dir.path().to_path_buf());
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let folders = cave.list_folders().unwrap();
         assert_eq!(folders, vec!["visible"]);
     }

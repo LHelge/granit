@@ -1,10 +1,10 @@
 ---
 id: tfv
 title: Add wasm-bindgen-test and CI integration
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:40:34.547431916Z
-updated: 2026-03-31T16:40:34.547431916Z
+updated: 2026-03-31T16:58:38.260796270Z
 tags:
 - frontend
 - infra

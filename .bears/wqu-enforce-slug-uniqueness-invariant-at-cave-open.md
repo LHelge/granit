@@ -1,10 +1,10 @@
 ---
 id: wqu
 title: Enforce slug uniqueness invariant at cave open
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:32:23.229756707Z
-updated: 2026-03-31T16:32:23.229756707Z
+updated: 2026-03-31T16:50:42.133846740Z
 tags:
 - backend
 - bug

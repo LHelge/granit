@@ -2,6 +2,8 @@ mod error;
 
 pub use error::AgentError;
 
+use std::collections::VecDeque;
+
 use crate::config::Secrets;
 use granit_types::AgentConfig;
 use rig::client::{CompletionClient, Nothing};
@@ -40,7 +42,8 @@ impl std::fmt::Debug for ProviderAgent {
 #[derive(Clone, Debug)]
 pub struct Agent {
     inner: ProviderAgent,
-    pub history: Vec<Message>,
+    pub history: VecDeque<Message>,
+    max_history: usize,
 }
 
 impl Agent {
@@ -54,7 +57,8 @@ impl Agent {
 
         Ok(Self {
             inner,
-            history: Vec::new(),
+            history: VecDeque::new(),
+            max_history: config.max_history,
         })
     }
 
@@ -99,6 +103,20 @@ impl Agent {
             .build();
 
         Ok(ProviderAgent::Anthropic(agent))
+    }
+
+    /// Push a message to the conversation history, dropping the oldest
+    /// messages if the limit is exceeded.
+    pub fn push_history(&mut self, message: Message) {
+        self.history.push_back(message);
+        while self.history.len() > self.max_history {
+            self.history.pop_front();
+        }
+    }
+
+    /// Clone the agent and snapshot the current history for use across await points.
+    pub fn snapshot(&self) -> (Self, Vec<Message>) {
+        (self.clone(), self.history.iter().cloned().collect())
     }
 
     /// Stream a prompt through the underlying provider agent.
@@ -171,6 +189,31 @@ pub struct AgentStream {
         std::pin::Pin<Box<dyn futures::Stream<Item = Result<AgentStreamItem, AgentError>> + Send>>,
 }
 
+impl AgentStream {
+    /// Consume the stream, collecting the full response text.
+    /// Calls `on_chunk` for each text chunk received.
+    pub async fn collect_with(
+        &mut self,
+        mut on_chunk: impl FnMut(&str),
+    ) -> Result<String, AgentError> {
+        use futures::StreamExt;
+
+        let mut full_response = String::new();
+        loop {
+            match self.next().await {
+                Some(Ok(AgentStreamItem::Text(text))) => {
+                    full_response.push_str(&text);
+                    on_chunk(&text);
+                }
+                Some(Ok(AgentStreamItem::Done)) | None => break,
+                Some(Err(e)) => return Err(e),
+                Some(Ok(AgentStreamItem::Other)) => {}
+            }
+        }
+        Ok(full_response)
+    }
+}
+
 impl futures::Stream for AgentStream {
     type Item = Result<AgentStreamItem, AgentError>;
 
@@ -203,6 +246,7 @@ mod tests {
             provider: "ollama".to_string(),
             model: "qwen3.5:9b".to_string(),
             base_url: Some("http://192.168.1.10:11434".to_string()),
+            ..AgentConfig::default()
         };
         let agent = Agent::from_config(&config, &empty_secrets());
         assert!(agent.is_ok(), "Agent should build with a custom base URL");
@@ -214,6 +258,7 @@ mod tests {
             provider: "nope".to_string(),
             model: "test".to_string(),
             base_url: None,
+            ..AgentConfig::default()
         };
         let result = Agent::from_config(&config, &empty_secrets());
         assert!(result.is_err());
@@ -230,6 +275,7 @@ mod tests {
             provider: "anthropic".to_string(),
             model: "claude-sonnet-4-20250514".to_string(),
             base_url: None,
+            ..AgentConfig::default()
         };
         let result = Agent::from_config(&config, &empty_secrets());
         assert!(result.is_err());
@@ -249,6 +295,7 @@ mod tests {
             provider: "anthropic".to_string(),
             model: "claude-sonnet-4-20250514".to_string(),
             base_url: None,
+            ..AgentConfig::default()
         };
         let result = Agent::from_config(&config, &secrets);
         assert!(result.is_ok(), "Agent should build with Anthropic API key");

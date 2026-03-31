@@ -9,6 +9,9 @@ pub enum CaveError {
     #[error("Note already exists: {0}")]
     AlreadyExists(String),
 
+    #[error("Duplicate slug \"{slug}\" found at {paths:?}")]
+    DuplicateSlug { slug: String, paths: Vec<String> },
+
     #[error("Invalid note name: {0}")]
     InvalidName(String),
 
