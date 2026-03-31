@@ -54,6 +54,13 @@ pub fn App() -> impl IntoView {
     let toggle_sidebar = move |_| set_sidebar_visible.update(|v| *v = !*v);
     let toggle_agent = move |_| set_agent_visible.update(|v| *v = !*v);
 
+    // macOS needs extra left margin for traffic-light window buttons
+    let title_margin = js_sys::eval("navigator.platform")
+        .ok()
+        .and_then(|v| v.as_string())
+        .map(|p| if p.contains("Mac") { "ml-16" } else { "ml-2" })
+        .unwrap_or("ml-2");
+
     view! {
         <div class="flex flex-col h-screen bg-stone-900 text-stone-200 font-sans">
             // Global error banner
@@ -70,7 +77,7 @@ pub fn App() -> impl IntoView {
             </Show>
             // Top bar
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
-                <span class="text-sm font-semibold tracking-wide text-stone-300 ml-16 mt-1">"Granit"</span>
+                <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
                 <div class="flex items-center gap-1">
                     <button
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
