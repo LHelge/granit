@@ -1,11 +1,11 @@
 use leptos::prelude::*;
 use web_sys::{DragEvent, MouseEvent};
 
-use crate::app::components::icons::{ChevronIcon, FolderIcon};
 use super::rename_input::RenameInput;
 use super::tree_model::TreeNode;
 use super::{render_node, use_tree_ctx};
 use super::{ContextMenu, ContextTarget, DragPayload, RenameTarget};
+use crate::app::components::icons::{ChevronIcon, FolderIcon};
 use crate::app::ipc;
 
 /// Renders a folder row in the tree, with collapsing, drag-drop, context menu,
