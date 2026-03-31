@@ -264,8 +264,51 @@ pub fn Editor(
 
     let has_note = move || ctx.active_note.get().is_some();
 
+    let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
+        // Escape → cancel editing (no modifier needed)
+        if ev.key() == "Escape" && ctx.editing.get_untracked() {
+            ev.prevent_default();
+            ctx.toggle_mode();
+            return;
+        }
+
+        // Cmd on macOS, Ctrl on Linux/Windows.
+        // Detect platform at runtime since WASM target has no OS info.
+        let is_mac = js_sys::eval("navigator.platform")
+            .ok()
+            .and_then(|v| v.as_string())
+            .map(|p| p.contains("Mac"))
+            .unwrap_or(false);
+        let modifier = if is_mac { ev.meta_key() } else { ev.ctrl_key() };
+        if !modifier {
+            return;
+        }
+        match ev.key().as_str() {
+            // Cmd/Ctrl+E → enter edit mode
+            "e" => {
+                if ctx.active_note.get_untracked().is_some() && !ctx.editing.get_untracked() {
+                    ev.prevent_default();
+                    ctx.editing.set(true);
+                    ctx.focus_content.set(true);
+                }
+            }
+            // Cmd/Ctrl+S → save and return to preview
+            "s" => {
+                if ctx.editing.get_untracked() {
+                    ev.prevent_default();
+                    ctx.save();
+                }
+            }
+            _ => {}
+        }
+    };
+
     view! {
-        <main class="flex-1 flex flex-col overflow-hidden bg-stone-900 relative">
+        <main
+            class="flex-1 flex flex-col overflow-hidden bg-stone-900 relative outline-none"
+            tabindex="-1"
+            on:keydown=on_keydown
+        >
             // Floating action buttons — always top-right, no layout impact
             <Show when=has_note>
                 <div class="absolute top-3 right-4 z-10 flex items-center gap-1">
