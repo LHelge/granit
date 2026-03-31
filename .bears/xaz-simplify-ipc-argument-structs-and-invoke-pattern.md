@@ -1,10 +1,10 @@
 ---
 id: xaz
 title: Simplify IPC argument structs and invoke pattern
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:32:52.084708611Z
-updated: 2026-03-31T16:32:52.084708611Z
+updated: 2026-03-31T20:00:24.741541935Z
 tags:
 - frontend
 - refactor

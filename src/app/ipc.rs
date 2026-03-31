@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -12,52 +15,9 @@ extern "C" {
     pub(crate) async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
 }
 
-// ── Argument structs ───────────────────────────────────────────────
-
-#[derive(Serialize)]
-struct CreateNoteArgs {
-    name: String,
-    folder: Option<String>,
-}
-
-#[derive(Serialize)]
-struct FolderPathArg {
-    path: String,
-}
-
-#[derive(Serialize)]
-struct OpenCaveArgs {
-    path: String,
-}
-
-#[derive(Serialize)]
-struct OpenDialogOptions {
-    directory: bool,
-    multiple: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateNoteArgs {
-    old_name: String,
-    new_name: String,
-    content: String,
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SaveConfigArgs {
-    agent: granit_types::AgentConfig,
-    markdown_font: FontConfig,
-    reading_font: FontConfig,
-    agent_font: FontConfig,
-}
-
-// ── Helpers ───────────────────────────────────────────────────────
+// ── Generic invoke helpers ─────────────────────────────────────────
 
 fn js_err_to_string(e: JsValue) -> String {
-    // Tauri 2 returns errors as a plain string or as `{ message: "..." }`.
     if let Some(s) = e.as_string() {
         return s;
     }
@@ -72,207 +32,34 @@ fn js_err_to_string(e: JsValue) -> String {
         })
 }
 
-// ── IPC helpers ────────────────────────────────────────────────────
+/// Invoke a Tauri command with typed args and a typed return value.
+async fn invoke_cmd<A: Serialize, R: DeserializeOwned>(cmd: &str, args: &A) -> Result<R, String> {
+    let args = serde_wasm_bindgen::to_value(args).map_err(|e| format!("{e}"))?;
+    let val = invoke(cmd, args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+/// Invoke a Tauri command with no args and a typed return value.
+async fn invoke_no_args<R: DeserializeOwned>(cmd: &str) -> Result<R, String> {
+    let val = invoke(cmd, JsValue::NULL).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+/// Invoke a Tauri command with typed args and no return value.
+async fn invoke_unit<A: Serialize>(cmd: &str, args: &A) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(args).map_err(|e| format!("{e}"))?;
+    invoke(cmd, args).await.map_err(js_err_to_string)?;
+    Ok(())
+}
+
+// ── Config ─────────────────────────────────────────────────────────
 
 pub async fn fetch_config() -> Result<AppConfig, String> {
-    let val = invoke("get_config", JsValue::NULL)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+    invoke_no_args("get_config").await
 }
 
 pub async fn list_system_fonts() -> Result<Vec<String>, String> {
-    let val = invoke("list_system_fonts", JsValue::NULL)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
-    let args = serde_wasm_bindgen::to_value(&OpenCaveArgs {
-        path: path.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("open_cave", args).await.map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
-    let val = invoke("list_notes", JsValue::NULL)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn fetch_folders() -> Result<Vec<String>, String> {
-    let val = invoke("list_folders", JsValue::NULL)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
-    let args = serde_wasm_bindgen::to_value(&CreateNoteArgs {
-        name: name.to_string(),
-        folder: folder.map(str::to_string),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("create_note", args)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn create_folder(path: &str) -> Result<(), String> {
-    let args = serde_wasm_bindgen::to_value(&FolderPathArg {
-        path: path.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("create_folder", args)
-        .await
-        .map_err(js_err_to_string)?;
-    Ok(())
-}
-
-pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, String> {
-    #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Args {
-        old_name: String,
-        new_name: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        old_name: old_name.to_string(),
-        new_name: new_name.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("rename_note", args)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn rename_folder(source: &str, new_name: &str) -> Result<(), String> {
-    #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Args {
-        source: String,
-        new_name: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        source: source.to_string(),
-        new_name: new_name.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("rename_folder", args)
-        .await
-        .map_err(js_err_to_string)?;
-    Ok(())
-}
-
-pub async fn delete_note(slug: &str) -> Result<(), String> {
-    #[derive(Serialize)]
-    struct Args {
-        name: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        name: slug.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("delete_note", args)
-        .await
-        .map_err(js_err_to_string)?;
-    Ok(())
-}
-
-pub async fn delete_folder(path: &str) -> Result<(), String> {
-    let args = serde_wasm_bindgen::to_value(&FolderPathArg {
-        path: path.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("delete_folder", args)
-        .await
-        .map_err(js_err_to_string)?;
-    Ok(())
-}
-
-pub async fn move_note(slug: &str, destination: Option<&str>) -> Result<NoteMeta, String> {
-    #[derive(Serialize)]
-    struct Args {
-        name: String,
-        destination: Option<String>,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        name: slug.to_string(),
-        destination: destination.map(str::to_string),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("move_note", args).await.map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn move_folder(source: &str, destination: Option<&str>) -> Result<(), String> {
-    #[derive(Serialize)]
-    struct Args {
-        source: String,
-        destination: Option<String>,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        source: source.to_string(),
-        destination: destination.map(str::to_string),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("move_folder", args)
-        .await
-        .map_err(js_err_to_string)?;
-    Ok(())
-}
-
-pub async fn read_note(name: &str) -> Result<Note, String> {
-    #[derive(Serialize)]
-    struct Args {
-        name: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        name: name.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("read_note", args).await.map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
-    #[derive(Serialize)]
-    struct Args {
-        name: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        name: name.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("render_note", args)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-pub async fn update_note(
-    old_name: &str,
-    new_name: &str,
-    content: &str,
-    tags: Option<Vec<String>>,
-) -> Result<NoteMeta, String> {
-    let args = serde_wasm_bindgen::to_value(&UpdateNoteArgs {
-        old_name: old_name.to_string(),
-        new_name: new_name.to_string(),
-        content: content.to_string(),
-        tags,
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("update_note", args)
-        .await
-        .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+    invoke_no_args("list_system_fonts").await
 }
 
 pub async fn save_config(
@@ -281,67 +68,186 @@ pub async fn save_config(
     reading_font: FontConfig,
     agent_font: FontConfig,
 ) -> Result<AppConfig, String> {
-    let args = serde_wasm_bindgen::to_value(&SaveConfigArgs {
-        agent,
-        markdown_font,
-        reading_font,
-        agent_font,
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("save_config", args)
+    #[derive(Serialize)]
+    struct Args {
+        agent: granit_types::AgentConfig,
+        markdown_font: FontConfig,
+        reading_font: FontConfig,
+        agent_font: FontConfig,
+    }
+    invoke_cmd(
+        "save_config",
+        &Args {
+            agent,
+            markdown_font,
+            reading_font,
+            agent_font,
+        },
+    )
+    .await
+}
+
+// ── Secrets ────────────────────────────────────────────────────────
+
+pub async fn get_secret(key: &str) -> Result<Option<bool>, String> {
+    invoke_cmd("get_secret", &HashMap::from([("key", key)])).await
+}
+
+pub async fn set_secret(key: &str, value: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        key: &'a str,
+        value: &'a str,
+    }
+    invoke_unit("set_secret", &Args { key, value }).await
+}
+
+// ── Cave ───────────────────────────────────────────────────────────
+
+pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
+    invoke_cmd("open_cave", &HashMap::from([("path", path)])).await
+}
+
+pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
+    invoke_no_args("list_notes").await
+}
+
+pub async fn fetch_folders() -> Result<Vec<String>, String> {
+    invoke_no_args("list_folders").await
+}
+
+// ── Notes ──────────────────────────────────────────────────────────
+
+pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        name: &'a str,
+        folder: Option<&'a str>,
+    }
+    invoke_cmd("create_note", &Args { name, folder }).await
+}
+
+pub async fn read_note(name: &str) -> Result<Note, String> {
+    invoke_cmd("read_note", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
+    invoke_cmd("render_note", &HashMap::from([("name", name)])).await
+}
+
+pub async fn update_note(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+    tags: Option<Vec<String>>,
+) -> Result<NoteMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+        tags: Option<Vec<String>>,
+    }
+    invoke_cmd(
+        "update_note",
+        &Args {
+            old_name,
+            new_name,
+            content,
+            tags,
+        },
+    )
+    .await
+}
+
+pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+    }
+    invoke_cmd("rename_note", &Args { old_name, new_name }).await
+}
+
+pub async fn delete_note(slug: &str) -> Result<(), String> {
+    invoke_unit("delete_note", &HashMap::from([("name", slug)])).await
+}
+
+pub async fn move_note(slug: &str, destination: Option<&str>) -> Result<NoteMeta, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        name: &'a str,
+        destination: Option<&'a str>,
+    }
+    invoke_cmd(
+        "move_note",
+        &Args {
+            name: slug,
+            destination,
+        },
+    )
+    .await
+}
+
+// ── Folders ────────────────────────────────────────────────────────
+
+pub async fn create_folder(path: &str) -> Result<(), String> {
+    invoke_unit("create_folder", &HashMap::from([("path", path)])).await
+}
+
+pub async fn delete_folder(path: &str) -> Result<(), String> {
+    invoke_unit("delete_folder", &HashMap::from([("path", path)])).await
+}
+
+pub async fn rename_folder(source: &str, new_name: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        source: &'a str,
+        new_name: &'a str,
+    }
+    invoke_unit("rename_folder", &Args { source, new_name }).await
+}
+
+pub async fn move_folder(source: &str, destination: Option<&str>) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        source: &'a str,
+        destination: Option<&'a str>,
+    }
+    invoke_unit(
+        "move_folder",
+        &Args {
+            source,
+            destination,
+        },
+    )
+    .await
+}
+
+// ── Agent ──────────────────────────────────────────────────────────
+
+pub async fn render_markdown(content: &str) -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&HashMap::from([("content", content)]))
+        .map_err(|e| format!("{e}"))?;
+    let val = invoke("render_markdown", args)
         .await
         .map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+    val.as_string()
+        .ok_or_else(|| "invalid response".to_string())
 }
 
-#[derive(Serialize)]
-struct SecretKeyArg {
-    key: String,
-}
-
-#[derive(Serialize)]
-struct SetSecretArgs {
-    key: String,
-    value: String,
-}
-
-/// Check whether a secret key is configured. Returns `Some(true)` if set, `None` if not.
-pub async fn get_secret(key: &str) -> Result<Option<bool>, String> {
-    let args = serde_wasm_bindgen::to_value(&SecretKeyArg {
-        key: key.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("get_secret", args).await.map_err(js_err_to_string)?;
-    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
-}
-
-/// Write a secret key to the global secrets.env file.
-pub async fn set_secret(key: &str, value: &str) -> Result<(), String> {
-    let args = serde_wasm_bindgen::to_value(&SetSecretArgs {
-        key: key.to_string(),
-        value: value.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("set_secret", args)
-        .await
-        .map(|_| ())
-        .map_err(js_err_to_string)
+pub async fn send_message(msg: &str) -> Result<(), String> {
+    invoke_unit("send_message", &HashMap::from([("msg", msg)])).await
 }
 
 pub async fn open_url(url: &str) -> Result<(), String> {
-    #[derive(Serialize)]
-    struct Args {
-        url: String,
-    }
-    let args = serde_wasm_bindgen::to_value(&Args {
-        url: url.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("plugin:opener|open_url", args)
-        .await
-        .map(|_| ())
-        .map_err(js_err_to_string)
+    invoke_unit("plugin:opener|open_url", &HashMap::from([("url", url)])).await
 }
+
+// ── Folder picker ──────────────────────────────────────────────────
 
 pub async fn pick_folder() -> Option<String> {
     let tauri =
@@ -349,6 +255,12 @@ pub async fn pick_folder() -> Option<String> {
     let dialog = js_sys::Reflect::get(&tauri, &JsValue::from_str("dialog")).ok()?;
     let open_fn = js_sys::Reflect::get(&dialog, &JsValue::from_str("open")).ok()?;
     let open_fn = js_sys::Function::from(open_fn);
+
+    #[derive(Serialize)]
+    struct OpenDialogOptions {
+        directory: bool,
+        multiple: bool,
+    }
 
     let opts = serde_wasm_bindgen::to_value(&OpenDialogOptions {
         directory: true,
@@ -361,44 +273,7 @@ pub async fn pick_folder() -> Option<String> {
     result.as_string()
 }
 
-// ── Agent IPC ─────────────────────────────────────────────────────
-
-#[derive(Serialize)]
-struct RenderMarkdownArgs {
-    content: String,
-}
-
-/// Render a markdown string to HTML via the backend.
-pub async fn render_markdown(content: &str) -> Result<String, String> {
-    let args = serde_wasm_bindgen::to_value(&RenderMarkdownArgs {
-        content: content.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    let val = invoke("render_markdown", args)
-        .await
-        .map_err(js_err_to_string)?;
-    val.as_string()
-        .ok_or_else(|| "invalid response".to_string())
-}
-
-#[derive(Serialize)]
-struct SendMessageArgs {
-    msg: String,
-}
-
-/// Invoke the backend `send_message` command. Returns immediately; streaming
-/// tokens arrive via Tauri events (`agent:stream-chunk`, `agent:stream-done`,
-/// `agent:stream-error`).
-pub async fn send_message(msg: &str) -> Result<(), String> {
-    let args = serde_wasm_bindgen::to_value(&SendMessageArgs {
-        msg: msg.to_string(),
-    })
-    .map_err(|e| format!("{e}"))?;
-    invoke("send_message", args)
-        .await
-        .map(|_| ())
-        .map_err(js_err_to_string)
-}
+// ── Event listening (agent streaming) ──────────────────────────────
 
 /// Register a closure to be called for each streaming text chunk.
 /// Returns an [`EventHandle`] — drop it to remove the listener.

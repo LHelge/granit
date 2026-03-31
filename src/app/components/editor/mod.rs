@@ -176,15 +176,12 @@ pub(super) fn use_editor_ctx() -> EditorCtx {
 // ── Main component ─────────────────────────────────────────────────
 
 #[component]
-pub fn Editor(
-    active_note: RwSignal<Option<Note>>,
-    notes: RwSignal<Vec<NoteMeta>>,
-    config: RwSignal<AppConfig>,
-) -> impl IntoView {
+pub fn Editor() -> impl IntoView {
+    let app = expect_context::<crate::app::AppCtx>();
     let ctx = EditorCtx {
-        active_note,
-        notes,
-        config,
+        active_note: app.active_note,
+        notes: app.notes,
+        config: app.config,
         editing: RwSignal::new(false),
         content: RwSignal::new(String::new()),
         title_input: RwSignal::new(String::new()),
