@@ -1,10 +1,10 @@
 ---
 id: czt
 title: Extract testable logic from components into plain structs
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:40:34.555211160Z
-updated: 2026-03-31T16:40:34.555211160Z
+updated: 2026-03-31T19:35:08.173376632Z
 tags:
 - frontend
 - refactor

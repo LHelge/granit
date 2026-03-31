@@ -1,10 +1,10 @@
 ---
 id: dnc
 title: Fix TextareaState char/byte index handling
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:33:19.413929892Z
-updated: 2026-03-31T16:33:19.413929892Z
+updated: 2026-03-31T19:35:08.182082285Z
 tags:
 - frontend
 - bug
