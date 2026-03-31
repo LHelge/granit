@@ -1,6 +1,8 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use crate::app::ipc;
+
 use super::use_editor_ctx;
 
 /// Rendered preview of the active note with wiki-link navigation.
@@ -8,8 +10,9 @@ use super::use_editor_ctx;
 pub(super) fn Reader() -> impl IntoView {
     let ctx = use_editor_ctx();
 
-    // Intercept clicks on rendered wiki-links and navigate to the target note.
-    // External links (http/https) and anchors (#) pass through normally.
+    // Intercept clicks on links in rendered markdown.
+    // - External links (http/https) open in the system browser.
+    // - Wiki-links navigate within the app.
     let on_click = move |ev: leptos::ev::MouseEvent| {
         let Some(target) = ev.target() else { return };
         let anchor = target
@@ -26,11 +29,17 @@ pub(super) fn Reader() -> impl IntoView {
         let Some(anchor) = anchor else { return };
         let href = anchor.get_attribute("href").unwrap_or_default();
 
-        if href.is_empty()
-            || href.starts_with("http")
-            || href.starts_with('#')
-            || href.starts_with('/')
-        {
+        if href.is_empty() || href.starts_with('#') || href.starts_with('/') {
+            return;
+        }
+
+        // External links → open in system browser
+        if href.starts_with("http://") || href.starts_with("https://") {
+            ev.prevent_default();
+            let url = href.clone();
+            leptos::task::spawn_local(async move {
+                let _ = ipc::open_url(&url).await;
+            });
             return;
         }
 

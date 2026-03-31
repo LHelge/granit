@@ -357,20 +357,17 @@ fn handle_tab(
 
 // ── Paste handler ──────────────────────────────────────────────────
 
-/// If text is selected and the clipboard contains a URL, wrap as a markdown link.
+/// If the clipboard contains a URL, paste it as a markdown link.
+/// With selection: `[selected text](url)`. Without: `[url](url)`.
 fn handle_paste(
-    ev: leptos::ev::Event,
+    ev: web_sys::ClipboardEvent,
     content_ref: NodeRef<leptos::html::Textarea>,
     ctx: EditorCtx,
 ) {
-    let ev: web_sys::ClipboardEvent = ev.unchecked_into();
     let Some(el) = content_ref.get() else { return };
     let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
     let s = TextareaState::from(textarea);
 
-    if !s.has_selection() {
-        return; // let browser handle normal paste
-    }
     let Some(data) = ev.clipboard_data() else {
         return;
     };
@@ -383,14 +380,19 @@ fn handle_paste(
     }
 
     ev.prevent_default();
+    let display = if s.has_selection() {
+        s.selected()
+    } else {
+        clip_trimmed.to_string()
+    };
     let new_value = format!(
         "{}[{}]({}){}",
         s.before(),
-        s.selected(),
+        display,
         clip_trimmed,
         s.after_selection()
     );
-    let new_pos = s.start + 1 + (s.end - s.start) + 2 + clip_trimmed.len() + 1;
+    let new_pos = s.start + 1 + display.len() + 2 + clip_trimmed.len() + 1;
     apply(textarea, &new_value, new_pos as u32, new_pos as u32, ctx);
 }
 
@@ -481,7 +483,7 @@ pub(super) fn Writer() -> impl IntoView {
             prop:value=move || ctx.content.get()
             on:input=move |ev| ctx.content.set(event_target_value(&ev))
             on:keydown=move |ev| handle_content_keydown(ev, content_ref, ctx)
-            on:paste=move |ev| handle_paste(ev.into(), content_ref, ctx)
+            on:paste=move |ev| handle_paste(ev, content_ref, ctx)
         />
     }
 }

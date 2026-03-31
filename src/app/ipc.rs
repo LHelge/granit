@@ -328,6 +328,21 @@ pub async fn set_secret(key: &str, value: &str) -> Result<(), String> {
         .map_err(js_err_to_string)
 }
 
+pub async fn open_url(url: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args {
+        url: String,
+    }
+    let args = serde_wasm_bindgen::to_value(&Args {
+        url: url.to_string(),
+    })
+    .map_err(|e| format!("{e}"))?;
+    invoke("plugin:opener|open_url", args)
+        .await
+        .map(|_| ())
+        .map_err(js_err_to_string)
+}
+
 pub async fn pick_folder() -> Option<String> {
     let tauri =
         js_sys::Reflect::get(&web_sys::window()?.into(), &JsValue::from_str("__TAURI__")).ok()?;
