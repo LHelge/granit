@@ -4,20 +4,57 @@ use granit_types::{ChatMessage, ChatRole};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+#[derive(Clone)]
+struct DisplayMessage {
+    message: ChatMessage,
+    rendered_html: Option<String>,
+}
+
 #[component]
 pub fn AgentPanel() -> impl IntoView {
     let config = expect_context::<AppCtx>().config;
     let (input, set_input) = signal(String::new());
-    // (message, rendered_html) — html is Some for assistant messages after streaming completes
-    let messages: RwSignal<Vec<(ChatMessage, Option<String>)>> = RwSignal::new(Vec::new());
+    let messages: RwSignal<Vec<DisplayMessage>> = RwSignal::new(Vec::new());
     let streaming_content: RwSignal<String> = RwSignal::new(String::new());
     let is_streaming: RwSignal<bool> = RwSignal::new(false);
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
 
-    // Register event listeners once on mount.
-    // The returned EventHandles are stored in `_handles` to keep the JS
-    // closures alive. When this future (and `_handles`) is dropped, the
-    // unlisten functions run and memory is freed.
+    // Track the agent identity (provider + model). When it changes (e.g.
+    // after saving settings), clear the chat so stale history from a
+    // different provider doesn't confuse the user.
+    let agent_identity = Memo::new(move |_| {
+        let cfg = config.get();
+        (cfg.agent.provider.clone(), cfg.agent.model.clone())
+    });
+    let prev_identity: RwSignal<Option<(String, String)>> = RwSignal::new(None);
+    Effect::new(move |_| {
+        let current = agent_identity.get();
+        let prev = prev_identity.get_untracked();
+        if let Some(prev) = prev {
+            if prev != current {
+                messages.set(Vec::new());
+                streaming_content.set(String::new());
+                stream_error.set(None);
+            }
+        }
+        prev_identity.set(Some(current));
+    });
+
+    // Register Tauri event listeners once on mount.
+    //
+    // The EventHandle values returned by listen_* contain JS closures that
+    // unsubscribe on drop. We need them alive for the component's lifetime:
+    //
+    //  1. `spawn_local` (leptos::task) ties the future to the current
+    //     reactive owner, which is the Effect's owner (this component).
+    //  2. `_handles` lives inside that future's state.
+    //  3. `std::future::pending().await` suspends forever, preventing the
+    //     async block from completing and dropping `_handles`.
+    //  4. On component unmount the reactive owner is cleaned up, which
+    //     cancels the future, drops `_handles`, and calls the JS unlisten
+    //     functions.
+    //
+    // This is a deliberate pattern — not a forgotten await.
     Effect::new(move |_| {
         spawn_local(async move {
             let mut _handles = Vec::new();
@@ -37,7 +74,10 @@ pub fn AgentPanel() -> impl IntoView {
                 if !content.is_empty() {
                     spawn_local(async move {
                         let html = ipc::render_markdown(&content).await.ok();
-                        messages.update(|m| m.push((ChatMessage::assistant(content), html)));
+                        messages.update(|m| m.push(DisplayMessage {
+                            message: ChatMessage::assistant(content),
+                            rendered_html: html,
+                        }));
                         streaming_content.set(String::new());
                         is_streaming.set(false);
                     });
@@ -61,9 +101,7 @@ pub fn AgentPanel() -> impl IntoView {
                 _handles.push(h);
             }
 
-            // Keep handles alive for the component lifetime.
-            // This future is owned by the Effect; when the reactive owner
-            // is cleaned up, the future is dropped along with these handles.
+            // Suspend forever — see comment above for why this is intentional.
             std::future::pending::<()>().await;
         });
     });
@@ -76,7 +114,10 @@ pub fn AgentPanel() -> impl IntoView {
         }
         set_input.set(String::new());
         stream_error.set(None);
-        messages.update(|m| m.push((ChatMessage::user(msg.clone()), None)));
+        messages.update(|m| m.push(DisplayMessage {
+            message: ChatMessage::user(msg.clone()),
+            rendered_html: None,
+        }));
         is_streaming.set(true);
 
         spawn_local(async move {
@@ -89,6 +130,13 @@ pub fn AgentPanel() -> impl IntoView {
 
     view! {
         <aside class="w-80 shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden">
+            // Header — provider and model
+            <div class="px-3 py-1.5 border-b border-stone-700 text-xs text-stone-500 truncate">
+                {move || {
+                    let (provider, model) = agent_identity.get();
+                    format!("{provider} / {model}")
+                }}
+            </div>
             // Message list
             <div
                 class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col"
@@ -103,9 +151,9 @@ pub fn AgentPanel() -> impl IntoView {
                 // Committed messages
                 <For
                     each=move || messages.get()
-                    key=|(m, _)| format!("{:?}{}", m.role, m.content.len())
-                    children=|(msg, html)| {
-                        let is_user = msg.role == ChatRole::User;
+                    key=|dm| format!("{:?}{}", dm.message.role, dm.message.content.len())
+                    children=|dm| {
+                        let is_user = dm.message.role == ChatRole::User;
                         let bubble_class = if is_user {
                             "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 whitespace-pre-wrap break-words"
                         } else {
@@ -115,7 +163,7 @@ pub fn AgentPanel() -> impl IntoView {
                         let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
                         view! {
                             <div class=wrapper_class>
-                                {if let Some(rendered) = html {
+                                {if let Some(rendered) = dm.rendered_html {
                                     view! {
                                         <div
                                             class=bubble_class
@@ -126,7 +174,7 @@ pub fn AgentPanel() -> impl IntoView {
                                 } else {
                                     view! {
                                         <div class=bubble_class>
-                                            {msg.content.clone()}
+                                            {dm.message.content.clone()}
                                         </div>
                                     }.into_any()
                                 }}
