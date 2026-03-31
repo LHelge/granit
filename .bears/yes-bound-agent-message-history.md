@@ -1,10 +1,10 @@
 ---
 id: yes
 title: Bound agent message history
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:32:23.230839413Z
-updated: 2026-03-31T16:32:23.230839413Z
+updated: 2026-03-31T16:56:38.310596881Z
 tags:
 - backend
 parent: 4cm

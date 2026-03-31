@@ -1,10 +1,10 @@
 ---
 id: 3gf
 title: Config merge via trait instead of manual fields
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:32:52.076973346Z
-updated: 2026-03-31T16:32:52.076973346Z
+updated: 2026-03-31T17:09:15.509519108Z
 tags:
 - backend
 - refactor

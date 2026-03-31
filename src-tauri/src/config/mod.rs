@@ -10,7 +10,38 @@ pub use error::ConfigError;
 pub use granit_types::{AgentConfig, FontConfig};
 pub use secrets::Secrets;
 
-/// Resolved application configuration (defaults ← global ← cave).
+/// Apply optional raw config fields over a resolved config value.
+trait MergeRaw<R> {
+    fn merge_raw(&mut self, raw: R);
+}
+
+impl MergeRaw<RawAgentConfig> for AgentConfig {
+    fn merge_raw(&mut self, raw: RawAgentConfig) {
+        if let Some(provider) = raw.provider {
+            self.provider = provider;
+        }
+        if let Some(model) = raw.model {
+            self.model = model;
+        }
+        if let Some(base_url) = raw.base_url {
+            self.base_url = Some(base_url);
+        }
+        if let Some(max_history) = raw.max_history {
+            self.max_history = max_history;
+        }
+    }
+}
+
+impl MergeRaw<RawFontConfig> for FontConfig {
+    fn merge_raw(&mut self, raw: RawFontConfig) {
+        if let Some(family) = raw.font_family {
+            self.font_family = family;
+        }
+        if let Some(size) = raw.font_size {
+            self.font_size = size;
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
     pub recent_caves: Vec<PathBuf>,
@@ -37,6 +68,7 @@ struct RawAgentConfig {
     provider: Option<String>,
     model: Option<String>,
     base_url: Option<String>,
+    max_history: Option<usize>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -74,6 +106,7 @@ impl AppConfig {
                 provider: Some(self.agent.provider.clone()),
                 model: Some(self.agent.model.clone()),
                 base_url: self.agent.base_url.clone(),
+                max_history: Some(self.agent.max_history),
             }),
             markdown_font: Some(RawFontConfig {
                 font_family: Some(self.markdown_font.font_family.clone()),
@@ -172,9 +205,12 @@ impl AppConfig {
         }
     }
 
-    fn merge(global: RawConfig, cave: Option<RawConfig>) -> Self {
-        let defaults = AppConfig {
-            recent_caves: Vec::new(),
+    fn merge(mut global: RawConfig, cave: Option<RawConfig>) -> Self {
+        // Extract recent_caves before applying as raw overrides
+        let recent_caves = global.recent_caves.take().unwrap_or_default();
+
+        let mut config = AppConfig {
+            recent_caves,
             agent: AgentConfig::default(),
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
@@ -182,74 +218,27 @@ impl AppConfig {
             active_cave: None,
         };
 
-        // Apply global over defaults
-        let mut config = AppConfig {
-            recent_caves: global.recent_caves.unwrap_or(defaults.recent_caves),
-            agent: AgentConfig {
-                provider: global
-                    .agent
-                    .as_ref()
-                    .and_then(|a| a.provider.clone())
-                    .unwrap_or(defaults.agent.provider),
-                model: global
-                    .agent
-                    .as_ref()
-                    .and_then(|a| a.model.clone())
-                    .unwrap_or(defaults.agent.model),
-                base_url: global.agent.as_ref().and_then(|a| a.base_url.clone()),
-            },
-            markdown_font: Self::merge_font(global.markdown_font, &defaults.markdown_font),
-            reading_font: Self::merge_font(global.reading_font, &defaults.reading_font),
-            agent_font: Self::merge_font(global.agent_font, &defaults.agent_font),
-            active_cave: None,
-        };
-
-        // Apply cave overrides
+        Self::apply_raw_overrides(&mut config, global);
         if let Some(cave) = cave {
-            if let Some(agent) = cave.agent {
-                if let Some(provider) = agent.provider {
-                    config.agent.provider = provider;
-                }
-                if let Some(model) = agent.model {
-                    config.agent.model = model;
-                }
-                if let Some(base_url) = agent.base_url {
-                    config.agent.base_url = Some(base_url);
-                }
-            }
-            if let Some(font) = cave.markdown_font {
-                Self::apply_font_overrides(&mut config.markdown_font, font);
-            }
-            if let Some(font) = cave.reading_font {
-                Self::apply_font_overrides(&mut config.reading_font, font);
-            }
-            if let Some(font) = cave.agent_font {
-                Self::apply_font_overrides(&mut config.agent_font, font);
-            }
-            // recent_caves is global-only, not overridden by cave config
+            Self::apply_raw_overrides(&mut config, cave);
         }
 
         config
     }
 
-    fn merge_font(raw: Option<RawFontConfig>, defaults: &FontConfig) -> FontConfig {
-        match raw {
-            Some(r) => FontConfig {
-                font_family: r
-                    .font_family
-                    .unwrap_or_else(|| defaults.font_family.clone()),
-                font_size: r.font_size.unwrap_or(defaults.font_size),
-            },
-            None => defaults.clone(),
+    fn apply_raw_overrides(config: &mut AppConfig, raw: RawConfig) {
+        // recent_caves is global-only, not overridden by cave config
+        if let Some(agent) = raw.agent {
+            config.agent.merge_raw(agent);
         }
-    }
-
-    fn apply_font_overrides(target: &mut FontConfig, overrides: RawFontConfig) {
-        if let Some(family) = overrides.font_family {
-            target.font_family = family;
+        if let Some(font) = raw.markdown_font {
+            config.markdown_font.merge_raw(font);
         }
-        if let Some(size) = overrides.font_size {
-            target.font_size = size;
+        if let Some(font) = raw.reading_font {
+            config.reading_font.merge_raw(font);
+        }
+        if let Some(font) = raw.agent_font {
+            config.agent_font.merge_raw(font);
         }
     }
 }
@@ -384,6 +373,7 @@ mod tests {
                 provider: Some("anthropic".to_string()),
                 model: None,
                 base_url: None,
+                max_history: None,
             }),
             ..Default::default()
         };
@@ -401,6 +391,7 @@ mod tests {
                 provider: Some("openai".to_string()),
                 model: Some("gpt-4o".to_string()),
                 base_url: None,
+                max_history: None,
             }),
             ..Default::default()
         };
@@ -410,6 +401,7 @@ mod tests {
                 provider: None,
                 model: Some("gpt-4o-mini".to_string()),
                 base_url: None,
+                max_history: None,
             }),
             ..Default::default()
         };
@@ -551,6 +543,7 @@ mod tests {
                 provider: "anthropic".to_string(),
                 model: "claude-sonnet-4-20250514".to_string(),
                 base_url: None,
+                ..AgentConfig::default()
             },
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
@@ -565,6 +558,7 @@ mod tests {
                 provider: Some(config.agent.provider.clone()),
                 model: Some(config.agent.model.clone()),
                 base_url: config.agent.base_url.clone(),
+                max_history: None,
             }),
             ..Default::default()
         };

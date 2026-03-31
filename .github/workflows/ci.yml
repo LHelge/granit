@@ -41,3 +41,9 @@ jobs:
 
       - name: Run tests
         run: cargo test -p granit
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Run frontend WASM tests
+        run: wasm-pack test --headless --firefox

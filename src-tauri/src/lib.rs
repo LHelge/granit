@@ -34,18 +34,48 @@ impl AppState {
     fn lock_secrets(&self) -> Result<std::sync::MutexGuard<'_, Secrets>, ConfigError> {
         self.secrets.lock().map_err(|_| ConfigError::Poisoned)
     }
+
+    /// Get the path of the currently open cave, if any.
+    fn active_cave_path(&self) -> Result<Option<PathBuf>, ConfigError> {
+        Ok(self
+            .cave
+            .lock()
+            .map_err(|_| ConfigError::Poisoned)?
+            .as_ref()
+            .map(|c| c.path().to_path_buf()))
+    }
+
+    /// Replace the currently open cave.
+    fn set_cave(&self, cave: Option<Cave>) -> Result<(), ConfigError> {
+        *self.cave.lock().map_err(|_| ConfigError::Poisoned)? = cave;
+        Ok(())
+    }
+
+    /// Reset the agent so it rebuilds with new config/secrets on next use.
+    fn reset_agent(&self) -> Result<(), ConfigError> {
+        *self.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
+        Ok(())
+    }
+
+    /// Ensure the agent is initialized from current config and secrets.
+    fn ensure_agent(&self) -> Result<(), AgentError> {
+        let mut guard = self.lock_agent()?;
+        if guard.is_none() {
+            let config = self.config.lock().map_err(|_| AgentError::Poisoned)?;
+            let secrets = self.secrets.lock().map_err(|_| AgentError::Poisoned)?;
+            *guard = Some(Agent::from_config(&config.agent, &secrets)?);
+        }
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     let config = state.lock_config()?;
-    let active_cave = state
-        .lock_cave()
-        .map_err(|_| ConfigError::Poisoned)?
-        .as_ref()
-        .map(|c| c.path().to_string_lossy().into_owned());
     let mut ipc = config.to_ipc();
-    ipc.active_cave = active_cave;
+    ipc.active_cave = state
+        .active_cave_path()?
+        .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
 
@@ -76,13 +106,11 @@ fn save_config(
     config.agent_font = agent_font;
     config.save_global()?;
     // Reset the agent so it rebuilds with the new config on the next message.
-    *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
+    state.reset_agent()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .lock_cave()
-        .map_err(|_| ConfigError::Poisoned)?
-        .as_ref()
-        .map(|c| c.path().to_string_lossy().into_owned());
+        .active_cave_path()?
+        .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
 
@@ -99,10 +127,10 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, 
     *state.lock_secrets()? = new_secrets;
 
     // Open the cave
-    *state.lock_cave().map_err(|_| ConfigError::Poisoned)? = Some(Cave::open(path.clone()));
+    state.set_cave(Some(Cave::open(path.clone())?))?;
 
     // Reset agent so it rebuilds with new config/secrets on next message
-    *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
+    state.reset_agent()?;
 
     // Update recent caves and persist
     let mut config = state.lock_config()?;
@@ -265,56 +293,37 @@ async fn send_message(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AgentError> {
-    use futures::StreamExt;
     use rig::completion::message::Message;
     use tauri::Emitter;
 
-    use agent::AgentStreamItem;
-
-    // Build agent on first use.
-    {
-        let mut guard = state.lock_agent()?;
-        if guard.is_none() {
-            let config = state.config.lock().map_err(|_| AgentError::Poisoned)?;
-            let secrets = state.secrets.lock().map_err(|_| AgentError::Poisoned)?;
-            *guard = Some(Agent::from_config(&config.agent, &secrets)?);
-        }
-    }
+    state.ensure_agent()?;
 
     // Snapshot the agent's inner + history so no lock is held across await.
     let (agent_clone, history) = {
         let guard = state.lock_agent()?;
         let a = guard.as_ref().ok_or(AgentError::NotInitialized)?;
-        (a.clone(), a.history.clone())
+        a.snapshot()
     };
 
     let mut stream = agent_clone
         .stream_with_history(msg.as_str(), history, 1)
         .await?;
 
-    let mut full_response = String::new();
-
-    loop {
-        match stream.next().await {
-            Some(Ok(AgentStreamItem::Text(text))) => {
-                full_response.push_str(&text);
-                let _ = app.emit("agent:stream-chunk", text);
-            }
-            Some(Ok(AgentStreamItem::Done)) | None => break,
-            Some(Err(e)) => {
-                let _ = app.emit("agent:stream-error", e.to_string());
-                return Err(e);
-            }
-            Some(Ok(AgentStreamItem::Other)) => {}
-        }
-    }
+    let response = stream
+        .collect_with(|text| {
+            let _ = app.emit("agent:stream-chunk", text);
+        })
+        .await
+        .inspect_err(|e| {
+            let _ = app.emit("agent:stream-error", e.to_string());
+        })?;
 
     // Persist history.
     {
         let mut guard = state.lock_agent()?;
         if let Some(a) = guard.as_mut() {
-            a.history.push(Message::user(&msg));
-            a.history.push(Message::assistant(&full_response));
+            a.push_history(Message::user(&msg));
+            a.push_history(Message::assistant(&response));
         }
     }
 
@@ -338,15 +347,11 @@ fn set_secret(
     config::validate_secret_value(&value)?;
     config::write_global_secret(&key, &value)?;
     // Reload secrets so the in-memory state is up to date
-    let cave_path = state
-        .lock_cave()
-        .map_err(|_| ConfigError::Poisoned)?
-        .as_ref()
-        .map(|c| c.path().to_path_buf());
+    let cave_path = state.active_cave_path()?;
     let new_secrets = config::load_secrets(cave_path.as_deref())?;
     *state.lock_secrets()? = new_secrets;
     // Reset agent so it picks up the new secret
-    *state.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
+    state.reset_agent()?;
     Ok(())
 }
 

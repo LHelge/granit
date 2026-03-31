@@ -9,6 +9,9 @@ pub enum ConfigError {
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yml::Error),
 
+    #[error("Cave error: {0}")]
+    Cave(#[from] crate::cave::CaveError),
+
     #[error("Invalid secret: {0}")]
     InvalidSecret(String),
 

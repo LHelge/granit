@@ -1,10 +1,10 @@
 ---
 id: nn4
 title: Reduce mutex lock boilerplate in lib.rs
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:32:52.083174823Z
-updated: 2026-03-31T16:32:52.083174823Z
+updated: 2026-03-31T17:05:26.008996863Z
 tags:
 - backend
 - refactor

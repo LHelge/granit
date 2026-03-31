@@ -22,5 +22,8 @@ web-sys = { version = "0.3.91", features = [
 ] }
 granit-types = { path = "granit-types" }
 
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
 [workspace]
 members = ["src-tauri", "granit-types"]

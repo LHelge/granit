@@ -1,10 +1,10 @@
 ---
 id: kxx
 title: Fix partial update atomicity in cave operations
-status: open
+status: done
 priority: P1
 created: 2026-03-31T16:32:23.223567411Z
-updated: 2026-03-31T16:32:23.223567411Z
+updated: 2026-03-31T16:47:09.445472382Z
 tags:
 - backend
 - bug

@@ -1,10 +1,10 @@
 ---
 id: ard
 title: Decompose send_message handler into smaller fns
-status: open
+status: done
 priority: P2
 created: 2026-03-31T16:33:19.412365316Z
-updated: 2026-03-31T16:33:19.412365316Z
+updated: 2026-03-31T17:06:51.860734386Z
 tags:
 - backend
 - refactor
