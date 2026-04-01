@@ -18,6 +18,7 @@ fn api_key_name(provider: &str) -> Option<&'static str> {
     match provider {
         "anthropic" => Some("ANTHROPIC_API_KEY"),
         "mistral" => Some("MISTRAL_API_KEY"),
+        "prisma" => Some("PRISMA_API_KEY"),
         _ => None,
     }
 }
