@@ -63,7 +63,11 @@ impl AppState {
         if guard.is_none() {
             let config = self.config.lock().map_err(|_| AgentError::Poisoned)?;
             let secrets = self.secrets.lock().map_err(|_| AgentError::Poisoned)?;
-            *guard = Some(Agent::from_config(&config.agent, &secrets, self.cave.clone())?);
+            *guard = Some(Agent::from_config(
+                &config.agent,
+                &secrets,
+                self.cave.clone(),
+            )?);
         }
         Ok(())
     }
@@ -290,6 +294,14 @@ fn render_markdown(content: String) -> String {
 }
 
 #[tauri::command]
+fn set_active_note(slug: Option<String>, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.set_active_slug(slug);
+        Ok(())
+    })
+}
+
+#[tauri::command]
 async fn send_message(
     msg: String,
     app: tauri::AppHandle,
@@ -308,7 +320,7 @@ async fn send_message(
     };
 
     let mut stream = agent_clone
-        .stream_with_history(msg.as_str(), history, 1)
+        .stream_with_history(msg.as_str(), history, 10)
         .await?;
 
     let response = stream
@@ -332,6 +344,8 @@ async fn send_message(
     }
 
     let _ = app.emit("agent:stream-done", ());
+    // Tools may have mutated the cave — tell the frontend to refresh.
+    let _ = app.emit("cave:notes-changed", ());
     Ok(())
 }
 
@@ -393,6 +407,7 @@ pub fn run() {
             update_note,
             render_note,
             render_markdown,
+            set_active_note,
             send_message,
             get_secret,
             set_secret,

@@ -1,10 +1,10 @@
 ---
 id: 8fz
 title: Implement edit_note and edit_active_note tools
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:57:23.693483550Z
-updated: 2026-03-31T21:57:23.693483550Z
+updated: 2026-04-01T14:09:22.812105Z
 tags:
 - backend
 depends_on:

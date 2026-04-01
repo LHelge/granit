@@ -1,10 +1,10 @@
 ---
 id: 8fv
 title: Register all tools on agent builder
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:57:47.696358322Z
-updated: 2026-03-31T21:57:47.696358322Z
+updated: 2026-04-01T13:53:52.530310Z
 tags:
 - backend
 depends_on:

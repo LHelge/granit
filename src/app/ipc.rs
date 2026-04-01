@@ -136,6 +136,14 @@ pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
     invoke_cmd("render_note", &HashMap::from([("name", name)])).await
 }
 
+pub async fn set_active_note(slug: Option<&str>) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: Option<&'a str>,
+    }
+    invoke_unit("set_active_note", &Args { slug }).await
+}
+
 pub async fn update_note(
     old_name: &str,
     new_name: &str,
@@ -340,4 +348,13 @@ async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<Eve
         _closure: handler,
         unlisten: js_sys::Function::from(unlisten),
     })
+}
+
+/// Listen for a Tauri event that carries no meaningful payload.
+/// Calls `cb` on every occurrence. Returns an [`EventHandle`].
+pub async fn listen_event_simple(
+    event: &str,
+    cb: impl Fn() + 'static,
+) -> Option<EventHandle> {
+    listen_event(event, move |_| cb()).await
 }

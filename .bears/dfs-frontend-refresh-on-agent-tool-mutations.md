@@ -1,10 +1,10 @@
 ---
 id: dfs
 title: Frontend refresh on agent tool mutations
-status: open
+status: done
 priority: P2
 created: 2026-03-31T21:58:00.273154654Z
-updated: 2026-03-31T21:58:00.273154654Z
+updated: 2026-04-01T13:53:52.538123Z
 tags:
 - frontend
 - backend

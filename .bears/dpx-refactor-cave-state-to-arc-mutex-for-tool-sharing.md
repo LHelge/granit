@@ -1,10 +1,10 @@
 ---
 id: dpx
 title: Refactor Cave state to Arc<Mutex> for tool sharing
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:56:50.973525941Z
-updated: 2026-03-31T21:56:50.973525941Z
+updated: 2026-04-01T13:53:52.506017Z
 tags:
 - backend
 - refactor

@@ -1,10 +1,10 @@
 ---
 id: kgh
 title: Track active note slug in backend state
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:57:00.513351428Z
-updated: 2026-03-31T21:57:00.513351428Z
+updated: 2026-04-01T14:09:22.804163Z
 tags:
 - backend
 - frontend

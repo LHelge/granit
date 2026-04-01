@@ -1,10 +1,10 @@
 ---
 id: 3sh
 title: Implement read_note and read_active_note tools
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:57:13.877817327Z
-updated: 2026-03-31T21:57:13.877817327Z
+updated: 2026-04-01T13:53:52.514486Z
 tags:
 - backend
 depends_on:

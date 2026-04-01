@@ -2,10 +2,10 @@
 id: qk2
 title: Agent cave tools — CRUD operations for notes
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:56:40.231849154Z
-updated: 2026-03-31T21:56:40.231849154Z
+updated: 2026-04-01T14:09:22.812427Z
 ---
 
 ## Scope

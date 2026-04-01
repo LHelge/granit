@@ -93,6 +93,14 @@ pub fn App() -> impl IntoView {
     provide_context(ctx);
     provide_context(OpenInEdit(RwSignal::new(EditOpen::Preview)));
 
+    // Sync active_note changes to the backend so agent tools can see it.
+    Effect::new(move |_| {
+        let slug = ctx.active_note.get().map(|n| n.meta.slug.clone());
+        leptos::task::spawn_local(async move {
+            let _ = ipc::set_active_note(slug.as_deref()).await;
+        });
+    });
+
     // Load config from backend on mount, and re-open the most recent cave if any
     leptos::task::spawn_local(async move {
         let cfg = match ipc::fetch_config().await {
