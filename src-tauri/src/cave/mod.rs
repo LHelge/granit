@@ -19,6 +19,8 @@ pub struct Cave {
     /// sync by create / delete / rename / update operations.
     /// Slug uniqueness is enforced globally across all subdirectories.
     notes: HashMap<String, PathBuf>,
+    /// Slug of the note currently open in the editor, if any.
+    active_slug: Option<String>,
 }
 
 impl Cave {
@@ -28,7 +30,11 @@ impl Cave {
     /// Returns an error if two files share the same slug (filename without `.md`).
     pub fn open(path: PathBuf) -> Result<Self, CaveError> {
         let notes = Self::scan_recursive(&path, &path)?;
-        Ok(Self { path, notes })
+        Ok(Self {
+            path,
+            notes,
+            active_slug: None,
+        })
     }
 
     /// Recursively scan `dir` for `.md` files and return a slug → absolute-path map.
@@ -124,6 +130,16 @@ impl Cave {
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Set the slug of the note currently open in the editor.
+    pub fn set_active_slug(&mut self, slug: Option<String>) {
+        self.active_slug = slug;
+    }
+
+    /// Get the slug of the note currently open in the editor.
+    pub fn active_slug(&self) -> Option<&str> {
+        self.active_slug.as_deref()
     }
 
     /// Create a new note in this cave, optionally inside `folder` (relative path

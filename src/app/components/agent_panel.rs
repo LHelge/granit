@@ -103,6 +103,20 @@ pub fn AgentPanel() -> impl IntoView {
                 _handles.push(h);
             }
 
+            // cave:notes-changed → refresh sidebar note list after agent tool calls
+            let app_ctx = expect_context::<AppCtx>();
+            if let Some(h) = ipc::listen_event_simple("cave:notes-changed", move || {
+                spawn_local(async move {
+                    if let Ok(notes) = ipc::fetch_notes().await {
+                        app_ctx.notes.set(notes);
+                    }
+                });
+            })
+            .await
+            {
+                _handles.push(h);
+            }
+
             // Suspend forever — see comment above for why this is intentional.
             std::future::pending::<()>().await;
         });

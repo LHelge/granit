@@ -1,10 +1,10 @@
 ---
 id: 6ry
 title: Implement create_note, create_folder, move_note tools
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:57:34.066112928Z
-updated: 2026-03-31T21:57:34.066112928Z
+updated: 2026-04-01T13:53:52.522319Z
 tags:
 - backend
 depends_on:
