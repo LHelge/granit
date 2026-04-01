@@ -1,6 +1,8 @@
 mod error;
+pub(crate) mod tools;
 
 pub use error::AgentError;
+pub use tools::SharedCave;
 
 use std::collections::VecDeque;
 
@@ -9,6 +11,7 @@ use granit_types::AgentConfig;
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
 use rig::providers::{anthropic, mistral, ollama, openai};
+use rig::tool::ToolDyn;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
@@ -54,13 +57,18 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Build a provider-agnostic agent from the provided config and secrets.
-    pub fn from_config(config: &AgentConfig, secrets: &Secrets) -> Result<Self, AgentError> {
+    /// Build a provider-agnostic agent from the provided config, secrets, and shared cave handle.
+    pub fn from_config(
+        config: &AgentConfig,
+        secrets: &Secrets,
+        cave: SharedCave,
+    ) -> Result<Self, AgentError> {
+        let cave_tools = tools::cave_toolset(cave);
         let inner = match config.provider.as_str() {
-            "ollama" => Self::build_ollama(config)?,
-            "anthropic" => Self::build_anthropic(config, secrets)?,
-            "mistral" => Self::build_mistral(config, secrets)?,
-            "prisma" => Self::build_prisma(config, secrets)?,
+            "ollama" => Self::build_ollama(config, cave_tools)?,
+            "anthropic" => Self::build_anthropic(config, secrets, cave_tools)?,
+            "mistral" => Self::build_mistral(config, secrets, cave_tools)?,
+            "prisma" => Self::build_prisma(config, secrets, cave_tools)?,
             other => return Err(AgentError::UnknownProvider(other.to_string())),
         };
 
@@ -71,7 +79,10 @@ impl Agent {
         })
     }
 
-    fn build_ollama(config: &AgentConfig) -> Result<ProviderAgent, AgentError> {
+    fn build_ollama(
+        config: &AgentConfig,
+        cave_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> Result<ProviderAgent, AgentError> {
         let base_url = config
             .base_url
             .as_deref()
@@ -86,6 +97,7 @@ impl Agent {
         let agent = client
             .agent(&config.model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
+            .tools(cave_tools)
             .build();
 
         Ok(ProviderAgent::Ollama(agent))
@@ -94,6 +106,7 @@ impl Agent {
     fn build_anthropic(
         config: &AgentConfig,
         secrets: &Secrets,
+        cave_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<ProviderAgent, AgentError> {
         let api_key = secrets
             .get("ANTHROPIC_API_KEY")
@@ -109,12 +122,17 @@ impl Agent {
         let agent = client
             .agent(&config.model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
+            .tools(cave_tools)
             .build();
 
         Ok(ProviderAgent::Anthropic(agent))
     }
 
-    fn build_prisma(config: &AgentConfig, secrets: &Secrets) -> Result<ProviderAgent, AgentError> {
+    fn build_prisma(
+        config: &AgentConfig,
+        secrets: &Secrets,
+        cave_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> Result<ProviderAgent, AgentError> {
         let api_key = secrets
             .get("PRISMA_API_KEY")
             .ok_or(AgentError::MissingApiKey(
@@ -135,12 +153,17 @@ impl Agent {
         let agent = client
             .agent(&config.model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
+            .tools(cave_tools)
             .build();
 
         Ok(ProviderAgent::Prisma(agent))
     }
 
-    fn build_mistral(config: &AgentConfig, secrets: &Secrets) -> Result<ProviderAgent, AgentError> {
+    fn build_mistral(
+        config: &AgentConfig,
+        secrets: &Secrets,
+        cave_tools: Vec<Box<dyn ToolDyn>>,
+    ) -> Result<ProviderAgent, AgentError> {
         let api_key = secrets
             .get("MISTRAL_API_KEY")
             .ok_or(AgentError::MissingApiKey(
@@ -156,6 +179,7 @@ impl Agent {
         let agent = client
             .agent(&config.model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
+            .tools(cave_tools)
             .build();
 
         Ok(ProviderAgent::Mistral(agent))
@@ -315,10 +339,14 @@ mod tests {
         Secrets::new(std::collections::HashMap::new())
     }
 
+    fn empty_cave() -> SharedCave {
+        std::sync::Arc::new(std::sync::Mutex::new(None))
+    }
+
     #[tokio::test]
     async fn agent_builds_from_default_config() {
         let config = AgentConfig::default();
-        let agent = Agent::from_config(&config, &empty_secrets());
+        let agent = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(agent.is_ok(), "Agent should build without error");
     }
 
@@ -330,7 +358,7 @@ mod tests {
             base_url: Some("http://192.168.1.10:11434".to_string()),
             ..AgentConfig::default()
         };
-        let agent = Agent::from_config(&config, &empty_secrets());
+        let agent = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(agent.is_ok(), "Agent should build with a custom base URL");
     }
 
@@ -342,7 +370,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &empty_secrets());
+        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -359,7 +387,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &empty_secrets());
+        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -379,7 +407,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &secrets);
+        let result = Agent::from_config(&config, &secrets, empty_cave());
         assert!(result.is_ok(), "Agent should build with Anthropic API key");
     }
 
@@ -391,7 +419,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &empty_secrets());
+        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -411,7 +439,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &secrets);
+        let result = Agent::from_config(&config, &secrets, empty_cave());
         assert!(result.is_ok(), "Agent should build with Mistral API key");
     }
 
@@ -423,7 +451,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &empty_secrets());
+        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -443,7 +471,7 @@ mod tests {
             base_url: None,
             ..AgentConfig::default()
         };
-        let result = Agent::from_config(&config, &secrets);
+        let result = Agent::from_config(&config, &secrets, empty_cave());
         assert!(result.is_ok(), "Agent should build with Prisma API key");
     }
 }
