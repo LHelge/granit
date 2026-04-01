@@ -4,16 +4,16 @@ mod config;
 mod markdown;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use agent::{Agent, AgentError};
+use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, Secrets};
 use granit_types::{AppConfig as IpcConfig, FontConfig, RenderedNote};
 
 struct AppState {
     config: Mutex<AppConfig>,
-    cave: Mutex<Option<Cave>>,
+    cave: SharedCave,
     agent: Mutex<Option<Agent>>,
     secrets: Mutex<Secrets>,
 }
@@ -63,7 +63,7 @@ impl AppState {
         if guard.is_none() {
             let config = self.config.lock().map_err(|_| AgentError::Poisoned)?;
             let secrets = self.secrets.lock().map_err(|_| AgentError::Poisoned)?;
-            *guard = Some(Agent::from_config(&config.agent, &secrets)?);
+            *guard = Some(Agent::from_config(&config.agent, &secrets, self.cave.clone())?);
         }
         Ok(())
     }
@@ -369,7 +369,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
             config: Mutex::new(config),
-            cave: Mutex::new(None),
+            cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
             secrets: Mutex::new(secrets),
         })
