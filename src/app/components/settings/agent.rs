@@ -19,6 +19,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             "ollama" => "qwen3.5:9b",
             "anthropic" => "claude-sonnet-4-20250514",
             "mistral" => "mistral-small-latest",
+            "prisma" => "prisma_default",
             _ => "",
         };
         form.update(|f| {
@@ -29,9 +30,10 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
     let is_ollama = move || form.get().provider == "ollama";
     let is_anthropic = move || form.get().provider == "anthropic";
+    let is_prisma = move || form.get().provider == "prisma";
     let needs_api_key = move || {
         let p = form.get().provider;
-        p == "anthropic" || p == "mistral"
+        p == "anthropic" || p == "mistral" || p == "prisma"
     };
 
     view! {
@@ -82,6 +84,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         <option class="bg-stone-900 text-stone-200" value="ollama" selected=is_ollama>"Ollama"</option>
                         <option class="bg-stone-900 text-stone-200" value="anthropic" selected=is_anthropic>"Anthropic"</option>
                         <option class="bg-stone-900 text-stone-200" value="mistral" selected=move || form.get().provider == "mistral">"Mistral"</option>
+                        <option class="bg-stone-900 text-stone-200" value="prisma" selected=is_prisma>"Prisma"</option>
                     </select>
                     <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
                 </div>
@@ -98,6 +101,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         "ollama" => "qwen3.5:9b".to_string(),
                         "anthropic" => "claude-sonnet-4-20250514".to_string(),
                         "mistral" => "mistral-small-latest".to_string(),
+                        "prisma" => "prisma_default".to_string(),
                         _ => String::new(),
                     }
                     prop:value=move || form.get().model
@@ -105,7 +109,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 />
             </div>
 
-            // Ollama-specific: Base URL
+            // Base URL (Ollama only)
             <Show when=is_ollama>
                 <div class="space-y-1">
                     <label class="block text-xs text-stone-400" for="settings-base-url">"Base URL"</label>
@@ -129,7 +133,17 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         id="settings-api-key"
                         type="password"
                         class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                        placeholder=move || if form.get().api_key_is_set { "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} (configured)" } else { "sk-ant-..." }
+                        placeholder=move || {
+                            if form.get().api_key_is_set {
+                                "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} (configured)"
+                            } else {
+                                match form.get().provider.as_str() {
+                                    "anthropic" => "sk-ant-...",
+                                    "prisma" => "Enter Prisma API key",
+                                    _ => "Enter API key",
+                                }
+                            }
+                        }
                         prop:value=move || form.get().api_key
                         on:input=move |ev| form.update(|f| f.api_key = event_target_value(&ev))
                     />

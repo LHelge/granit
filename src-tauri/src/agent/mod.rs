@@ -8,9 +8,10 @@ use crate::config::Secrets;
 use granit_types::AgentConfig;
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
-use rig::providers::{anthropic, mistral, ollama};
+use rig::providers::{anthropic, mistral, ollama, openai};
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
+const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
 const DEFAULT_SYSTEM_PROMPT: &str =
     "You are a helpful assistant integrated into Granit, a personal note-taking app.";
 
@@ -19,6 +20,7 @@ pub(crate) enum ProviderAgent {
     Ollama(rig::agent::Agent<ollama::CompletionModel>),
     Anthropic(rig::agent::Agent<anthropic::completion::CompletionModel>),
     Mistral(rig::agent::Agent<mistral::CompletionModel>),
+    Prisma(rig::agent::Agent<openai::completion::CompletionModel>),
 }
 
 impl Clone for ProviderAgent {
@@ -27,6 +29,7 @@ impl Clone for ProviderAgent {
             Self::Ollama(a) => Self::Ollama(a.clone()),
             Self::Anthropic(a) => Self::Anthropic(a.clone()),
             Self::Mistral(a) => Self::Mistral(a.clone()),
+            Self::Prisma(a) => Self::Prisma(a.clone()),
         }
     }
 }
@@ -37,6 +40,7 @@ impl std::fmt::Debug for ProviderAgent {
             Self::Ollama(_) => write!(f, "ProviderAgent::Ollama"),
             Self::Anthropic(_) => write!(f, "ProviderAgent::Anthropic"),
             Self::Mistral(_) => write!(f, "ProviderAgent::Mistral"),
+            Self::Prisma(_) => write!(f, "ProviderAgent::Prisma"),
         }
     }
 }
@@ -56,6 +60,7 @@ impl Agent {
             "ollama" => Self::build_ollama(config)?,
             "anthropic" => Self::build_anthropic(config, secrets)?,
             "mistral" => Self::build_mistral(config, secrets)?,
+            "prisma" => Self::build_prisma(config, secrets)?,
             other => return Err(AgentError::UnknownProvider(other.to_string())),
         };
 
@@ -107,6 +112,32 @@ impl Agent {
             .build();
 
         Ok(ProviderAgent::Anthropic(agent))
+    }
+
+    fn build_prisma(config: &AgentConfig, secrets: &Secrets) -> Result<ProviderAgent, AgentError> {
+        let api_key = secrets
+            .get("PRISMA_API_KEY")
+            .ok_or(AgentError::MissingApiKey(
+                "Prisma API key not configured — set PRISMA_API_KEY in secrets".to_string(),
+            ))?;
+
+        let base_url = config
+            .base_url
+            .as_deref()
+            .unwrap_or(DEFAULT_PRISMA_BASE_URL);
+
+        let client = openai::CompletionsClient::builder()
+            .api_key(api_key)
+            .base_url(base_url)
+            .build()
+            .map_err(|e| AgentError::Build(e.to_string()))?;
+
+        let agent = client
+            .agent(&config.model)
+            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .build();
+
+        Ok(ProviderAgent::Prisma(agent))
     }
 
     fn build_mistral(config: &AgentConfig, secrets: &Secrets) -> Result<ProviderAgent, AgentError> {
@@ -198,6 +229,19 @@ impl Agent {
                 })
             }
             ProviderAgent::Mistral(agent) => {
+                let stream = agent
+                    .stream_prompt(prompt)
+                    .with_history(history)
+                    .multi_turn(max_turns)
+                    .await;
+                Ok(AgentStream {
+                    inner: Box::pin(stream.map(|item| {
+                        item.map(map_item)
+                            .map_err(|e| AgentError::Stream(e.to_string()))
+                    })),
+                })
+            }
+            ProviderAgent::Prisma(agent) => {
                 let stream = agent
                     .stream_prompt(prompt)
                     .with_history(history)
@@ -369,5 +413,37 @@ mod tests {
         };
         let result = Agent::from_config(&config, &secrets);
         assert!(result.is_ok(), "Agent should build with Mistral API key");
+    }
+
+    #[tokio::test]
+    async fn prisma_missing_api_key_returns_error() {
+        let config = AgentConfig {
+            provider: "prisma".to_string(),
+            model: "some-model".to_string(),
+            base_url: None,
+            ..AgentConfig::default()
+        };
+        let result = Agent::from_config(&config, &empty_secrets());
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, AgentError::MissingApiKey(_)),
+            "Expected MissingApiKey, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn prisma_builds_with_api_key() {
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("PRISMA_API_KEY".to_string(), "test-key-789".to_string());
+        let secrets = Secrets::new(vars);
+        let config = AgentConfig {
+            provider: "prisma".to_string(),
+            model: "some-model".to_string(),
+            base_url: None,
+            ..AgentConfig::default()
+        };
+        let result = Agent::from_config(&config, &secrets);
+        assert!(result.is_ok(), "Agent should build with Prisma API key");
     }
 }
