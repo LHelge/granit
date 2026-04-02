@@ -350,8 +350,7 @@ impl Cave {
             return Err(CaveError::EditNotFound);
         }
         let new_body = body.replacen(old_text, new_text, 1);
-        let new_content =
-            crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None);
+        let new_content = crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None);
         std::fs::write(&abs_path, &new_content)?;
 
         let rel = self.relative_path(&abs_path);

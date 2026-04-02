@@ -365,9 +365,6 @@ async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<Eve
 
 /// Listen for a Tauri event that carries no meaningful payload.
 /// Calls `cb` on every occurrence. Returns an [`EventHandle`].
-pub async fn listen_event_simple(
-    event: &str,
-    cb: impl Fn() + 'static,
-) -> Option<EventHandle> {
+pub async fn listen_event_simple(event: &str, cb: impl Fn() + 'static) -> Option<EventHandle> {
     listen_event(event, move |_| cb()).await
 }

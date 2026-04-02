@@ -47,9 +47,7 @@ impl Tool for DeleteNoteTool {
         with_cave_mut(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
             cave.delete_note(&slug)?;
-            Ok(DeleteNoteOutput {
-                deleted: slug,
-            })
+            Ok(DeleteNoteOutput { deleted: slug })
         })
     }
 }
