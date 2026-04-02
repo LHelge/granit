@@ -2,6 +2,11 @@
     "app": {
         "windows": [
             {
+                "title": "granit",
+                "width": 1200,
+                "height": 800,
+                "maximized": true,
+                "theme": "Dark",
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true,
                 "decorations": true,
