@@ -282,6 +282,10 @@ pub async fn send_message(msg: &str) -> Result<(), String> {
     invoke_unit("send_message", &HashMap::from([("msg", msg)])).await
 }
 
+pub async fn clear_chat() -> Result<(), String> {
+    invoke_unit("clear_chat", &()).await
+}
+
 pub async fn open_url(url: &str) -> Result<(), String> {
     invoke_unit("plugin:opener|open_url", &HashMap::from([("url", url)])).await
 }

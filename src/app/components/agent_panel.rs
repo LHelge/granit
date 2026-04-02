@@ -1,3 +1,5 @@
+use crate::app::components::icons::TrashIcon;
+use crate::app::components::model_selector::ModelSelector;
 use crate::app::components::provider_selector::ProviderSelector;
 use crate::app::ipc;
 use crate::app::AppCtx;
@@ -27,11 +29,22 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let streaming_content: RwSignal<String> = RwSignal::new(String::new());
     let is_streaming: RwSignal<bool> = RwSignal::new(false);
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
+    let messages_container: NodeRef<leptos::html::Div> = NodeRef::new();
 
     // ── Provider / model selection state ──────────────────────────────
     let providers: RwSignal<Vec<ProviderInfo>> = RwSignal::new(Vec::new());
     let models: RwSignal<Vec<ModelInfo>> = RwSignal::new(Vec::new());
     let models_loading: RwSignal<bool> = RwSignal::new(false);
+
+    // Whether a valid model is selected (blocks sending when false).
+    let has_model = Memo::new(move |_| {
+        let cfg = config.get();
+        let selected = cfg.agent.selected_model.clone().unwrap_or_default();
+        if selected.is_empty() || models_loading.get() {
+            return false;
+        }
+        models.get().iter().any(|m| m.id == selected)
+    });
 
     // Track the agent identity (provider + model). When it changes (e.g.
     // after saving settings or dropdown selection), clear the chat so stale
@@ -61,8 +74,19 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         prev_identity.set(Some(current));
     });
 
+    // Auto-scroll to the bottom when messages or streaming content change.
+    Effect::new(move |_| {
+        messages.track();
+        streaming_content.track();
+        if let Some(el) = messages_container.get() {
+            // Use request_animation_frame to scroll after the DOM has updated.
+            leptos::prelude::request_animation_frame(move || {
+                el.set_scroll_top(el.scroll_height());
+            });
+        }
+    });
+
     // Fetch providers list on mount.
-    let app_config = expect_context::<AppCtx>().config;
     spawn_local(async move {
         if let Ok(p) = ipc::list_providers().await {
             providers.set(p);
@@ -83,18 +107,6 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 models.set(m);
             }
             models_loading.set(false);
-        });
-    };
-
-    let on_model_change = move |ev: leptos::ev::Event| {
-        let model_id = event_target_value(&ev);
-        if model_id.is_empty() {
-            return;
-        }
-        spawn_local(async move {
-            if let Ok(new_cfg) = ipc::select_model(&model_id).await {
-                app_config.set(new_cfg);
-            }
         });
     };
 
@@ -178,7 +190,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         let msg = input.get_untracked();
-        if msg.trim().is_empty() || is_streaming.get_untracked() {
+        if msg.trim().is_empty() || is_streaming.get_untracked() || !has_model.get_untracked() {
             return;
         }
         set_input.set(String::new());
@@ -261,16 +273,34 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             class="shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden"
             style:width=move || format!("{}px", width.get())
         >
-            // Header — provider selector
+            // Header — provider selector + clear chat
             <div class="px-2 py-1.5 border-b border-stone-700 flex items-center">
                 <ProviderSelector
                     providers=providers
                     disabled=Signal::derive(move || is_streaming.get())
                     on_changed=on_provider_changed
                 />
+                <div class="flex-1" />
+                <button
+                    type="button"
+                    class="p-1 text-stone-500 hover:text-stone-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Clear chat"
+                    prop:disabled=move || is_streaming.get()
+                    on:click=move |_| {
+                        messages.set(Vec::new());
+                        streaming_content.set(String::new());
+                        stream_error.set(None);
+                        spawn_local(async move {
+                            let _ = ipc::clear_chat().await;
+                        });
+                    }
+                >
+                    <TrashIcon class="w-3.5 h-3.5" />
+                </button>
             </div>
             // Message list
             <div
+                node_ref=messages_container
                 class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 flex flex-col"
                 style:font-family=move || config.get().agent_font.font_family
                 style:font-size=move || format!("{}px", config.get().agent_font.font_size)
@@ -353,66 +383,48 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 </Show>
             </div>
 
-            // Input area with model selector
+            // Input area — textarea above, model selector + send below
             <div class="border-t border-stone-700">
-                // Model selector row
-                <div class="px-2 pt-1.5">
-                    <select
-                        class="appearance-none bg-stone-800 border border-stone-600 rounded px-2 py-0.5 pr-6 text-xs text-stone-400 outline-none hover:text-stone-200 hover:border-stone-500 focus:border-stone-400 transition-colors cursor-pointer disabled:opacity-50"
-                        prop:disabled=move || is_streaming.get() || models_loading.get()
-                        on:change=on_model_change
-                    >
-                        {move || {
-                            let cfg = config.get();
-                            let selected_model = cfg.agent.selected_model.clone().unwrap_or_default();
-                            let model_list = models.get();
-                            if models_loading.get() {
-                                view! {
-                                    <option class="bg-stone-800 text-stone-200" value="">"Loading…"</option>
-                                }.into_any()
-                            } else if model_list.is_empty() {
-                                view! {
-                                    <option class="bg-stone-800 text-stone-200" value="">"No models"</option>
-                                }.into_any()
-                            } else {
-                                model_list.into_iter().map(|m| {
-                                    let is_selected = m.id == selected_model;
-                                    let display = m.display_name().to_string();
-                                    let id = m.id.clone();
-                                    view! {
-                                        <option
-                                            class="bg-stone-800 text-stone-200"
-                                            value=id
-                                            selected=move || is_selected
-                                        >
-                                            {display}
-                                        </option>
-                                    }
-                                }).collect_view().into_any()
-                            }
-                        }}
-                    </select>
-                </div>
-                // Message input row
                 <form
-                    class="p-2"
+                    class="p-2 flex flex-col gap-1.5"
                     on:submit=on_submit
                 >
-                    <div class="flex gap-2">
-                        <input
-                            type="text"
-                            style:font-family=move || config.get().agent_font.font_family
-                            style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                            class="flex-1 min-w-0 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
-                            placeholder="Message..."
-                            prop:value=move || input.get()
-                            prop:disabled=move || is_streaming.get()
-                            on:input=move |ev| set_input.set(event_target_value(&ev))
+                    // Multi-line message input
+                    <textarea
+                        style:font-family=move || config.get().agent_font.font_family
+                        style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+                        class="w-full bg-stone-800 border border-stone-600 rounded px-3 py-2 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50 resize-none"
+                        rows="4"
+                        placeholder="Message... (Enter to send, Shift+Enter for newline)"
+                        prop:value=move || input.get()
+                        prop:disabled=move || is_streaming.get()
+                        on:input=move |ev| set_input.set(event_target_value(&ev))
+                        on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                            if ev.key() == "Enter" && !ev.shift_key() && has_model.get() {
+                                ev.prevent_default();
+                                // Programmatically submit the parent form
+                                if let Some(form) = ev.target()
+                                    .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+                                    .and_then(|el| el.closest("form").ok().flatten())
+                                    .and_then(|f| f.dyn_into::<web_sys::HtmlFormElement>().ok())
+                                {
+                                    let _ = form.request_submit();
+                                }
+                            }
+                        }
+                    />
+                    // Model selector + send button row
+                    <div class="flex items-center gap-2">
+                        <ModelSelector
+                            models=models
+                            models_loading=models_loading
+                            disabled=Signal::derive(move || is_streaming.get())
                         />
+                        <div class="flex-1" />
                         <button
                             type="submit"
                             class="shrink-0 px-3 py-1.5 bg-stone-700 text-stone-300 rounded text-sm hover:bg-stone-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            prop:disabled=move || is_streaming.get()
+                            prop:disabled=move || is_streaming.get() || !has_model.get()
                         >
                             {move || if is_streaming.get() { "..." } else { "Send" }}
                         </button>

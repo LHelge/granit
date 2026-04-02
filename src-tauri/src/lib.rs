@@ -435,6 +435,15 @@ async fn send_message(
     Ok(())
 }
 
+#[tauri::command]
+fn clear_chat(state: tauri::State<'_, AppState>) -> Result<(), AgentError> {
+    let mut guard = state.lock_agent()?;
+    if let Some(agent) = guard.as_mut() {
+        agent.clear_history();
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = AppConfig::ensure_global().expect("failed to initialize config");
@@ -474,6 +483,7 @@ pub fn run() {
             list_models,
             select_model,
             send_message,
+            clear_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

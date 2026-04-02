@@ -172,6 +172,11 @@ impl Agent {
         }
     }
 
+    /// Clear all conversation history.
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+    }
+
     /// Clone the agent and snapshot the current history for use across await points.
     pub fn snapshot(&self) -> (Self, Vec<Message>) {
         (self.clone(), self.history.iter().cloned().collect())
