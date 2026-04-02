@@ -57,3 +57,9 @@ pub enum ChatRole {
     User,
     Assistant,
 }
+
+/// Lightweight representation of a tool invocation for the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCallInfo {
+    pub name: String,
+}

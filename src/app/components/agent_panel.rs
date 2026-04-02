@@ -1,6 +1,6 @@
 use crate::app::ipc;
 use crate::app::AppCtx;
-use granit_types::{ChatMessage, ChatRole};
+use granit_types::{ChatMessage, ChatRole, ToolCallInfo};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -10,11 +10,18 @@ struct DisplayMessage {
     rendered_html: Option<String>,
 }
 
+/// An item in the chat timeline — either a message or a tool call.
+#[derive(Clone)]
+enum DisplayItem {
+    Message(DisplayMessage),
+    ToolCall(ToolCallInfo),
+}
+
 #[component]
 pub fn AgentPanel() -> impl IntoView {
     let config = expect_context::<AppCtx>().config;
     let (input, set_input) = signal(String::new());
-    let messages: RwSignal<Vec<DisplayMessage>> = RwSignal::new(Vec::new());
+    let messages: RwSignal<Vec<DisplayItem>> = RwSignal::new(Vec::new());
     let streaming_content: RwSignal<String> = RwSignal::new(String::new());
     let is_streaming: RwSignal<bool> = RwSignal::new(false);
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
@@ -75,10 +82,10 @@ pub fn AgentPanel() -> impl IntoView {
                     spawn_local(async move {
                         let html = ipc::render_markdown(&content).await.ok();
                         messages.update(|m| {
-                            m.push(DisplayMessage {
+                            m.push(DisplayItem::Message(DisplayMessage {
                                 message: ChatMessage::assistant(content),
                                 rendered_html: html,
-                            })
+                            }))
                         });
                         streaming_content.set(String::new());
                         is_streaming.set(false);
@@ -97,6 +104,15 @@ pub fn AgentPanel() -> impl IntoView {
                 stream_error.set(Some(err));
                 streaming_content.set(String::new());
                 is_streaming.set(false);
+            })
+            .await
+            {
+                _handles.push(h);
+            }
+
+            // tool-call → show inline in timeline
+            if let Some(h) = ipc::listen_tool_call(move |info| {
+                messages.update(|m| m.push(DisplayItem::ToolCall(info)));
             })
             .await
             {
@@ -131,10 +147,10 @@ pub fn AgentPanel() -> impl IntoView {
         set_input.set(String::new());
         stream_error.set(None);
         messages.update(|m| {
-            m.push(DisplayMessage {
+            m.push(DisplayItem::Message(DisplayMessage {
                 message: ChatMessage::user(msg.clone()),
                 rendered_html: None,
-            })
+            }))
         });
         is_streaming.set(true);
 
@@ -166,40 +182,50 @@ pub fn AgentPanel() -> impl IntoView {
                     <p class="text-stone-500 italic text-center mt-8">"Ask me anything about your notes..."</p>
                 </Show>
 
-                // Committed messages
-                <For
-                    each=move || messages.get()
-                    key=|dm| format!("{:?}{}", dm.message.role, dm.message.content.len())
-                    children=|dm| {
-                        let is_user = dm.message.role == ChatRole::User;
-                        let bubble_class = if is_user {
-                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 whitespace-pre-wrap break-words"
-                        } else {
-                            "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 prose prose-sm prose-invert max-w-none"
-                        };
-                        let bubble_style = if is_user { "" } else { "font-size: inherit" };
-                        let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
-                        view! {
-                            <div class=wrapper_class>
-                                {if let Some(rendered) = dm.rendered_html {
-                                    view! {
-                                        <div
-                                            class=bubble_class
-                                            style=bubble_style
-                                            inner_html=rendered
-                                        />
-                                    }.into_any()
-                                } else {
-                                    view! {
-                                        <div class=bubble_class>
-                                            {dm.message.content.clone()}
-                                        </div>
-                                    }.into_any()
-                                }}
-                            </div>
+                // Committed messages and tool calls
+                {move || messages.get().into_iter().map(|item| {
+                    match item {
+                        DisplayItem::Message(dm) => {
+                            let is_user = dm.message.role == ChatRole::User;
+                            let bubble_class = if is_user {
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 whitespace-pre-wrap break-words"
+                            } else {
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 prose prose-sm prose-invert max-w-none"
+                            };
+                            let bubble_style = if is_user { "" } else { "font-size: inherit" };
+                            let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
+                            view! {
+                                <div class=wrapper_class>
+                                    {if let Some(rendered) = dm.rendered_html {
+                                        view! {
+                                            <div
+                                                class=bubble_class
+                                                style=bubble_style
+                                                inner_html=rendered
+                                            />
+                                        }.into_any()
+                                    } else {
+                                        view! {
+                                            <div class=bubble_class>
+                                                {dm.message.content.clone()}
+                                            </div>
+                                        }.into_any()
+                                    }}
+                                </div>
+                            }.into_any()
+                        }
+                        DisplayItem::ToolCall(info) => {
+                            view! {
+                                <div class="flex justify-start">
+                                    <div class="px-3 py-1.5 rounded-lg bg-stone-800/60 border border-stone-700 text-stone-400 text-xs font-mono">
+                                        <span class="text-stone-500">"⚙ "</span>
+                                        <span class="text-stone-300">{info.name}</span>
+                                    </div>
+                                </div>
+                            }.into_any()
                         }
                     }
-                />
+                }).collect_view()}
 
                 // Streaming response in progress
                 <Show when=move || is_streaming.get() || !streaming_content.get().is_empty()>

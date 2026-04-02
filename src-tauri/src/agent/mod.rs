@@ -7,7 +7,7 @@ pub use tools::SharedCave;
 use std::collections::VecDeque;
 
 use crate::config::Secrets;
-use granit_types::AgentConfig;
+use granit_types::{AgentConfig, ToolCallInfo};
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
 use rig::providers::{anthropic, mistral, ollama, openai};
@@ -220,6 +220,14 @@ impl Agent {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(t)) => {
                     AgentStreamItem::Text(t.text)
                 }
+                MultiTurnStreamItem::StreamAssistantItem(
+                    StreamedAssistantContent::ToolCall {
+                        tool_call,
+                        ..
+                    },
+                ) => AgentStreamItem::ToolCall(ToolCallInfo {
+                    name: tool_call.function.name.clone(),
+                }),
                 MultiTurnStreamItem::FinalResponse(_) => AgentStreamItem::Done,
                 _ => AgentStreamItem::Other,
             }
@@ -285,6 +293,7 @@ impl Agent {
 /// A type-erased stream item from the agent, independent of provider.
 pub enum AgentStreamItem {
     Text(String),
+    ToolCall(ToolCallInfo),
     Done,
     Other,
 }
@@ -297,10 +306,12 @@ pub struct AgentStream {
 
 impl AgentStream {
     /// Consume the stream, collecting the full response text.
-    /// Calls `on_chunk` for each text chunk received.
+    /// Calls `on_chunk` for each text chunk received, and `on_tool` for
+    /// tool call / tool result items.
     pub async fn collect_with(
         &mut self,
         mut on_chunk: impl FnMut(&str),
+        mut on_tool: impl FnMut(AgentStreamItem),
     ) -> Result<String, AgentError> {
         use futures::StreamExt;
 
@@ -310,6 +321,9 @@ impl AgentStream {
                 Some(Ok(AgentStreamItem::Text(text))) => {
                     full_response.push_str(&text);
                     on_chunk(&text);
+                }
+                Some(Ok(item @ AgentStreamItem::ToolCall(_))) => {
+                    on_tool(item);
                 }
                 Some(Ok(AgentStreamItem::Done)) | None => break,
                 Some(Err(e)) => return Err(e),

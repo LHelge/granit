@@ -126,6 +126,15 @@ impl Cave {
             .map(String::as_str)
     }
 
+    /// Resolve a slug case-insensitively, returning the canonical stored slug.
+    ///
+    /// Returns `CaveError::NotFound` if no note matches.
+    pub fn resolve_slug(&self, slug: &str) -> Result<String, CaveError> {
+        self.lookup_slug(slug)
+            .map(String::from)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))
+    }
+
     /// The root directory of this cave.
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {

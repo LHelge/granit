@@ -53,7 +53,8 @@ impl Tool for UpdateNoteTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // Use save_note which preserves frontmatter and replaces the body.
         with_cave(&self.cave, |cave| {
-            let meta = cave.save_note(&args.slug, &args.content)?;
+            let slug = cave.resolve_slug(&args.slug)?;
+            let meta = cave.save_note(&slug, &args.content)?;
             Ok(UpdateNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,

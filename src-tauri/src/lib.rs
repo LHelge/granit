@@ -323,10 +323,18 @@ async fn send_message(
         .stream_with_history(msg.as_str(), history, 10)
         .await?;
 
+    let app_handle = app.clone();
     let response = stream
-        .collect_with(|text| {
-            let _ = app.emit("agent:stream-chunk", text);
-        })
+        .collect_with(
+            |text| {
+                let _ = app.emit("agent:stream-chunk", text);
+            },
+            |item| {
+                if let agent::AgentStreamItem::ToolCall(info) = item {
+                    let _ = app_handle.emit("agent:tool-call", &info);
+                }
+            },
+        )
         .await
         .inspect_err(|e| {
             let _ = app.emit("agent:stream-error", e.to_string());
