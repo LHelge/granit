@@ -3,6 +3,7 @@ use crate::app::AppCtx;
 use granit_types::{ChatMessage, ChatRole, ToolCallInfo};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::JsCast;
 
 #[derive(Clone)]
 struct DisplayMessage {
@@ -132,18 +133,75 @@ pub fn AgentPanel() -> impl IntoView {
         }
         set_input.set(String::new());
         stream_error.set(None);
-        messages.update(|m| {
-            m.push(DisplayItem::Message(DisplayMessage {
-                message: ChatMessage::user(msg.clone()),
-                rendered_html: None,
-            }))
-        });
         is_streaming.set(true);
 
         spawn_local(async move {
+            let html = ipc::render_markdown(&msg).await.ok();
+            messages.update(|m| {
+                m.push(DisplayItem::Message(DisplayMessage {
+                    message: ChatMessage::user(msg.clone()),
+                    rendered_html: html,
+                }))
+            });
             if let Err(e) = ipc::send_message(&msg).await {
                 stream_error.set(Some(e));
                 is_streaming.set(false);
+            }
+        });
+    };
+
+    let app = expect_context::<AppCtx>();
+
+    // Intercept clicks on links in rendered markdown within the agent panel.
+    let on_link_click = move |ev: leptos::ev::MouseEvent| {
+        let Some(target) = ev.target() else { return };
+        let anchor = target
+            .dyn_ref::<web_sys::Element>()
+            .and_then(|el| {
+                if el.tag_name().eq_ignore_ascii_case("a") {
+                    Some(el.clone())
+                } else {
+                    el.closest("a").ok().flatten()
+                }
+            })
+            .and_then(|el| el.dyn_into::<web_sys::HtmlAnchorElement>().ok());
+
+        let Some(anchor) = anchor else { return };
+        let href = anchor.get_attribute("href").unwrap_or_default();
+
+        if href.is_empty() || href.starts_with('#') || href.starts_with('/') {
+            return;
+        }
+
+        // External links → open in system browser
+        if href.starts_with("http://") || href.starts_with("https://") {
+            ev.prevent_default();
+            let url = href.clone();
+            spawn_local(async move {
+                let _ = ipc::open_url(&url).await;
+            });
+            return;
+        }
+
+        // Wiki-link → navigate to note
+        ev.prevent_default();
+        let slug = js_sys::decode_uri_component(&href)
+            .ok()
+            .and_then(|s| s.as_string())
+            .unwrap_or(href);
+        let is_broken = anchor.class_list().contains("broken-link");
+        spawn_local(async move {
+            if is_broken {
+                if let Ok(meta) = ipc::create_note(&slug, None).await {
+                    if let Ok(all) = ipc::fetch_notes().await {
+                        app.notes.set(all);
+                    }
+                    if let Ok(note) = ipc::read_note(&meta.slug).await {
+                        app.active_note.set(Some(note));
+                    }
+                }
+            } else if let Ok(note) = ipc::read_note(&slug).await {
+                app.active_note.set(Some(note));
             }
         });
     };
@@ -159,9 +217,10 @@ pub fn AgentPanel() -> impl IntoView {
             </div>
             // Message list
             <div
-                class="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col"
+                class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 flex flex-col"
                 style:font-family=move || config.get().agent_font.font_family
                 style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+                on:click=on_link_click
             >
                 // Empty state
                 <Show when=move || messages.get().is_empty() && !is_streaming.get() && streaming_content.get().is_empty()>
@@ -173,12 +232,15 @@ pub fn AgentPanel() -> impl IntoView {
                     match item {
                         DisplayItem::Message(dm) => {
                             let is_user = dm.message.role == ChatRole::User;
-                            let bubble_class = if is_user {
+                            let has_html = dm.rendered_html.is_some();
+                            let bubble_class = if is_user && has_html {
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                            } else if is_user {
                                 "max-w-[85%] px-3 py-2 rounded-lg bg-stone-600 text-stone-100 whitespace-pre-wrap break-words"
                             } else {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 prose prose-sm prose-invert max-w-none"
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-stone-800 text-stone-200 prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
                             };
-                            let bubble_style = if is_user { "" } else { "font-size: inherit" };
+                            let bubble_style = if is_user && !has_html { "" } else { "font-size: inherit" };
                             let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
                             view! {
                                 <div class=wrapper_class>
@@ -247,7 +309,7 @@ pub fn AgentPanel() -> impl IntoView {
                         type="text"
                         style:font-family=move || config.get().agent_font.font_family
                         style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                        class="flex-1 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
+                        class="flex-1 min-w-0 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
                         placeholder="Message..."
                         prop:value=move || input.get()
                         prop:disabled=move || is_streaming.get()
@@ -255,7 +317,7 @@ pub fn AgentPanel() -> impl IntoView {
                     />
                     <button
                         type="submit"
-                        class="px-3 py-1.5 bg-stone-700 text-stone-300 rounded text-sm hover:bg-stone-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="shrink-0 px-3 py-1.5 bg-stone-700 text-stone-300 rounded text-sm hover:bg-stone-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         prop:disabled=move || is_streaming.get()
                     >
                         {move || if is_streaming.get() { "..." } else { "Send" }}

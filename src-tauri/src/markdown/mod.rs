@@ -196,6 +196,19 @@ fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
     (frontmatter, body)
 }
 
+/// Render a markdown string to HTML with wiki-link resolution.
+///
+/// Like `render_html` but also enables `ENABLE_WIKILINKS` and resolves
+/// `[[wiki-links]]` against the cave via `lookup`. Used for rendering
+/// agent chat messages where wiki-links should be clickable.
+pub(crate) fn render_markdown_with_links<'lookup>(
+    markdown: &str,
+    lookup: impl Fn(&str) -> Option<&'lookup str>,
+) -> String {
+    let (html, _outgoing_links) = render_with_wiki_links(markdown, lookup);
+    html
+}
+
 /// Render a markdown string to HTML using pulldown-cmark.
 ///
 /// Options enabled: tables, strikethrough, task lists, footnotes.

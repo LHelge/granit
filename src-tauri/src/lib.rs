@@ -289,8 +289,13 @@ fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNo
 }
 
 #[tauri::command]
-fn render_markdown(content: String) -> String {
-    markdown::render_html(&content)
+fn render_markdown(content: String, state: tauri::State<AppState>) -> String {
+    let guard = state.lock_cave().ok();
+    let cave = guard.as_ref().and_then(|g| g.as_ref());
+    match cave {
+        Some(cave) => markdown::render_markdown_with_links(&content, |s| cave.lookup_slug(s)),
+        None => markdown::render_html(&content),
+    }
 }
 
 #[tauri::command]
