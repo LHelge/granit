@@ -329,10 +329,14 @@ async fn send_message(
             |text| {
                 let _ = app.emit("agent:stream-chunk", text);
             },
-            |item| {
-                if let agent::AgentStreamItem::ToolCall(info) = item {
+            |item| match item {
+                agent::AgentStreamItem::ToolCall(info) => {
                     let _ = app_handle.emit("agent:tool-call", &info);
                 }
+                agent::AgentStreamItem::ToolResult => {
+                    let _ = app_handle.emit("cave:notes-changed", ());
+                }
+                _ => {}
             },
         )
         .await

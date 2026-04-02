@@ -158,7 +158,7 @@ pub fn TreeView() -> impl IntoView {
     let app = expect_context::<crate::app::AppCtx>();
     let ctx = TreeCtx {
         notes: app.notes,
-        folders: RwSignal::new(Vec::new()),
+        folders: app.folders,
         active_note: app.active_note,
         app,
         context_menu: RwSignal::new(None),
@@ -167,13 +167,6 @@ pub fn TreeView() -> impl IntoView {
         open_in_edit: expect_context::<OpenInEdit>().0,
     };
     provide_context(ctx);
-
-    // Fetch folder list on mount.
-    leptos::task::spawn_local(async move {
-        if let Ok(list) = ipc::fetch_folders().await {
-            ctx.folders.set(list);
-        }
-    });
 
     view! {
         <div

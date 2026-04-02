@@ -24,6 +24,9 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                             ctx.push_error("notes", e);
                         }
                     }
+                    if let Ok(f) = ipc::fetch_folders().await {
+                        ctx.folders.set(f);
+                    }
                     ctx.active_note.set(None);
                 }
                 Err(e) => {

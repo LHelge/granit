@@ -35,7 +35,7 @@ impl Tool for EditNoteTool {
         ToolDefinition {
             name: "edit_note".to_string(),
             description:
-                "Replace text in a note by slug (find and replace). Fails if the text is not found."
+                "Replace text in a note by slug (find and replace on the body only, excluding frontmatter). Fails if the text is not found."
                     .to_string(),
             parameters: json!({
                 "type": "object",

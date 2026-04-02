@@ -31,7 +31,7 @@ impl Tool for ReadNoteTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "read_note".to_string(),
-            description: "Read the content of a note by its slug (filename without .md extension)"
+            description: "Read the body of a note by its slug (filename without .md extension). Returns the markdown body without frontmatter."
                 .to_string(),
             parameters: json!({
                 "type": "object",

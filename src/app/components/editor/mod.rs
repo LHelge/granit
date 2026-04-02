@@ -223,16 +223,17 @@ pub fn Editor() -> impl IntoView {
                 EditOpen::EditFocusContent => ctx.focus_content.set(true),
                 EditOpen::Preview => {}
             }
+        }
 
-            match &new_note {
-                Some(note) => {
-                    let slug = note.meta.slug.clone();
-                    leptos::task::spawn_local(async move {
-                        ctx.render(&slug).await;
-                    });
-                }
-                None => ctx.rendered_note.set(None),
+        // Re-render whenever the note changes (switch or same-slug update)
+        match &new_note {
+            Some(note) => {
+                let slug = note.meta.slug.clone();
+                leptos::task::spawn_local(async move {
+                    ctx.render(&slug).await;
+                });
             }
+            None => ctx.rendered_note.set(None),
         }
 
         // Sync local editor state with the new active note

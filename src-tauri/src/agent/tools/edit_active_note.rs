@@ -33,7 +33,7 @@ impl Tool for EditActiveNoteTool {
         ToolDefinition {
             name: "edit_active_note".to_string(),
             description:
-                "Replace text in the note currently open in the editor (find and replace). Returns an error if no note is open or the text is not found."
+                "Replace text in the note currently open in the editor (find and replace on the body only, excluding frontmatter). Returns an error if no note is open or the text is not found."
                     .to_string(),
             parameters: json!({
                 "type": "object",
