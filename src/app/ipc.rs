@@ -5,7 +5,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use granit_types::{AppConfig, FontConfig, Note, NoteMeta, RenderedNote};
+use granit_types::{AppConfig, FontConfig, Note, NoteMeta, RenderedNote, ToolCallInfo};
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 
@@ -311,6 +311,19 @@ pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<EventH
             .and_then(|v| v.as_string())
             .unwrap_or_else(|| "Unknown error".to_string());
         cb(msg);
+    })
+    .await
+}
+
+/// Register a closure called when the agent invokes a tool.
+pub async fn listen_tool_call(cb: impl Fn(ToolCallInfo) + 'static) -> Option<EventHandle> {
+    listen_event("agent:tool-call", move |payload: JsValue| {
+        let inner = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .unwrap_or(payload);
+        if let Ok(info) = serde_wasm_bindgen::from_value::<ToolCallInfo>(inner) {
+            cb(info);
+        }
     })
     .await
 }

@@ -45,9 +45,10 @@ impl Tool for DeleteNoteTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave_mut(&self.cave, |cave| {
-            cave.delete_note(&args.slug)?;
+            let slug = cave.resolve_slug(&args.slug)?;
+            cave.delete_note(&slug)?;
             Ok(DeleteNoteOutput {
-                deleted: args.slug.clone(),
+                deleted: slug,
             })
         })
     }

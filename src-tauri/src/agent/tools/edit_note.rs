@@ -60,7 +60,8 @@ impl Tool for EditNoteTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave(&self.cave, |cave| {
-            let meta = cave.edit_note(&args.slug, &args.old_text, &args.new_text)?;
+            let slug = cave.resolve_slug(&args.slug)?;
+            let meta = cave.edit_note(&slug, &args.old_text, &args.new_text)?;
             Ok(EditNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,

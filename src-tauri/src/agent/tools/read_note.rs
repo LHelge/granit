@@ -48,7 +48,8 @@ impl Tool for ReadNoteTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave(&self.cave, |cave| {
-            let note = cave.read_note(&args.slug)?;
+            let slug = cave.resolve_slug(&args.slug)?;
+            let note = cave.read_note(&slug)?;
             Ok(ReadNoteOutput {
                 slug: note.meta.slug,
                 relative_path: note.meta.relative_path,
