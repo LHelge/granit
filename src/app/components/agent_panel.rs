@@ -19,7 +19,7 @@ enum DisplayItem {
 }
 
 #[component]
-pub fn AgentPanel() -> impl IntoView {
+pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let config = expect_context::<AppCtx>().config;
     let (input, set_input) = signal(String::new());
     let messages: RwSignal<Vec<DisplayItem>> = RwSignal::new(Vec::new());
@@ -207,7 +207,10 @@ pub fn AgentPanel() -> impl IntoView {
     };
 
     view! {
-        <aside class="w-80 shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden">
+        <aside
+            class="shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden"
+            style:width=move || format!("{}px", width.get())
+        >
             // Header — provider and model
             <div class="px-3 py-1.5 border-b border-stone-700 text-xs text-stone-500 truncate">
                 {move || {

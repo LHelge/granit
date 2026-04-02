@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use error::ConfigError;
-pub use granit_types::{AgentConfig, FontConfig};
+pub use granit_types::{AgentConfig, FontConfig, SidebarConfig};
 pub use secrets::Secrets;
 
 /// Apply optional raw config fields over a resolved config value.
@@ -42,6 +42,17 @@ impl MergeRaw<RawFontConfig> for FontConfig {
         }
     }
 }
+
+impl MergeRaw<RawSidebarConfig> for SidebarConfig {
+    fn merge_raw(&mut self, raw: RawSidebarConfig) {
+        if let Some(visible) = raw.visible {
+            self.visible = visible;
+        }
+        if let Some(width) = raw.width {
+            self.width = width;
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct AppConfig {
     pub recent_caves: Vec<PathBuf>,
@@ -49,6 +60,8 @@ pub struct AppConfig {
     pub markdown_font: FontConfig,
     pub reading_font: FontConfig,
     pub agent_font: FontConfig,
+    pub sidebar: SidebarConfig,
+    pub agent_panel: SidebarConfig,
     /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
     pub active_cave: Option<PathBuf>,
 }
@@ -61,6 +74,8 @@ struct RawConfig {
     markdown_font: Option<RawFontConfig>,
     reading_font: Option<RawFontConfig>,
     agent_font: Option<RawFontConfig>,
+    sidebar: Option<RawSidebarConfig>,
+    agent_panel: Option<RawSidebarConfig>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -75,6 +90,12 @@ struct RawAgentConfig {
 struct RawFontConfig {
     font_family: Option<String>,
     font_size: Option<u8>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RawSidebarConfig {
+    visible: Option<bool>,
+    width: Option<u16>,
 }
 
 impl AppConfig {
@@ -119,6 +140,14 @@ impl AppConfig {
             agent_font: Some(RawFontConfig {
                 font_family: Some(self.agent_font.font_family.clone()),
                 font_size: Some(self.agent_font.font_size),
+            }),
+            sidebar: Some(RawSidebarConfig {
+                visible: Some(self.sidebar.visible),
+                width: Some(self.sidebar.width),
+            }),
+            agent_panel: Some(RawSidebarConfig {
+                visible: Some(self.agent_panel.visible),
+                width: Some(self.agent_panel.width),
             }),
         };
 
@@ -173,6 +202,8 @@ impl AppConfig {
             markdown_font: self.markdown_font.clone(),
             reading_font: self.reading_font.clone(),
             agent_font: self.agent_font.clone(),
+            sidebar: self.sidebar.clone(),
+            agent_panel: self.agent_panel.clone(),
             active_cave: self
                 .active_cave
                 .as_ref()
@@ -191,6 +222,8 @@ impl AppConfig {
                 markdown_font: FontConfig::markdown_default(),
                 reading_font: FontConfig::reading_default(),
                 agent_font: FontConfig::agent_default(),
+                sidebar: SidebarConfig::sidebar_default(),
+                agent_panel: SidebarConfig::agent_default(),
                 active_cave: None,
             };
             config.save_global()?;
@@ -239,6 +272,8 @@ impl AppConfig {
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
             agent_font: FontConfig::agent_default(),
+            sidebar: SidebarConfig::sidebar_default(),
+            agent_panel: SidebarConfig::agent_default(),
             active_cave: None,
         };
 
@@ -263,6 +298,12 @@ impl AppConfig {
         }
         if let Some(font) = raw.agent_font {
             config.agent_font.merge_raw(font);
+        }
+        if let Some(sb) = raw.sidebar {
+            config.sidebar.merge_raw(sb);
+        }
+        if let Some(ap) = raw.agent_panel {
+            config.agent_panel.merge_raw(ap);
         }
     }
 }
@@ -591,6 +632,8 @@ mod tests {
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
             agent_font: FontConfig::agent_default(),
+            sidebar: SidebarConfig::sidebar_default(),
+            agent_panel: SidebarConfig::agent_default(),
             active_cave: None,
         };
 
