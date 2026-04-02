@@ -1,5 +1,5 @@
 ---
-name: rig-agent
+name: granit-agent
 description: "Build and extend the rig-core AI agent. Use when: adding agent tools, configuring LLM providers, setting up vector DB for RAG, implementing chat streaming, or modifying agent behavior."
 ---
 
