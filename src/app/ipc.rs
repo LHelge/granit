@@ -110,19 +110,27 @@ pub async fn save_sidebar_state(
     .await
 }
 
-// ── Secrets ────────────────────────────────────────────────────────
+// ── Provider / Model selection ──────────────────────────────────────
 
-pub async fn get_secret(key: &str) -> Result<Option<bool>, String> {
-    invoke_cmd("get_secret", &HashMap::from([("key", key)])).await
+pub async fn list_providers() -> Result<Vec<granit_types::ProviderInfo>, String> {
+    invoke_no_args("list_providers").await
 }
 
-pub async fn set_secret(key: &str, value: &str) -> Result<(), String> {
+pub async fn select_provider(index: usize) -> Result<AppConfig, String> {
+    invoke_cmd("select_provider", &HashMap::from([("index", index)])).await
+}
+
+pub async fn list_models() -> Result<Vec<granit_types::ModelInfo>, String> {
+    invoke_no_args("list_models").await
+}
+
+pub async fn select_model(model_id: &str) -> Result<AppConfig, String> {
     #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
     struct Args<'a> {
-        key: &'a str,
-        value: &'a str,
+        model_id: &'a str,
     }
-    invoke_unit("set_secret", &Args { key, value }).await
+    invoke_cmd("select_model", &Args { model_id }).await
 }
 
 // ── Cave ───────────────────────────────────────────────────────────

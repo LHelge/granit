@@ -1,10 +1,10 @@
 ---
 id: y2f
 title: 'Backend: list_models Tauri command'
-status: open
+status: done
 priority: P1
 created: 2026-03-29T00:06:40.109066543Z
-updated: 2026-03-29T00:06:40.109066543Z
+updated: 2026-04-02T13:21:44.932750218Z
 tags:
 - backend
 depends_on:

@@ -6,10 +6,24 @@ pub enum AgentError {
     Stream(String),
     #[error("Agent not initialized — open a cave first")]
     NotInitialized,
-    #[error("Unknown provider: {0}")]
-    UnknownProvider(String),
-    #[error("Missing API key: {0}")]
-    MissingApiKey(String),
+    #[error("No providers configured")]
+    NoProviders,
+    #[error("Selected provider index {0} is out of range")]
+    ProviderIndexOutOfRange(usize),
+    #[error("Failed to list models: {0}")]
+    ModelListing(String),
     #[error("State lock poisoned")]
     Poisoned,
+}
+
+impl From<rig::http_client::Error> for AgentError {
+    fn from(e: rig::http_client::Error) -> Self {
+        Self::Build(e.to_string())
+    }
+}
+
+impl From<rig::model::ModelListingError> for AgentError {
+    fn from(e: rig::model::ModelListingError) -> Self {
+        Self::ModelListing(e.to_string())
+    }
 }

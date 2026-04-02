@@ -6,8 +6,7 @@ pub use tools::SharedCave;
 
 use std::collections::VecDeque;
 
-use crate::config::Secrets;
-use granit_types::{AgentConfig, ToolCallInfo};
+use granit_types::{AgentConfig, ProviderConfig, ToolCallInfo};
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
 use rig::providers::{anthropic, mistral, ollama, openai};
@@ -60,19 +59,29 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Build a provider-agnostic agent from the provided config, secrets, and shared cave handle.
-    pub fn from_config(
-        config: &AgentConfig,
-        secrets: &Secrets,
-        cave: SharedCave,
-    ) -> Result<Self, AgentError> {
+    /// Build a provider-agnostic agent from the provided config and shared cave handle.
+    pub fn from_config(config: &AgentConfig, cave: SharedCave) -> Result<Self, AgentError> {
+        if config.providers.is_empty() {
+            return Err(AgentError::NoProviders);
+        }
+        let entry = config.providers.get(config.selected_provider).ok_or(
+            AgentError::ProviderIndexOutOfRange(config.selected_provider),
+        )?;
+
         let cave_tools = tools::cave_toolset(cave);
-        let inner = match config.provider.as_str() {
-            "ollama" => Self::build_ollama(config, cave_tools)?,
-            "anthropic" => Self::build_anthropic(config, secrets, cave_tools)?,
-            "mistral" => Self::build_mistral(config, secrets, cave_tools)?,
-            "prisma" => Self::build_prisma(config, secrets, cave_tools)?,
-            other => return Err(AgentError::UnknownProvider(other.to_string())),
+        let model = config
+            .selected_model
+            .as_deref()
+            .unwrap_or(entry.provider.default_model());
+        let inner = match &entry.provider {
+            ProviderConfig::Ollama { base_url } => {
+                Self::build_ollama(base_url.as_deref(), model, cave_tools)?
+            }
+            ProviderConfig::Anthropic { api_key } => {
+                Self::build_anthropic(api_key, model, cave_tools)?
+            }
+            ProviderConfig::Mistral { api_key } => Self::build_mistral(api_key, model, cave_tools)?,
+            ProviderConfig::Prisma { api_key } => Self::build_prisma(api_key, model, cave_tools)?,
         };
 
         Ok(Self {
@@ -83,22 +92,19 @@ impl Agent {
     }
 
     fn build_ollama(
-        config: &AgentConfig,
+        base_url: Option<&str>,
+        model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<ProviderAgent, AgentError> {
-        let base_url = config
-            .base_url
-            .as_deref()
-            .unwrap_or(DEFAULT_OLLAMA_BASE_URL);
+        let base_url = base_url.unwrap_or(DEFAULT_OLLAMA_BASE_URL);
 
         let client = ollama::Client::builder()
             .api_key(Nothing)
             .base_url(base_url)
-            .build()
-            .map_err(|e| AgentError::Build(e.to_string()))?;
+            .build()?;
 
         let agent = client
-            .agent(&config.model)
+            .agent(model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
             .tools(cave_tools)
             .build();
@@ -107,23 +113,14 @@ impl Agent {
     }
 
     fn build_anthropic(
-        config: &AgentConfig,
-        secrets: &Secrets,
+        api_key: &str,
+        model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<ProviderAgent, AgentError> {
-        let api_key = secrets
-            .get("ANTHROPIC_API_KEY")
-            .ok_or(AgentError::MissingApiKey(
-                "Anthropic API key not configured — set ANTHROPIC_API_KEY in secrets".to_string(),
-            ))?;
-
-        let client = anthropic::Client::builder()
-            .api_key(api_key)
-            .build()
-            .map_err(|e| AgentError::Build(e.to_string()))?;
+        let client = anthropic::Client::builder().api_key(api_key).build()?;
 
         let agent = client
-            .agent(&config.model)
+            .agent(model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
             .tools(cave_tools)
             .build();
@@ -132,29 +129,17 @@ impl Agent {
     }
 
     fn build_prisma(
-        config: &AgentConfig,
-        secrets: &Secrets,
+        api_key: &str,
+        model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<ProviderAgent, AgentError> {
-        let api_key = secrets
-            .get("PRISMA_API_KEY")
-            .ok_or(AgentError::MissingApiKey(
-                "Prisma API key not configured — set PRISMA_API_KEY in secrets".to_string(),
-            ))?;
-
-        let base_url = config
-            .base_url
-            .as_deref()
-            .unwrap_or(DEFAULT_PRISMA_BASE_URL);
-
         let client = openai::CompletionsClient::builder()
             .api_key(api_key)
-            .base_url(base_url)
-            .build()
-            .map_err(|e| AgentError::Build(e.to_string()))?;
+            .base_url(DEFAULT_PRISMA_BASE_URL)
+            .build()?;
 
         let agent = client
-            .agent(&config.model)
+            .agent(model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
             .tools(cave_tools)
             .build();
@@ -163,24 +148,14 @@ impl Agent {
     }
 
     fn build_mistral(
-        config: &AgentConfig,
-        secrets: &Secrets,
+        api_key: &str,
+        model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
     ) -> Result<ProviderAgent, AgentError> {
-        let api_key = secrets
-            .get("MISTRAL_API_KEY")
-            .ok_or(AgentError::MissingApiKey(
-                "Mistral API key not configured \u{2014} set MISTRAL_API_KEY in secrets"
-                    .to_string(),
-            ))?;
-
-        let client = mistral::Client::builder()
-            .api_key(api_key)
-            .build()
-            .map_err(|e| AgentError::Build(e.to_string()))?;
+        let client = mistral::Client::builder().api_key(api_key).build()?;
 
         let agent = client
-            .agent(&config.model)
+            .agent(model)
             .preamble(DEFAULT_SYSTEM_PROMPT)
             .tools(cave_tools)
             .build();
@@ -294,6 +269,47 @@ impl Agent {
     }
 }
 
+/// Query the selected provider's API for available models.
+pub(crate) async fn list_models(
+    provider: &ProviderConfig,
+) -> Result<Vec<granit_types::ModelInfo>, AgentError> {
+    use rig::client::ModelListingClient;
+
+    let models = match provider {
+        ProviderConfig::Ollama { base_url } => {
+            let base_url = base_url.as_deref().unwrap_or(DEFAULT_OLLAMA_BASE_URL);
+            let client = ollama::Client::builder()
+                .api_key(Nothing)
+                .base_url(base_url)
+                .build()?;
+            client.list_models().await?
+        }
+        ProviderConfig::Anthropic { api_key } => {
+            let client = anthropic::Client::builder().api_key(api_key).build()?;
+            client.list_models().await?
+        }
+        ProviderConfig::Mistral { api_key } => {
+            let client = mistral::Client::builder().api_key(api_key).build()?;
+            client.list_models().await?
+        }
+        ProviderConfig::Prisma { api_key } => {
+            let client = openai::Client::builder()
+                .api_key(api_key)
+                .base_url(DEFAULT_PRISMA_BASE_URL)
+                .build()?;
+            client.list_models().await?
+        }
+    };
+
+    Ok(models
+        .into_iter()
+        .map(|m| granit_types::ModelInfo {
+            id: m.id,
+            name: m.name,
+        })
+        .collect())
+}
+
 /// A type-erased stream item from the agent, independent of provider.
 pub enum AgentStreamItem {
     Text(String),
@@ -355,144 +371,112 @@ impl futures::Stream for AgentStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn empty_secrets() -> Secrets {
-        Secrets::new(std::collections::HashMap::new())
-    }
+    use granit_types::{ProviderConfig, ProviderEntry};
 
     fn empty_cave() -> SharedCave {
         std::sync::Arc::new(std::sync::Mutex::new(None))
     }
 
+    fn ollama_config(base_url: Option<&str>) -> AgentConfig {
+        AgentConfig {
+            providers: vec![ProviderEntry {
+                name: None,
+                provider: ProviderConfig::Ollama {
+                    base_url: base_url.map(String::from),
+                },
+            }],
+            selected_provider: 0,
+            selected_model: None,
+            max_history: 100,
+        }
+    }
+
+    fn provider_config(entry: ProviderEntry) -> AgentConfig {
+        AgentConfig {
+            providers: vec![entry],
+            selected_provider: 0,
+            selected_model: None,
+            max_history: 100,
+        }
+    }
+
     #[tokio::test]
     async fn agent_builds_from_default_config() {
         let config = AgentConfig::default();
-        let agent = Agent::from_config(&config, &empty_secrets(), empty_cave());
+        let agent = Agent::from_config(&config, empty_cave());
         assert!(agent.is_ok(), "Agent should build without error");
     }
 
     #[tokio::test]
     async fn agent_builds_with_custom_base_url() {
-        let config = AgentConfig {
-            provider: "ollama".to_string(),
-            model: "qwen3.5:9b".to_string(),
-            base_url: Some("http://192.168.1.10:11434".to_string()),
-            ..AgentConfig::default()
-        };
-        let agent = Agent::from_config(&config, &empty_secrets(), empty_cave());
+        let config = ollama_config(Some("http://192.168.1.10:11434"));
+        let agent = Agent::from_config(&config, empty_cave());
         assert!(agent.is_ok(), "Agent should build with a custom base URL");
     }
 
     #[tokio::test]
-    async fn agent_unknown_provider_returns_error() {
+    async fn no_providers_returns_error() {
         let config = AgentConfig {
-            provider: "nope".to_string(),
-            model: "test".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
+            providers: vec![],
+            selected_provider: 0,
+            selected_model: None,
+            max_history: 100,
         };
-        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
+        let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AgentError::UnknownProvider(_)),
-            "Expected UnknownProvider, got: {err}"
+            matches!(err, AgentError::NoProviders),
+            "Expected NoProviders, got: {err}"
         );
     }
 
     #[tokio::test]
-    async fn anthropic_missing_api_key_returns_error() {
-        let config = AgentConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-20250514".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
+    async fn selected_provider_out_of_range_returns_error() {
+        let mut config = ollama_config(None);
+        config.selected_provider = 5;
+        let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AgentError::MissingApiKey(_)),
-            "Expected MissingApiKey, got: {err}"
+            matches!(err, AgentError::ProviderIndexOutOfRange(5)),
+            "Expected ProviderIndexOutOfRange(5), got: {err}"
         );
     }
 
     #[tokio::test]
     async fn anthropic_builds_with_api_key() {
-        let mut vars = std::collections::HashMap::new();
-        vars.insert("ANTHROPIC_API_KEY".to_string(), "test-key-123".to_string());
-        let secrets = Secrets::new(vars);
-        let config = AgentConfig {
-            provider: "anthropic".to_string(),
-            model: "claude-sonnet-4-20250514".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &secrets, empty_cave());
+        let config = provider_config(ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Anthropic {
+                api_key: "test-key-123".to_string(),
+            },
+        });
+        let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_ok(), "Agent should build with Anthropic API key");
     }
 
     #[tokio::test]
-    async fn mistral_missing_api_key_returns_error() {
-        let config = AgentConfig {
-            provider: "mistral".to_string(),
-            model: "mistral-small-latest".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, AgentError::MissingApiKey(_)),
-            "Expected MissingApiKey, got: {err}"
-        );
-    }
-
-    #[tokio::test]
     async fn mistral_builds_with_api_key() {
-        let mut vars = std::collections::HashMap::new();
-        vars.insert("MISTRAL_API_KEY".to_string(), "test-key-456".to_string());
-        let secrets = Secrets::new(vars);
-        let config = AgentConfig {
-            provider: "mistral".to_string(),
-            model: "mistral-small-latest".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &secrets, empty_cave());
+        let config = provider_config(ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Mistral {
+                api_key: "test-key-456".to_string(),
+            },
+        });
+        let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_ok(), "Agent should build with Mistral API key");
     }
 
     #[tokio::test]
-    async fn prisma_missing_api_key_returns_error() {
-        let config = AgentConfig {
-            provider: "prisma".to_string(),
-            model: "some-model".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &empty_secrets(), empty_cave());
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, AgentError::MissingApiKey(_)),
-            "Expected MissingApiKey, got: {err}"
-        );
-    }
-
-    #[tokio::test]
     async fn prisma_builds_with_api_key() {
-        let mut vars = std::collections::HashMap::new();
-        vars.insert("PRISMA_API_KEY".to_string(), "test-key-789".to_string());
-        let secrets = Secrets::new(vars);
-        let config = AgentConfig {
-            provider: "prisma".to_string(),
-            model: "some-model".to_string(),
-            base_url: None,
-            ..AgentConfig::default()
-        };
-        let result = Agent::from_config(&config, &secrets, empty_cave());
+        let config = provider_config(ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Prisma {
+                api_key: "test-key-789".to_string(),
+            },
+        });
+        let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_ok(), "Agent should build with Prisma API key");
     }
 }

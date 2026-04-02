@@ -1,6 +1,6 @@
 use crate::app::ipc;
 use crate::app::AppCtx;
-use granit_types::{ChatMessage, ChatRole, ToolCallInfo};
+use granit_types::{ChatMessage, ChatRole, ModelInfo, ProviderInfo, ToolCallInfo};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
@@ -27,12 +27,24 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let is_streaming: RwSignal<bool> = RwSignal::new(false);
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
 
+    // ── Provider / model selection state ──────────────────────────────
+    let providers: RwSignal<Vec<ProviderInfo>> = RwSignal::new(Vec::new());
+    let models: RwSignal<Vec<ModelInfo>> = RwSignal::new(Vec::new());
+    let models_loading: RwSignal<bool> = RwSignal::new(false);
+
     // Track the agent identity (provider + model). When it changes (e.g.
-    // after saving settings), clear the chat so stale history from a
-    // different provider doesn't confuse the user.
+    // after saving settings or dropdown selection), clear the chat so stale
+    // history from a different provider doesn't confuse the user.
     let agent_identity = Memo::new(move |_| {
         let cfg = config.get();
-        (cfg.agent.provider.clone(), cfg.agent.model.clone())
+        let provider = cfg
+            .agent
+            .providers
+            .get(cfg.agent.selected_provider)
+            .map(|e| e.provider.provider_type().to_string())
+            .unwrap_or_default();
+        let model = cfg.agent.selected_model.clone().unwrap_or_default();
+        (provider, model)
     });
     let prev_identity: RwSignal<Option<(String, String)>> = RwSignal::new(None);
     Effect::new(move |_| {
@@ -47,6 +59,47 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         }
         prev_identity.set(Some(current));
     });
+
+    // Fetch providers list on mount.
+    let app_config = expect_context::<AppCtx>().config;
+    spawn_local(async move {
+        if let Ok(p) = ipc::list_providers().await {
+            providers.set(p);
+        }
+        // Also fetch model list for the currently selected provider.
+        models_loading.set(true);
+        if let Ok(m) = ipc::list_models().await {
+            models.set(m);
+        }
+        models_loading.set(false);
+    });
+
+    let on_provider_change = move |ev: leptos::ev::Event| {
+        let idx: usize = event_target_value(&ev).parse().unwrap_or(0);
+        models.set(Vec::new());
+        models_loading.set(true);
+        spawn_local(async move {
+            if let Ok(new_cfg) = ipc::select_provider(idx).await {
+                app_config.set(new_cfg);
+            }
+            if let Ok(m) = ipc::list_models().await {
+                models.set(m);
+            }
+            models_loading.set(false);
+        });
+    };
+
+    let on_model_change = move |ev: leptos::ev::Event| {
+        let model_id = event_target_value(&ev);
+        if model_id.is_empty() {
+            return;
+        }
+        spawn_local(async move {
+            if let Ok(new_cfg) = ipc::select_model(&model_id).await {
+                app_config.set(new_cfg);
+            }
+        });
+    };
 
     // Register Tauri event listeners once on mount.
     //
@@ -211,12 +264,66 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             class="shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden"
             style:width=move || format!("{}px", width.get())
         >
-            // Header — provider and model
-            <div class="px-3 py-1.5 border-b border-stone-700 text-xs text-stone-500 truncate">
-                {move || {
-                    let (provider, model) = agent_identity.get();
-                    format!("{provider} / {model}")
-                }}
+            // Header — provider and model dropdowns
+            <div class="px-2 py-1.5 border-b border-stone-700 flex items-center gap-1.5">
+                <select
+                    class="bg-transparent text-xs text-stone-400 outline-none cursor-pointer hover:text-stone-200 transition-colors truncate"
+                    prop:disabled=move || is_streaming.get()
+                    on:change=on_provider_change
+                >
+                    {move || {
+                        let cfg = config.get();
+                        let selected = cfg.agent.selected_provider;
+                        providers.get().into_iter().map(|p| {
+                            let idx = p.index;
+                            view! {
+                                <option
+                                    class="bg-stone-800 text-stone-200"
+                                    value=idx.to_string()
+                                    selected=move || idx == selected
+                                >
+                                    {p.display_name.clone()}
+                                </option>
+                            }
+                        }).collect_view()
+                    }}
+                </select>
+                <span class="text-stone-600 text-xs">"/"</span>
+                <select
+                    class="bg-transparent text-xs text-stone-400 outline-none cursor-pointer hover:text-stone-200 transition-colors flex-1 min-w-0 truncate"
+                    prop:disabled=move || is_streaming.get() || models_loading.get()
+                    on:change=on_model_change
+                >
+                    {move || {
+                        let cfg = config.get();
+                        let selected_model = cfg.agent.selected_model.clone().unwrap_or_default();
+                        let model_list = models.get();
+                        if models_loading.get() {
+                            view! {
+                                <option class="bg-stone-800 text-stone-200" value="">"Loading…"</option>
+                            }.into_any()
+                        } else if model_list.is_empty() {
+                            view! {
+                                <option class="bg-stone-800 text-stone-200" value="">"No models"</option>
+                            }.into_any()
+                        } else {
+                            model_list.into_iter().map(|m| {
+                                let is_selected = m.id == selected_model;
+                                let display = m.display_name().to_string();
+                                let id = m.id.clone();
+                                view! {
+                                    <option
+                                        class="bg-stone-800 text-stone-200"
+                                        value=id
+                                        selected=move || is_selected
+                                    >
+                                        {display}
+                                    </option>
+                                }
+                            }).collect_view().into_any()
+                        }
+                    }}
+                </select>
             </div>
             // Message list
             <div

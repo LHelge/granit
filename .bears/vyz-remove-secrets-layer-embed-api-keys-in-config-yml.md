@@ -1,10 +1,10 @@
 ---
 id: vyz
 title: Remove secrets layer, embed API keys in config.yml
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:50:25.337812487Z
-updated: 2026-03-31T21:50:25.337812487Z
+updated: 2026-04-02T12:56:28.106520797Z
 tags:
 - backend
 depends_on:

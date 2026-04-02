@@ -1,10 +1,10 @@
 ---
 id: hq2
 title: 'Backend: list_providers, select_provider, list_models commands'
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:50:51.113842920Z
-updated: 2026-03-31T21:50:51.113842920Z
+updated: 2026-04-02T13:21:44.924875771Z
 tags:
 - backend
 depends_on:

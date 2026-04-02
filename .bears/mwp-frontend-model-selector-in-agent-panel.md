@@ -1,10 +1,10 @@
 ---
 id: mwp
 title: 'Frontend: model selector in agent panel'
-status: open
+status: done
 priority: P1
 created: 2026-03-29T00:06:51.239905836Z
-updated: 2026-03-29T00:06:51.239905836Z
+updated: 2026-04-02T13:45:35.022795767Z
 tags:
 - frontend
 depends_on:

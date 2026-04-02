@@ -1,10 +1,10 @@
 ---
 id: yw5
 title: Update Agent initialization for ProviderConfig enum
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:50:35.286909569Z
-updated: 2026-03-31T21:50:35.286909569Z
+updated: 2026-04-02T12:56:28.112998255Z
 tags:
 - backend
 depends_on:

@@ -1,10 +1,10 @@
 ---
 id: 7q3
 title: Define ProviderConfig enum and update AgentConfig in granit-types
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:50:10.547711304Z
-updated: 2026-03-31T21:50:10.547711304Z
+updated: 2026-04-02T12:36:36.272803271Z
 tags:
 - core
 parent: c56

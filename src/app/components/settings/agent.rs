@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 
 use super::font_picker::FontPicker;
-use super::SettingsForm;
-use crate::app::components::icons::ChevronDownIcon;
+use super::{ProviderFormEntry, SettingsForm};
+use crate::app::components::icons::{ChevronDownIcon, EyeIcon, EyeSlashIcon, PlusIcon, TrashIcon};
 use leptos::prelude::Callback;
 
 #[component]
@@ -12,28 +12,10 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     let font_family = Memo::new(move |_| form.get().agent_font.font_family);
     let font_size = Memo::new(move |_| form.get().agent_font.font_size);
 
-    // When provider changes, reset model to a sensible default
-    let on_provider_change = move |ev: leptos::ev::Event| {
-        let new_provider = event_target_value(&ev);
-        let default_model = match new_provider.as_str() {
-            "ollama" => "qwen3.5:9b",
-            "anthropic" => "claude-sonnet-4-20250514",
-            "mistral" => "mistral-small-latest",
-            "prisma" => "prisma_default",
-            _ => "",
-        };
+    let add_provider = move |_| {
         form.update(|f| {
-            f.provider = new_provider;
-            f.model = default_model.to_string();
+            f.providers.push(ProviderFormEntry::new_default("ollama"));
         });
-    };
-
-    let is_ollama = move || form.get().provider == "ollama";
-    let is_anthropic = move || form.get().provider == "anthropic";
-    let is_prisma = move || form.get().provider == "prisma";
-    let needs_api_key = move || {
-        let p = form.get().provider;
-        p == "anthropic" || p == "mistral" || p == "prisma"
     };
 
     view! {
@@ -71,91 +53,183 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
             <hr class="border-stone-600" />
 
-            // Provider selector
-            <div class="space-y-1">
-                <label class="block text-xs text-stone-400" for="settings-provider">"Provider"</label>
-                <div class="relative">
-                    <select
-                        id="settings-provider"
-                        class="w-full appearance-none bg-stone-900 border border-stone-600 rounded px-3 py-1.5 pr-8 text-sm text-stone-200 outline-none focus:border-stone-400 transition-colors cursor-pointer"
-                        on:change=on_provider_change
-                        prop:value=move || form.get().provider
-                    >
-                        <option class="bg-stone-900 text-stone-200" value="ollama" selected=is_ollama>"Ollama"</option>
-                        <option class="bg-stone-900 text-stone-200" value="anthropic" selected=is_anthropic>"Anthropic"</option>
-                        <option class="bg-stone-900 text-stone-200" value="mistral" selected=move || form.get().provider == "mistral">"Mistral"</option>
-                        <option class="bg-stone-900 text-stone-200" value="prisma" selected=is_prisma>"Prisma"</option>
-                    </select>
-                    <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
-                </div>
+            // Provider list header
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold uppercase tracking-wider text-stone-400">"Providers"</span>
+                <button
+                    type="button"
+                    class="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors"
+                    on:click=add_provider
+                >
+                    <PlusIcon />
+                    "Add"
+                </button>
             </div>
 
-            // Model name (always shown)
-            <div class="space-y-1">
-                <label class="block text-xs text-stone-400" for="settings-model">"Model"</label>
+            // Provider entries
+            {move || {
+                let count = form.get().providers.len();
+                (0..count).map(|idx| {
+                    view! { <ProviderRow form=form index=idx /> }
+                }).collect_view()
+            }}
+
+            <Show when=move || form.get().providers.is_empty()>
+                <p class="text-xs text-stone-500 italic">"No providers configured. Click Add to create one."</p>
+            </Show>
+        </fieldset>
+    }
+}
+
+/// A single provider editor row.
+#[component]
+fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
+    let (show_key, set_show_key) = signal(false);
+
+    let provider_type = move || {
+        form.get()
+            .providers
+            .get(index)
+            .map(|p| p.provider_type.clone())
+            .unwrap_or_default()
+    };
+    let needs_api_key = move || {
+        form.get()
+            .providers
+            .get(index)
+            .map(|p| p.needs_api_key())
+            .unwrap_or(false)
+    };
+    let needs_base_url = move || {
+        form.get()
+            .providers
+            .get(index)
+            .map(|p| p.needs_base_url())
+            .unwrap_or(false)
+    };
+    let type_label = move || {
+        form.get()
+            .providers
+            .get(index)
+            .map(|p| p.type_label().to_string())
+            .unwrap_or_default()
+    };
+
+    let on_type_change = move |ev: leptos::ev::Event| {
+        let new_type = event_target_value(&ev);
+        form.update(|f| {
+            if let Some(p) = f.providers.get_mut(index) {
+                p.provider_type = new_type;
+                p.api_key.clear();
+                p.base_url.clear();
+            }
+        });
+    };
+
+    let on_name_input = move |ev: leptos::ev::Event| {
+        let val = event_target_value(&ev);
+        form.update(|f| {
+            if let Some(p) = f.providers.get_mut(index) {
+                p.name = val;
+            }
+        });
+    };
+
+    let on_base_url_input = move |ev: leptos::ev::Event| {
+        let val = event_target_value(&ev);
+        form.update(|f| {
+            if let Some(p) = f.providers.get_mut(index) {
+                p.base_url = val;
+            }
+        });
+    };
+
+    let on_api_key_input = move |ev: leptos::ev::Event| {
+        let val = event_target_value(&ev);
+        form.update(|f| {
+            if let Some(p) = f.providers.get_mut(index) {
+                p.api_key = val;
+            }
+        });
+    };
+
+    let on_remove = move |_| {
+        form.update(|f| {
+            if index < f.providers.len() {
+                f.providers.remove(index);
+            }
+        });
+    };
+
+    view! {
+        <div class="border border-stone-700 rounded p-2.5 space-y-2 bg-stone-800/40">
+            // Top row: type selector + name + remove button
+            <div class="flex items-center gap-2">
+                <div class="relative shrink-0">
+                    <select
+                        class="appearance-none bg-stone-900 border border-stone-600 rounded px-2 py-1 pr-7 text-xs text-stone-200 outline-none focus:border-stone-400 transition-colors cursor-pointer"
+                        on:change=on_type_change
+                        prop:value=provider_type
+                    >
+                        <option class="bg-stone-900" value="ollama" selected=move || provider_type() == "ollama">"Ollama"</option>
+                        <option class="bg-stone-900" value="anthropic" selected=move || provider_type() == "anthropic">"Anthropic"</option>
+                        <option class="bg-stone-900" value="mistral" selected=move || provider_type() == "mistral">"Mistral"</option>
+                        <option class="bg-stone-900" value="prisma" selected=move || provider_type() == "prisma">"Prisma"</option>
+                    </select>
+                    <ChevronDownIcon class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
+                </div>
                 <input
-                    id="settings-model"
                     type="text"
-                    class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                    placeholder=move || match form.get().provider.as_str() {
-                        "ollama" => "qwen3.5:9b".to_string(),
-                        "anthropic" => "claude-sonnet-4-20250514".to_string(),
-                        "mistral" => "mistral-small-latest".to_string(),
-                        "prisma" => "prisma_default".to_string(),
-                        _ => String::new(),
-                    }
-                    prop:value=move || form.get().model
-                    on:input=move |ev| form.update(|f| f.model = event_target_value(&ev))
+                    class="flex-1 min-w-0 bg-stone-900 border border-stone-600 rounded px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                    placeholder=move || format!("Name (default: {})", type_label())
+                    prop:value=move || form.get().providers.get(index).map(|p| p.name.clone()).unwrap_or_default()
+                    on:input=on_name_input
                 />
+                <button
+                    type="button"
+                    class="shrink-0 p-1 rounded text-stone-500 hover:text-red-400 hover:bg-stone-700 transition-colors"
+                    title="Remove provider"
+                    on:click=on_remove
+                >
+                    <TrashIcon />
+                </button>
             </div>
 
             // Base URL (Ollama only)
-            <Show when=is_ollama>
-                <div class="space-y-1">
-                    <label class="block text-xs text-stone-400" for="settings-base-url">"Base URL"</label>
-                    <input
-                        id="settings-base-url"
-                        type="text"
-                        class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                        placeholder="http://localhost:11434"
-                        prop:value=move || form.get().base_url
-                        on:input=move |ev| form.update(|f| f.base_url = event_target_value(&ev))
-                    />
-                    <p class="text-xs text-stone-500">"Leave blank to use the default (http://localhost:11434)"</p>
-                </div>
+            <Show when=needs_base_url>
+                <input
+                    type="text"
+                    class="w-full bg-stone-900 border border-stone-600 rounded px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                    placeholder="Base URL (default: http://localhost:11434)"
+                    prop:value=move || form.get().providers.get(index).map(|p| p.base_url.clone()).unwrap_or_default()
+                    on:input=on_base_url_input
+                />
             </Show>
 
-            // API key (Anthropic and Mistral)
+            // API key (Anthropic, Mistral, Prisma)
             <Show when=needs_api_key>
-                <div class="space-y-1">
-                    <label class="block text-xs text-stone-400" for="settings-api-key">"API Key"</label>
+                <div class="flex items-center gap-1">
                     <input
-                        id="settings-api-key"
-                        type="password"
-                        class="w-full bg-stone-900 border border-stone-600 rounded px-3 py-1.5 text-sm text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
-                        placeholder=move || {
-                            if form.get().api_key_is_set {
-                                "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022} (configured)"
-                            } else {
-                                match form.get().provider.as_str() {
-                                    "anthropic" => "sk-ant-...",
-                                    "prisma" => "Enter Prisma API key",
-                                    _ => "Enter API key",
-                                }
-                            }
-                        }
-                        prop:value=move || form.get().api_key
-                        on:input=move |ev| form.update(|f| f.api_key = event_target_value(&ev))
+                        type=move || if show_key.get() { "text" } else { "password" }
+                        class="flex-1 min-w-0 bg-stone-900 border border-stone-600 rounded px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors font-mono"
+                        placeholder="API key"
+                        prop:value=move || form.get().providers.get(index).map(|p| p.api_key.clone()).unwrap_or_default()
+                        on:input=on_api_key_input
                     />
-                    <p class="text-xs text-stone-500">
-                        {move || if form.get().api_key_is_set {
-                            "Key is configured. Enter a new value to replace it."
+                    <button
+                        type="button"
+                        class="shrink-0 p-1 rounded text-stone-500 hover:text-stone-200 transition-colors"
+                        title=move || if show_key.get() { "Hide API key" } else { "Show API key" }
+                        on:click=move |_| set_show_key.update(|v| *v = !*v)
+                    >
+                        {move || if show_key.get() {
+                            view! { <EyeSlashIcon /> }.into_any()
                         } else {
-                            "Stored in secrets.env, never in config.yml."
+                            view! { <EyeIcon /> }.into_any()
                         }}
-                    </p>
+                    </button>
                 </div>
             </Show>
-        </fieldset>
+        </div>
     }
 }

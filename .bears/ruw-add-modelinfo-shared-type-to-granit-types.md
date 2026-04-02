@@ -1,10 +1,10 @@
 ---
 id: ruw
 title: Add ModelInfo shared type to granit-types
-status: open
+status: done
 priority: P1
 created: 2026-03-29T00:06:28.789991735Z
-updated: 2026-03-29T00:06:28.789991735Z
+updated: 2026-04-02T12:36:36.276530436Z
 tags:
 - core
 parent: xd5

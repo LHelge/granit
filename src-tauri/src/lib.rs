@@ -8,14 +8,13 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, Note, NoteMeta};
-use config::{AgentConfig, AppConfig, ConfigError, Secrets, SidebarConfig};
-use granit_types::{AppConfig as IpcConfig, FontConfig, RenderedNote};
+use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
+use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote};
 
 struct AppState {
     config: Mutex<AppConfig>,
     cave: SharedCave,
     agent: Mutex<Option<Agent>>,
-    secrets: Mutex<Secrets>,
 }
 
 impl AppState {
@@ -29,10 +28,6 @@ impl AppState {
 
     fn lock_agent(&self) -> Result<std::sync::MutexGuard<'_, Option<Agent>>, AgentError> {
         self.agent.lock().map_err(|_| AgentError::Poisoned)
-    }
-
-    fn lock_secrets(&self) -> Result<std::sync::MutexGuard<'_, Secrets>, ConfigError> {
-        self.secrets.lock().map_err(|_| ConfigError::Poisoned)
     }
 
     /// Get the path of the currently open cave, if any.
@@ -51,23 +46,18 @@ impl AppState {
         Ok(())
     }
 
-    /// Reset the agent so it rebuilds with new config/secrets on next use.
+    /// Reset the agent so it rebuilds with new config on next use.
     fn reset_agent(&self) -> Result<(), ConfigError> {
         *self.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
         Ok(())
     }
 
-    /// Ensure the agent is initialized from current config and secrets.
+    /// Ensure the agent is initialized from current config.
     fn ensure_agent(&self) -> Result<(), AgentError> {
         let mut guard = self.lock_agent()?;
         if guard.is_none() {
             let config = self.config.lock().map_err(|_| AgentError::Poisoned)?;
-            let secrets = self.secrets.lock().map_err(|_| AgentError::Poisoned)?;
-            *guard = Some(Agent::from_config(
-                &config.agent,
-                &secrets,
-                self.cave.clone(),
-            )?);
+            *guard = Some(Agent::from_config(&config.agent, self.cave.clone())?);
         }
         Ok(())
     }
@@ -143,14 +133,10 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, 
     // Reload config with cave overrides
     let new_config = AppConfig::load(Some(&path))?;
 
-    // Reload secrets with cave layer
-    let new_secrets = config::load_secrets(Some(&path))?;
-    *state.lock_secrets()? = new_secrets;
-
     // Open the cave
     state.set_cave(Some(Cave::open(path.clone())?))?;
 
-    // Reset agent so it rebuilds with new config/secrets on next message
+    // Reset agent so it rebuilds with new config on next message
     state.reset_agent()?;
 
     // Update in-memory config with the merged (global + cave) values
@@ -320,6 +306,76 @@ fn set_active_note(slug: Option<String>, state: tauri::State<AppState>) -> Resul
 }
 
 #[tauri::command]
+fn list_providers(
+    state: tauri::State<AppState>,
+) -> Result<Vec<granit_types::ProviderInfo>, ConfigError> {
+    let config = state.lock_config()?;
+    Ok(config
+        .agent
+        .providers
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| granit_types::ProviderInfo {
+            index: i,
+            display_name: entry.display_name(),
+            provider_type: entry.provider.provider_type().to_string(),
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+    let mut config = state.lock_config()?;
+    if index >= config.agent.providers.len() {
+        return Err(ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Provider index {index} out of range"),
+        )));
+    }
+    config.agent.selected_provider = index;
+    config.agent.selected_model = None;
+    config.save_global()?;
+    state.reset_agent()?;
+    let mut ipc = config.to_ipc();
+    ipc.active_cave = state
+        .active_cave_path()?
+        .map(|p| p.to_string_lossy().into_owned());
+    Ok(ipc)
+}
+
+#[tauri::command]
+async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>, AgentError> {
+    let provider = {
+        let config = state.config.lock().map_err(|_| AgentError::Poisoned)?;
+        if config.agent.providers.is_empty() {
+            return Err(AgentError::NoProviders);
+        }
+        let entry = config
+            .agent
+            .providers
+            .get(config.agent.selected_provider)
+            .ok_or(AgentError::ProviderIndexOutOfRange(
+                config.agent.selected_provider,
+            ))?;
+        entry.provider.clone()
+    };
+    agent::list_models(&provider).await
+}
+
+#[tauri::command]
+fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+    let mut config = state.lock_config()?;
+    config.agent.selected_model = Some(model_id);
+    config.save_global()?;
+    state.reset_agent()?;
+    let mut ipc = config.to_ipc();
+    ipc.active_cave = state
+        .active_cave_path()?
+        .map(|p| p.to_string_lossy().into_owned());
+    Ok(ipc)
+}
+
+#[tauri::command]
 async fn send_message(
     msg: String,
     app: tauri::AppHandle,
@@ -379,34 +435,9 @@ async fn send_message(
     Ok(())
 }
 
-#[tauri::command]
-fn get_secret(key: String, state: tauri::State<AppState>) -> Result<Option<bool>, ConfigError> {
-    let secrets = state.lock_secrets()?;
-    // Return whether the key is set, never the actual value
-    Ok(secrets.get(&key).map(|_| true))
-}
-
-#[tauri::command]
-fn set_secret(
-    key: String,
-    value: String,
-    state: tauri::State<AppState>,
-) -> Result<(), ConfigError> {
-    config::validate_secret_value(&value)?;
-    config::write_global_secret(&key, &value)?;
-    // Reload secrets so the in-memory state is up to date
-    let cave_path = state.active_cave_path()?;
-    let new_secrets = config::load_secrets(cave_path.as_deref())?;
-    *state.lock_secrets()? = new_secrets;
-    // Reset agent so it picks up the new secret
-    state.reset_agent()?;
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = AppConfig::ensure_global().expect("failed to initialize config");
-    let secrets = config::load_secrets(None).expect("failed to load secrets");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -415,7 +446,6 @@ pub fn run() {
             config: Mutex::new(config),
             cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
-            secrets: Mutex::new(secrets),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -439,9 +469,11 @@ pub fn run() {
             render_note,
             render_markdown,
             set_active_note,
+            list_providers,
+            select_provider,
+            list_models,
+            select_model,
             send_message,
-            get_secret,
-            set_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

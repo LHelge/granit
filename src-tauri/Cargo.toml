@@ -23,7 +23,6 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6.0.0"
-dotenvy = "0.15.7"
 thiserror = "2.0.18"
 serde_yml = "0.0.12"
 tauri-plugin-dialog = "2.6.0"
@@ -31,10 +30,9 @@ granit-types = { path = "../granit-types" }
 pulldown-cmark = "0.13.3"
 chrono = { version = "0.4.44", features = ["serde"] }
 tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
-rig-core = "0.33.0"
+rig-core = { version = "0.34.0", path = "../../rig/rig/rig-core" }
 futures = "0.3.32"
 font-kit = "0.14.3"
 
 [dev-dependencies]
 tempfile = "3.27.0"
-

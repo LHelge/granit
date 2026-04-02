@@ -1,10 +1,10 @@
 ---
 id: as6
 title: 'Frontend: provider + model selector dropdowns in agent panel'
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:51:02.877202626Z
-updated: 2026-03-31T21:51:02.877202626Z
+updated: 2026-04-02T13:45:35.018172890Z
 tags:
 - frontend
 depends_on:
