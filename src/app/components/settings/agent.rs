@@ -2,7 +2,9 @@ use leptos::prelude::*;
 
 use super::font_picker::FontPicker;
 use super::{ProviderFormEntry, SettingsForm};
-use crate::app::components::icons::{ChevronDownIcon, EyeIcon, EyeSlashIcon, PlusIcon, TrashIcon};
+use crate::app::components::icons::{
+    ChevronDownIcon, EyeIcon, EyeSlashIcon, PlusIcon, ProviderIcon, TrashIcon,
+};
 use leptos::prelude::Callback;
 
 #[component]
@@ -85,6 +87,15 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 #[component]
 fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
     let (show_key, set_show_key) = signal(false);
+    let (type_open, set_type_open) = signal(false);
+
+    /// All available provider types with labels.
+    const PROVIDER_TYPES: &[(&str, &str)] = &[
+        ("ollama", "Ollama"),
+        ("anthropic", "Anthropic"),
+        ("mistral", "Mistral"),
+        ("prisma", "Prisma"),
+    ];
 
     let provider_type = move || {
         form.get()
@@ -115,8 +126,9 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
             .unwrap_or_default()
     };
 
-    let on_type_change = move |ev: leptos::ev::Event| {
-        let new_type = event_target_value(&ev);
+    let on_type_select = move |new_type: &str| {
+        let new_type = new_type.to_string();
+        set_type_open.set(false);
         form.update(|f| {
             if let Some(p) = f.providers.get_mut(index) {
                 p.provider_type = new_type;
@@ -166,17 +178,35 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
             // Top row: type selector + name + remove button
             <div class="flex items-center gap-2">
                 <div class="relative shrink-0">
-                    <select
-                        class="appearance-none bg-stone-900 border border-stone-600 rounded px-2 py-1 pr-7 text-xs text-stone-200 outline-none focus:border-stone-400 transition-colors cursor-pointer"
-                        on:change=on_type_change
-                        prop:value=provider_type
+                    <button
+                        type="button"
+                        class="flex items-center gap-1.5 px-2 py-1 text-xs bg-stone-900 border border-stone-600 rounded hover:border-stone-500 transition-colors text-stone-200 cursor-pointer"
+                        on:click=move |_| set_type_open.update(|v| *v = !*v)
                     >
-                        <option class="bg-stone-900" value="ollama" selected=move || provider_type() == "ollama">"Ollama"</option>
-                        <option class="bg-stone-900" value="anthropic" selected=move || provider_type() == "anthropic">"Anthropic"</option>
-                        <option class="bg-stone-900" value="mistral" selected=move || provider_type() == "mistral">"Mistral"</option>
-                        <option class="bg-stone-900" value="prisma" selected=move || provider_type() == "prisma">"Prisma"</option>
-                    </select>
-                    <ChevronDownIcon class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-400" />
+                        <ProviderIcon provider_type=Signal::derive(provider_type) class="w-3.5 h-3.5 shrink-0" />
+                        <span>{move || PROVIDER_TYPES.iter().find(|(k, _)| *k == provider_type()).map(|(_, l)| *l).unwrap_or("Select")}</span>
+                        <ChevronDownIcon class="w-3 h-3 shrink-0 text-stone-400" open=Signal::derive(move || type_open.get()) />
+                    </button>
+                    <Show when=move || type_open.get()>
+                        <div class="absolute top-full left-0 mt-1 bg-stone-800 border border-stone-600 rounded shadow-lg z-50 min-w-[10rem]">
+                            {PROVIDER_TYPES.iter().map(|(ptype, label)| {
+                                let ptype_str = *ptype;
+                                let label_str = *label;
+                                let ptype_owned = ptype.to_string();
+                                view! {
+                                    <button
+                                        type="button"
+                                        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors"
+                                        class=("bg-stone-700/50", move || provider_type() == ptype_str)
+                                        on:click=move |_| on_type_select(ptype_str)
+                                    >
+                                        <ProviderIcon provider_type=Signal::stored(ptype_owned.clone()) class="w-3.5 h-3.5 shrink-0" />
+                                        {label_str}
+                                    </button>
+                                }
+                            }).collect_view()}
+                        </div>
+                    </Show>
                 </div>
                 <input
                     type="text"

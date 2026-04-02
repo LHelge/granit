@@ -2,6 +2,7 @@ mod agent_panel;
 mod cave_selector;
 pub(crate) mod editor;
 pub mod icons;
+mod provider_selector;
 mod settings;
 mod sidebar;
 mod tree_view;

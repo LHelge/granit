@@ -1,3 +1,4 @@
+use crate::app::components::provider_selector::ProviderSelector;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use granit_types::{ChatMessage, ChatRole, ModelInfo, ProviderInfo, ToolCallInfo};
@@ -74,14 +75,10 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         models_loading.set(false);
     });
 
-    let on_provider_change = move |ev: leptos::ev::Event| {
-        let idx: usize = event_target_value(&ev).parse().unwrap_or(0);
+    let on_provider_changed = move || {
         models.set(Vec::new());
         models_loading.set(true);
         spawn_local(async move {
-            if let Ok(new_cfg) = ipc::select_provider(idx).await {
-                app_config.set(new_cfg);
-            }
             if let Ok(m) = ipc::list_models().await {
                 models.set(m);
             }
@@ -264,66 +261,13 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             class="shrink-0 bg-stone-850 border-l border-stone-700 flex flex-col overflow-hidden"
             style:width=move || format!("{}px", width.get())
         >
-            // Header — provider and model dropdowns
-            <div class="px-2 py-1.5 border-b border-stone-700 flex items-center gap-1.5">
-                <select
-                    class="bg-transparent text-xs text-stone-400 outline-none cursor-pointer hover:text-stone-200 transition-colors truncate"
-                    prop:disabled=move || is_streaming.get()
-                    on:change=on_provider_change
-                >
-                    {move || {
-                        let cfg = config.get();
-                        let selected = cfg.agent.selected_provider;
-                        providers.get().into_iter().map(|p| {
-                            let idx = p.index;
-                            view! {
-                                <option
-                                    class="bg-stone-800 text-stone-200"
-                                    value=idx.to_string()
-                                    selected=move || idx == selected
-                                >
-                                    {p.display_name.clone()}
-                                </option>
-                            }
-                        }).collect_view()
-                    }}
-                </select>
-                <span class="text-stone-600 text-xs">"/"</span>
-                <select
-                    class="bg-transparent text-xs text-stone-400 outline-none cursor-pointer hover:text-stone-200 transition-colors flex-1 min-w-0 truncate"
-                    prop:disabled=move || is_streaming.get() || models_loading.get()
-                    on:change=on_model_change
-                >
-                    {move || {
-                        let cfg = config.get();
-                        let selected_model = cfg.agent.selected_model.clone().unwrap_or_default();
-                        let model_list = models.get();
-                        if models_loading.get() {
-                            view! {
-                                <option class="bg-stone-800 text-stone-200" value="">"Loading…"</option>
-                            }.into_any()
-                        } else if model_list.is_empty() {
-                            view! {
-                                <option class="bg-stone-800 text-stone-200" value="">"No models"</option>
-                            }.into_any()
-                        } else {
-                            model_list.into_iter().map(|m| {
-                                let is_selected = m.id == selected_model;
-                                let display = m.display_name().to_string();
-                                let id = m.id.clone();
-                                view! {
-                                    <option
-                                        class="bg-stone-800 text-stone-200"
-                                        value=id
-                                        selected=move || is_selected
-                                    >
-                                        {display}
-                                    </option>
-                                }
-                            }).collect_view().into_any()
-                        }
-                    }}
-                </select>
+            // Header — provider selector
+            <div class="px-2 py-1.5 border-b border-stone-700 flex items-center">
+                <ProviderSelector
+                    providers=providers
+                    disabled=Signal::derive(move || is_streaming.get())
+                    on_changed=on_provider_changed
+                />
             </div>
             // Message list
             <div
@@ -409,31 +353,72 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 </Show>
             </div>
 
-            // Input
-            <form
-                class="p-2 border-t border-stone-700"
-                on:submit=on_submit
-            >
-                <div class="flex gap-2">
-                    <input
-                        type="text"
-                        style:font-family=move || config.get().agent_font.font_family
-                        style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                        class="flex-1 min-w-0 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
-                        placeholder="Message..."
-                        prop:value=move || input.get()
-                        prop:disabled=move || is_streaming.get()
-                        on:input=move |ev| set_input.set(event_target_value(&ev))
-                    />
-                    <button
-                        type="submit"
-                        class="shrink-0 px-3 py-1.5 bg-stone-700 text-stone-300 rounded text-sm hover:bg-stone-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        prop:disabled=move || is_streaming.get()
+            // Input area with model selector
+            <div class="border-t border-stone-700">
+                // Model selector row
+                <div class="px-2 pt-1.5">
+                    <select
+                        class="appearance-none bg-stone-800 border border-stone-600 rounded px-2 py-0.5 pr-6 text-xs text-stone-400 outline-none hover:text-stone-200 hover:border-stone-500 focus:border-stone-400 transition-colors cursor-pointer disabled:opacity-50"
+                        prop:disabled=move || is_streaming.get() || models_loading.get()
+                        on:change=on_model_change
                     >
-                        {move || if is_streaming.get() { "..." } else { "Send" }}
-                    </button>
+                        {move || {
+                            let cfg = config.get();
+                            let selected_model = cfg.agent.selected_model.clone().unwrap_or_default();
+                            let model_list = models.get();
+                            if models_loading.get() {
+                                view! {
+                                    <option class="bg-stone-800 text-stone-200" value="">"Loading…"</option>
+                                }.into_any()
+                            } else if model_list.is_empty() {
+                                view! {
+                                    <option class="bg-stone-800 text-stone-200" value="">"No models"</option>
+                                }.into_any()
+                            } else {
+                                model_list.into_iter().map(|m| {
+                                    let is_selected = m.id == selected_model;
+                                    let display = m.display_name().to_string();
+                                    let id = m.id.clone();
+                                    view! {
+                                        <option
+                                            class="bg-stone-800 text-stone-200"
+                                            value=id
+                                            selected=move || is_selected
+                                        >
+                                            {display}
+                                        </option>
+                                    }
+                                }).collect_view().into_any()
+                            }
+                        }}
+                    </select>
                 </div>
-            </form>
+                // Message input row
+                <form
+                    class="p-2"
+                    on:submit=on_submit
+                >
+                    <div class="flex gap-2">
+                        <input
+                            type="text"
+                            style:font-family=move || config.get().agent_font.font_family
+                            style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+                            class="flex-1 min-w-0 bg-stone-800 border border-stone-600 rounded px-3 py-1.5 text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors disabled:opacity-50"
+                            placeholder="Message..."
+                            prop:value=move || input.get()
+                            prop:disabled=move || is_streaming.get()
+                            on:input=move |ev| set_input.set(event_target_value(&ev))
+                        />
+                        <button
+                            type="submit"
+                            class="shrink-0 px-3 py-1.5 bg-stone-700 text-stone-300 rounded text-sm hover:bg-stone-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            prop:disabled=move || is_streaming.get()
+                        >
+                            {move || if is_streaming.get() { "..." } else { "Send" }}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </aside>
     }
 }
