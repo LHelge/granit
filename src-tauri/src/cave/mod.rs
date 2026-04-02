@@ -344,11 +344,14 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
             .clone();
 
-        let content = std::fs::read_to_string(&abs_path)?;
-        if !content.contains(old_text) {
+        let raw = std::fs::read_to_string(&abs_path)?;
+        let body = crate::markdown::strip_frontmatter(&raw);
+        if !body.contains(old_text) {
             return Err(CaveError::EditNotFound);
         }
-        let new_content = content.replacen(old_text, new_text, 1);
+        let new_body = body.replacen(old_text, new_text, 1);
+        let new_content =
+            crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None);
         std::fs::write(&abs_path, &new_content)?;
 
         let rel = self.relative_path(&abs_path);

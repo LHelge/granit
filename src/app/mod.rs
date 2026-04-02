@@ -24,6 +24,7 @@ pub struct AppError {
 pub struct AppCtx {
     pub config: RwSignal<AppConfig>,
     pub notes: RwSignal<Vec<NoteMeta>>,
+    pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<Note>>,
     pub is_mac: bool,
     errors: RwSignal<Vec<AppError>>,
@@ -85,6 +86,7 @@ pub fn App() -> impl IntoView {
     let ctx = AppCtx {
         config: RwSignal::new(AppConfig::default()),
         notes: RwSignal::new(Vec::<NoteMeta>::new()),
+        folders: RwSignal::new(Vec::<String>::new()),
         active_note: RwSignal::new(None::<Note>),
         is_mac,
         errors: RwSignal::new(Vec::new()),
@@ -98,6 +100,35 @@ pub fn App() -> impl IntoView {
         let slug = ctx.active_note.get().map(|n| n.meta.slug.clone());
         leptos::task::spawn_local(async move {
             let _ = ipc::set_active_note(slug.as_deref()).await;
+        });
+    });
+
+    // Listen for cave mutations (from agent tools or other sources) and
+    // refresh notes, folders, and the active note. Registered at the app
+    // root so the listener is always alive regardless of panel visibility.
+    Effect::new(move |_| {
+        leptos::task::spawn_local(async move {
+            let _handle = ipc::listen_event_simple("cave:notes-changed", move || {
+                leptos::task::spawn_local(async move {
+                    if let Ok(notes) = ipc::fetch_notes().await {
+                        if let Some(active) = ctx.active_note.get_untracked() {
+                            if !notes.iter().any(|n| n.slug == active.meta.slug) {
+                                ctx.active_note.set(None);
+                            } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
+                                ctx.active_note.set(Some(note));
+                            }
+                        }
+                        ctx.notes.set(notes);
+                    }
+                    if let Ok(folders) = ipc::fetch_folders().await {
+                        ctx.folders.set(folders);
+                    }
+                });
+            })
+            .await;
+
+            // Keep handle alive forever (app root never unmounts).
+            std::future::pending::<()>().await;
         });
     });
 
@@ -127,6 +158,9 @@ pub fn App() -> impl IntoView {
                             ctx.clear_source("notes");
                             ctx.push_error("notes", e);
                         }
+                    }
+                    if let Ok(f) = ipc::fetch_folders().await {
+                        ctx.folders.set(f);
                     }
                 }
                 Err(e) => {

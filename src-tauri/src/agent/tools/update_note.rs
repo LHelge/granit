@@ -32,7 +32,7 @@ impl Tool for UpdateNoteTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "update_note".to_string(),
-            description: "Update the content of an existing note by slug. Overwrites the note body while preserving frontmatter.".to_string(),
+            description: "Update the content of an existing note by slug. Overwrites the note body. Frontmatter is managed automatically — do not include it.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -42,7 +42,7 @@ impl Tool for UpdateNoteTool {
                     },
                     "content": {
                         "type": "string",
-                        "description": "The new markdown content for the note"
+                        "description": "The new markdown body (no frontmatter)"
                     }
                 },
                 "required": ["slug", "content"]

@@ -149,8 +149,11 @@ pub fn rebuild_with_frontmatter(
     if let Some(tags) = tags {
         fm.tags = tags;
     }
+    // Strip any frontmatter the caller may have included in new_body to
+    // avoid duplication (e.g. agent tools sending full-file content).
+    let (_, body) = extract_frontmatter(new_body);
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
-    format!("---\n{yaml}---\n{new_body}")
+    format!("---\n{yaml}---\n{body}")
 }
 
 /// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.

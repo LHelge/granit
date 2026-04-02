@@ -15,8 +15,11 @@ use rig::tool::ToolDyn;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
-const DEFAULT_SYSTEM_PROMPT: &str =
-    "You are a helpful assistant integrated into Granit, a personal note-taking app.";
+const DEFAULT_SYSTEM_PROMPT: &str = r#"You are a helpful assistant integrated into Granit, a personal note-taking app. 
+The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
+You can link the user to existing notes by using wiki-style links like [[slug]]. 
+You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
+Be mindful that edits should only replace text in the body of the note, not the frontmatter."#;
 
 /// Provider-agnostic agent wrapping different rig-core agent types.
 pub(crate) enum ProviderAgent {
@@ -214,20 +217,21 @@ impl Agent {
 
         fn map_item<R>(item: rig::agent::MultiTurnStreamItem<R>) -> AgentStreamItem {
             use rig::agent::MultiTurnStreamItem;
-            use rig::streaming::StreamedAssistantContent;
+            use rig::streaming::{StreamedAssistantContent, StreamedUserContent};
 
             match item {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(t)) => {
                     AgentStreamItem::Text(t.text)
                 }
-                MultiTurnStreamItem::StreamAssistantItem(
-                    StreamedAssistantContent::ToolCall {
-                        tool_call,
-                        ..
-                    },
-                ) => AgentStreamItem::ToolCall(ToolCallInfo {
+                MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall {
+                    tool_call,
+                    ..
+                }) => AgentStreamItem::ToolCall(ToolCallInfo {
                     name: tool_call.function.name.clone(),
                 }),
+                MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult { .. }) => {
+                    AgentStreamItem::ToolResult
+                }
                 MultiTurnStreamItem::FinalResponse(_) => AgentStreamItem::Done,
                 _ => AgentStreamItem::Other,
             }
@@ -294,6 +298,8 @@ impl Agent {
 pub enum AgentStreamItem {
     Text(String),
     ToolCall(ToolCallInfo),
+    /// A tool has finished executing (used to trigger cave refresh).
+    ToolResult,
     Done,
     Other,
 }
@@ -322,7 +328,8 @@ impl AgentStream {
                     full_response.push_str(&text);
                     on_chunk(&text);
                 }
-                Some(Ok(item @ AgentStreamItem::ToolCall(_))) => {
+                Some(Ok(item @ AgentStreamItem::ToolCall(_)))
+                | Some(Ok(item @ AgentStreamItem::ToolResult)) => {
                     on_tool(item);
                 }
                 Some(Ok(AgentStreamItem::Done)) | None => break,
