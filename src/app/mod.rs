@@ -6,7 +6,18 @@ pub(crate) mod ipc;
 use components::editor::EditOpen;
 use components::icons::{PanelLeftIcon, PanelRightIcon};
 use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
-use granit_types::{AppConfig, Note, NoteMeta};
+use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
+
+// ── Sidebar resize constants ───────────────────────────────────────
+
+const MIN_SIDEBAR_W: u16 = 180;
+const MAX_SIDEBAR_W: u16 = 600;
+
+#[derive(Clone, Copy)]
+enum ResizeTarget {
+    Sidebar,
+    Agent,
+}
 
 // ── App-wide shared state via context ──────────────────────────────
 
@@ -75,7 +86,9 @@ impl AppCtx {
 #[component]
 pub fn App() -> impl IntoView {
     let (sidebar_visible, set_sidebar_visible) = signal(true);
+    let (sidebar_width, set_sidebar_width) = signal(256u16);
     let (agent_visible, set_agent_visible) = signal(false);
+    let (agent_width, set_agent_width) = signal(320u16);
     let (settings_open, set_settings_open) = signal(false);
 
     let is_mac = web_sys::window()
@@ -142,6 +155,11 @@ pub fn App() -> impl IntoView {
             }
         };
         let recent = cfg.recent_caves.first().cloned();
+        // Apply persisted sidebar state
+        set_sidebar_visible.set(cfg.sidebar.visible);
+        set_sidebar_width.set(cfg.sidebar.width);
+        set_agent_visible.set(cfg.agent_panel.visible);
+        set_agent_width.set(cfg.agent_panel.width);
         ctx.config.set(cfg);
 
         // Re-open the last cave so the backend has a cave_path set
@@ -170,14 +188,90 @@ pub fn App() -> impl IntoView {
         }
     });
 
-    let toggle_sidebar = move |_| set_sidebar_visible.update(|v| *v = !*v);
-    let toggle_agent = move |_| set_agent_visible.update(|v| *v = !*v);
+    // Persist sidebar visibility / width to the backend config.
+    let persist_sidebar_state = move || {
+        let sb = SidebarConfig {
+            visible: sidebar_visible.get_untracked(),
+            width: sidebar_width.get_untracked(),
+        };
+        let ap = SidebarConfig {
+            visible: agent_visible.get_untracked(),
+            width: agent_width.get_untracked(),
+        };
+        leptos::task::spawn_local(async move {
+            let _ = ipc::save_sidebar_state(sb, ap).await;
+        });
+    };
+
+    let toggle_sidebar = move |_| {
+        set_sidebar_visible.update(|v| *v = !*v);
+        persist_sidebar_state();
+    };
+    let toggle_agent = move |_| {
+        set_agent_visible.update(|v| *v = !*v);
+        persist_sidebar_state();
+    };
 
     // macOS needs extra left margin for traffic-light window buttons
     let title_margin = if ctx.is_mac { "ml-16" } else { "ml-2" };
 
+    // ── Resize logic ───────────────────────────────────────────────
+    // Which panel is being resized (if any).
+    let (resizing, set_resizing) = signal(None::<ResizeTarget>);
+
+    let on_global_mousemove = move |ev: web_sys::MouseEvent| {
+        let Some(target) = resizing.get_untracked() else {
+            return;
+        };
+        let x = ev.client_x() as u16;
+        match target {
+            ResizeTarget::Sidebar => {
+                let w = x.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W);
+                set_sidebar_width.set(w);
+            }
+            ResizeTarget::Agent => {
+                // Agent width = viewport width - mouse x
+                let vw = web_sys::window()
+                    .and_then(|w| w.inner_width().ok())
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1024.0) as u16;
+                let w = vw.saturating_sub(x).clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W);
+                set_agent_width.set(w);
+            }
+        }
+    };
+
+    let on_global_mouseup = move |_: web_sys::MouseEvent| {
+        if resizing.get_untracked().is_some() {
+            set_resizing.set(None);
+            persist_sidebar_state();
+        }
+    };
+
+    let start_sidebar_resize = move |ev: web_sys::MouseEvent| {
+        ev.prevent_default();
+        set_resizing.set(Some(ResizeTarget::Sidebar));
+    };
+    let start_agent_resize = move |ev: web_sys::MouseEvent| {
+        ev.prevent_default();
+        set_resizing.set(Some(ResizeTarget::Agent));
+    };
+
+    // Cursor style: show col-resize while dragging
+    let resize_cursor = move || {
+        if resizing.get().is_some() {
+            "cursor-col-resize select-none"
+        } else {
+            ""
+        }
+    };
+
     view! {
-        <div class="flex flex-col h-screen bg-stone-900 text-stone-200 font-sans">
+        <div
+            class=move || format!("flex flex-col h-screen bg-stone-900 text-stone-200 font-sans {}", resize_cursor())
+            on:mousemove=on_global_mousemove
+            on:mouseup=on_global_mouseup
+        >
             // Top bar
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
                 <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
@@ -203,7 +297,15 @@ pub fn App() -> impl IntoView {
             <div class="flex flex-1 overflow-hidden">
                 // Sidebar (file tree)
                 <Show when=move || sidebar_visible.get()>
-                    <Sidebar set_settings_open=set_settings_open />
+                    <Sidebar
+                        set_settings_open=set_settings_open
+                        width=sidebar_width
+                    />
+                    // Resize handle
+                    <div
+                        class="w-1 shrink-0 cursor-col-resize hover:bg-stone-500 active:bg-stone-400 transition-colors"
+                        on:mousedown=start_sidebar_resize
+                    />
                 </Show>
 
                 // Editor (center)
@@ -211,7 +313,12 @@ pub fn App() -> impl IntoView {
 
                 // Agent panel (right)
                 <Show when=move || agent_visible.get()>
-                    <AgentPanel />
+                    // Resize handle
+                    <div
+                        class="w-1 shrink-0 cursor-col-resize hover:bg-stone-500 active:bg-stone-400 transition-colors"
+                        on:mousedown=start_agent_resize
+                    />
+                    <AgentPanel width=agent_width />
                 </Show>
             </div>
 

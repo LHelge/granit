@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, Note, NoteMeta};
-use config::{AgentConfig, AppConfig, ConfigError, Secrets};
+use config::{AgentConfig, AppConfig, ConfigError, Secrets, SidebarConfig};
 use granit_types::{AppConfig as IpcConfig, FontConfig, RenderedNote};
 
 struct AppState {
@@ -116,6 +116,19 @@ fn save_config(
         .active_cave_path()?
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
+}
+
+#[tauri::command]
+fn save_sidebar_state(
+    sidebar: SidebarConfig,
+    agent_panel: SidebarConfig,
+    state: tauri::State<AppState>,
+) -> Result<(), ConfigError> {
+    let mut config = state.lock_config()?;
+    config.sidebar = sidebar;
+    config.agent_panel = agent_panel;
+    config.save_global()?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -407,6 +420,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            save_sidebar_state,
             list_system_fonts,
             open_cave,
             create_note,

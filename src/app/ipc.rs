@@ -5,7 +5,9 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use granit_types::{AppConfig, FontConfig, Note, NoteMeta, RenderedNote, ToolCallInfo};
+use granit_types::{
+    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
+};
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 
@@ -83,6 +85,26 @@ pub async fn save_config(
             markdown_font,
             reading_font,
             agent_font,
+        },
+    )
+    .await
+}
+
+pub async fn save_sidebar_state(
+    sidebar: SidebarConfig,
+    agent_panel: SidebarConfig,
+) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        sidebar: SidebarConfig,
+        agent_panel: SidebarConfig,
+    }
+    invoke_unit(
+        "save_sidebar_state",
+        &Args {
+            sidebar,
+            agent_panel,
         },
     )
     .await

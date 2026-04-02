@@ -2,6 +2,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::AgentConfig;
 
+/// Sidebar panel state (visibility + width).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SidebarConfig {
+    pub visible: bool,
+    pub width: u16,
+}
+
+impl SidebarConfig {
+    pub fn sidebar_default() -> Self {
+        Self {
+            visible: true,
+            width: 256,
+        }
+    }
+
+    pub fn agent_default() -> Self {
+        Self {
+            visible: false,
+            width: 320,
+        }
+    }
+}
+
 /// Font configuration for a UI area.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FontConfig {
@@ -42,6 +65,8 @@ pub struct AppConfig {
     pub markdown_font: FontConfig,
     pub reading_font: FontConfig,
     pub agent_font: FontConfig,
+    pub sidebar: SidebarConfig,
+    pub agent_panel: SidebarConfig,
     /// The currently open cave path, if any. Runtime-only — not persisted.
     pub active_cave: Option<String>,
 }
@@ -54,6 +79,8 @@ impl Default for AppConfig {
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
             agent_font: FontConfig::agent_default(),
+            sidebar: SidebarConfig::sidebar_default(),
+            agent_panel: SidebarConfig::agent_default(),
             active_cave: None,
         }
     }
