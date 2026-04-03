@@ -11,6 +11,8 @@ pub struct CreateNoteArgs {
     name: String,
     /// Optional folder path (relative to cave root) to create the note in.
     folder: Option<String>,
+    /// Optional icon ID (e.g. "Star", "Book"). Omit for the default file icon.
+    icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -43,6 +45,10 @@ impl Tool for CreateNoteTool {
                     "folder": {
                         "type": "string",
                         "description": "Optional subfolder path (relative to cave root) to create the note in"
+                    },
+                    "icon": {
+                        "type": "string",
+                        "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
                     }
                 },
                 "required": ["name"]
@@ -54,8 +60,11 @@ impl Tool for CreateNoteTool {
         with_cave_mut(&self.cave, |cave| {
             let meta =
                 cave.create_note(&args.name, args.folder.as_deref().map(std::path::Path::new))?;
+            if let Some(icon) = args.icon {
+                cave.update_note(&meta.slug, &meta.slug, "", None, Some(icon))?;
+            }
             Ok(CreateNoteOutput {
-                slug: meta.slug,
+                slug: meta.slug.clone(),
                 relative_path: meta.relative_path,
             })
         })

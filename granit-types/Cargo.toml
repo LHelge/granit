@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 chrono = { version = "0.4.44", features = ["serde"] }
+icondata_core = "0.1.0"
+icondata_lu = "0.1.0"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

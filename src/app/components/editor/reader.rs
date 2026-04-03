@@ -1,10 +1,8 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::app::{
-    components::{icons::Icon, note_icons::resolve_note_icon},
-    ipc,
-};
+use crate::app::{components::icons::Icon, ipc};
+use granit_types::resolve_note_icon;
 
 use super::use_editor_ctx;
 

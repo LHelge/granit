@@ -3,7 +3,7 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave, SharedCave, ToolError};
+use super::{with_cave_mut, SharedCave, ToolError};
 
 #[derive(Deserialize)]
 pub struct UpdateNoteArgs {
@@ -11,6 +11,8 @@ pub struct UpdateNoteArgs {
     slug: String,
     /// The new markdown content for the note.
     content: String,
+    /// Optional icon ID to set (e.g. "Star"). Omit to preserve the existing icon.
+    icon: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -43,6 +45,10 @@ impl Tool for UpdateNoteTool {
                     "content": {
                         "type": "string",
                         "description": "The new markdown body (no frontmatter)"
+                    },
+                    "icon": {
+                        "type": "string",
+                        "description": "Optional icon ID to set (e.g. \"Star\", \"Book\", \"Code\"). Omit to preserve the existing icon."
                     }
                 },
                 "required": ["slug", "content"]
@@ -51,10 +57,10 @@ impl Tool for UpdateNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // Use save_note which preserves frontmatter and replaces the body.
-        with_cave(&self.cave, |cave| {
+        with_cave_mut(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
-            let meta = cave.save_note(&slug, &args.content)?;
+            // Pass slug as new_name (no rename), None for tags (preserve), icon as provided.
+            let meta = cave.update_note(&slug, &slug, &args.content, None, args.icon)?;
             Ok(UpdateNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,

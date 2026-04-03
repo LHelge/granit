@@ -14,11 +14,20 @@ use rig::tool::ToolDyn;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
-const DEFAULT_SYSTEM_PROMPT: &str = r#"You are a helpful assistant integrated into Granit, a personal note-taking app. 
+const SYSTEM_PROMPT_BASE: &str = r#"<|think|> You are a helpful assistant integrated into Granit, a personal note-taking app. 
 The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
 You can link the user to existing notes by using wiki-style links like [[slug]]. 
 You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
 Be mindful that edits should only replace text in the body of the note, not the frontmatter."#;
+
+fn build_system_prompt() -> String {
+    let ids: Vec<&str> = granit_types::NOTE_ICONS.iter().map(|e| e.id).collect();
+    format!(
+        "{}\n\nWhen creating or updating notes you can optionally set an icon using one of these IDs:\n{}",
+        SYSTEM_PROMPT_BASE,
+        ids.join(", ")
+    )
+}
 
 /// Provider-agnostic agent wrapping different rig-core agent types.
 pub(crate) enum ProviderAgent {
@@ -73,15 +82,20 @@ impl Agent {
             .selected_model
             .as_deref()
             .unwrap_or(entry.provider.default_model());
+        let system_prompt = build_system_prompt();
         let inner = match &entry.provider {
             ProviderConfig::Ollama { base_url } => {
-                Self::build_ollama(base_url.as_deref(), model, cave_tools)?
+                Self::build_ollama(base_url.as_deref(), model, cave_tools, &system_prompt)?
             }
             ProviderConfig::Anthropic { api_key } => {
-                Self::build_anthropic(api_key, model, cave_tools)?
+                Self::build_anthropic(api_key, model, cave_tools, &system_prompt)?
             }
-            ProviderConfig::Mistral { api_key } => Self::build_mistral(api_key, model, cave_tools)?,
-            ProviderConfig::Prisma { api_key } => Self::build_prisma(api_key, model, cave_tools)?,
+            ProviderConfig::Mistral { api_key } => {
+                Self::build_mistral(api_key, model, cave_tools, &system_prompt)?
+            }
+            ProviderConfig::Prisma { api_key } => {
+                Self::build_prisma(api_key, model, cave_tools, &system_prompt)?
+            }
         };
 
         Ok(Self {
@@ -95,6 +109,7 @@ impl Agent {
         base_url: Option<&str>,
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
+        system_prompt: &str,
     ) -> Result<ProviderAgent, AgentError> {
         let base_url = base_url.unwrap_or(DEFAULT_OLLAMA_BASE_URL);
 
@@ -105,7 +120,7 @@ impl Agent {
 
         let agent = client
             .agent(model)
-            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .preamble(system_prompt)
             .tools(cave_tools)
             .build();
 
@@ -116,12 +131,13 @@ impl Agent {
         api_key: &str,
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
+        system_prompt: &str,
     ) -> Result<ProviderAgent, AgentError> {
         let client = anthropic::Client::builder().api_key(api_key).build()?;
 
         let agent = client
             .agent(model)
-            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .preamble(system_prompt)
             .tools(cave_tools)
             .build();
 
@@ -132,6 +148,7 @@ impl Agent {
         api_key: &str,
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
+        system_prompt: &str,
     ) -> Result<ProviderAgent, AgentError> {
         let client = openai::CompletionsClient::builder()
             .api_key(api_key)
@@ -140,7 +157,7 @@ impl Agent {
 
         let agent = client
             .agent(model)
-            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .preamble(system_prompt)
             .tools(cave_tools)
             .build();
 
@@ -151,12 +168,13 @@ impl Agent {
         api_key: &str,
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
+        system_prompt: &str,
     ) -> Result<ProviderAgent, AgentError> {
         let client = mistral::Client::builder().api_key(api_key).build()?;
 
         let agent = client
             .agent(model)
-            .preamble(DEFAULT_SYSTEM_PROMPT)
+            .preamble(system_prompt)
             .tools(cave_tools)
             .build();
 

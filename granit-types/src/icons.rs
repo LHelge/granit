@@ -1,26 +1,24 @@
 use icondata_core::IconData;
 use icondata_lu;
 
-/// An entry in the curated note icon catalog.
-#[allow(dead_code)]
+/// A single entry in the curated note icon catalog.
 pub struct NoteIconEntry {
-    /// Normalized icon id stored in frontmatter (PascalCase, e.g. `"Star"`).
+    /// PascalCase id stored in frontmatter (e.g. `"Star"`).
     pub id: &'static str,
     /// Human-readable label shown in the picker.
     pub label: &'static str,
     /// Extra search terms (space-separated, lowercase) for fuzzy matching.
     pub tags: &'static str,
-    /// The icon data used to render via `leptos_icons`.
+    /// SVG icon data for rendering via `leptos_icons`.
     pub icon: &'static IconData,
 }
 
 /// Curated subset of Lucide icons suitable for note labelling.
 ///
-/// Kept intentionally small (~25 entries) so the picker grid stays readable.
-/// Add entries here when the picker gains a new useful category; do not expose
-/// the full `icondata_lu` set — there are thousands. Icons from other
-/// `icondata_*` crates (e.g. `icondata_re` for Remix Icons) can be added
-/// here too — just extend the array and pick a unique id.
+/// This is the single source of truth for the icon catalog. To add an icon:
+/// 1. Add a new `NoteIconEntry` row here.
+/// 2. That's it — the picker, tree view, reader, writer, and agent system
+///    prompt all derive from this table automatically.
 #[rustfmt::skip]
 pub static NOTE_ICONS: &[NoteIconEntry] = &[
     NoteIconEntry { id: "FileText",   label: "Note",       tags: "default file document",           icon: icondata_lu::LuFileText   },
@@ -50,10 +48,10 @@ pub static NOTE_ICONS: &[NoteIconEntry] = &[
     NoteIconEntry { id: "Coffee",     label: "Coffee",     tags: "break journal casual daily",      icon: icondata_lu::LuCoffee     },
 ];
 
-/// Map a frontmatter icon id (e.g. `"Star"`) to its `IconData`.
+/// Resolve a frontmatter icon id (e.g. `"Star"`) to its `IconData`.
 ///
-/// Looks up the id in [`NOTE_ICONS`]. Falls back to `LuFileText` for unknown
-/// or empty ids so unknown icons never break rendering.
+/// Falls back to `LuFileText` for unknown or empty ids so broken/missing
+/// icons never cause rendering failures.
 pub fn resolve_note_icon(id: &str) -> &'static IconData {
     NOTE_ICONS
         .iter()

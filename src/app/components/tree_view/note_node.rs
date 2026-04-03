@@ -6,8 +6,8 @@ use granit_types::NoteMeta;
 use super::rename_input::RenameInput;
 use super::{use_tree_ctx, ContextMenu, ContextTarget, DragPayload, RenameTarget};
 use crate::app::components::icons::Icon;
-use crate::app::components::note_icons::resolve_note_icon;
 use crate::app::ipc;
+use granit_types::resolve_note_icon;
 
 /// Renders a single note row in the tree, with drag, context menu, and rename support.
 #[component]
