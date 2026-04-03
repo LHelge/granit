@@ -6,11 +6,11 @@ mod reading;
 use leptos::prelude::*;
 
 use super::icons::Icon;
-use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use agent::AgentSettings;
 use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry};
+use icondata_lu;
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 

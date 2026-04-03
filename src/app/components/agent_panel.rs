@@ -1,10 +1,10 @@
 use crate::app::components::icons::Icon;
-use icondata_lu;
 use crate::app::components::model_selector::ModelSelector;
 use crate::app::components::provider_selector::ProviderSelector;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use granit_types::{ChatMessage, ChatRole, ModelInfo, ProviderInfo, ToolCallInfo};
+use icondata_lu;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;

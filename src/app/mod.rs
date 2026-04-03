@@ -5,9 +5,9 @@ pub(crate) mod ipc;
 
 use components::editor::EditOpen;
 use components::icons::Icon;
-use icondata_lu;
 use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
 use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
+use icondata_lu;
 
 // ── Sidebar resize constants ───────────────────────────────────────
 

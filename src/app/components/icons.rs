@@ -29,5 +29,3 @@ pub fn ProviderIcon(
         })
     }
 }
-
-

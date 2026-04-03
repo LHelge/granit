@@ -1,8 +1,8 @@
 use crate::app::components::icons::{Icon, ProviderIcon};
-use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use granit_types::ProviderInfo;
+use icondata_lu;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 

@@ -1,9 +1,9 @@
 use leptos::prelude::*;
 
 use super::icons::Icon;
-use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
+use icondata_lu;
 
 #[component]
 pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {

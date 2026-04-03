@@ -6,8 +6,8 @@ use super::tree_model::TreeNode;
 use super::{render_node, use_tree_ctx};
 use super::{ContextMenu, ContextTarget, DragPayload, RenameTarget};
 use crate::app::components::icons::Icon;
-use icondata_lu;
 use crate::app::ipc;
+use icondata_lu;
 
 /// Renders a folder row in the tree, with collapsing, drag-drop, context menu,
 /// and rename support. Recursively renders children.
