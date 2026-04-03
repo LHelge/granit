@@ -59,6 +59,8 @@ pub struct AppConfig {
     pub agent_font: FontConfig,
     pub sidebar: SidebarConfig,
     pub agent_panel: SidebarConfig,
+    /// Folder name/path (relative to cave root) where daily notes are stored.
+    pub daily_note_folder: String,
     /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
     pub active_cave: Option<PathBuf>,
 }
@@ -73,6 +75,7 @@ struct RawConfig {
     agent_font: Option<RawFontConfig>,
     sidebar: Option<RawSidebarConfig>,
     agent_panel: Option<RawSidebarConfig>,
+    daily_note_folder: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -146,6 +149,7 @@ impl AppConfig {
                 visible: Some(self.agent_panel.visible),
                 width: Some(self.agent_panel.width),
             }),
+            daily_note_folder: Some(self.daily_note_folder.clone()),
         };
 
         let yaml = serde_yml::to_string(&raw)?;
@@ -201,6 +205,7 @@ impl AppConfig {
             agent_font: self.agent_font.clone(),
             sidebar: self.sidebar.clone(),
             agent_panel: self.agent_panel.clone(),
+            daily_note_folder: self.daily_note_folder.clone(),
             active_cave: self
                 .active_cave
                 .as_ref()
@@ -221,6 +226,7 @@ impl AppConfig {
                 agent_font: FontConfig::agent_default(),
                 sidebar: SidebarConfig::sidebar_default(),
                 agent_panel: SidebarConfig::agent_default(),
+                daily_note_folder: "Daily".to_string(),
                 active_cave: None,
             };
             config.save_global()?;
@@ -270,6 +276,7 @@ impl AppConfig {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
+            daily_note_folder: "Daily".to_string(),
             active_cave: None,
         };
 
@@ -300,6 +307,9 @@ impl AppConfig {
         }
         if let Some(ap) = raw.agent_panel {
             config.agent_panel.merge_raw(ap);
+        }
+        if let Some(folder) = raw.daily_note_folder {
+            config.daily_note_folder = folder;
         }
     }
 }
@@ -478,6 +488,7 @@ mod tests {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
+            daily_note_folder: "Daily".to_string(),
             active_cave: None,
         };
 
@@ -546,6 +557,26 @@ mod tests {
         let config = AppConfig::merge(global, Some(cave));
         assert_eq!(config.markdown_font.font_family, "monospace");
         assert_eq!(config.markdown_font.font_size, 18);
+    }
+
+    #[test]
+    fn test_merge_daily_note_folder_cave_overrides_global() {
+        let global = RawConfig {
+            daily_note_folder: Some("Journal".to_string()),
+            ..Default::default()
+        };
+        let cave = RawConfig {
+            daily_note_folder: Some("Diary".to_string()),
+            ..Default::default()
+        };
+        let config = AppConfig::merge(global, Some(cave));
+        assert_eq!(config.daily_note_folder, "Diary");
+    }
+
+    #[test]
+    fn test_merge_daily_note_folder_default() {
+        let config = AppConfig::merge(RawConfig::default(), None);
+        assert_eq!(config.daily_note_folder, "Daily");
     }
 
     #[test]

@@ -205,6 +205,40 @@ impl Cave {
         Ok(note_meta_from_relative_path(&rel))
     }
 
+    /// Open or create today's daily note in the given folder.
+    ///
+    /// `folder` is a relative path from the cave root (e.g. `"Daily"` or `"Notes/Daily"`).
+    /// The folder is created if it does not yet exist.
+    /// If the note for today already exists it is read and returned without modification.
+    /// The note slug is today's date in `YYYY-MM-DD` format.
+    pub fn open_daily_note(&mut self, folder: &str) -> Result<Note, CaveError> {
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let folder_path = Path::new(folder);
+
+        // Ensure the daily folder exists.
+        let abs_folder = self.path.join(folder_path);
+        if !abs_folder.is_dir() {
+            validate_folder_path(folder_path)?;
+            std::fs::create_dir_all(&abs_folder)?;
+        }
+
+        // Create the note if it doesn't exist yet, setting the calendar icon.
+        if !self.notes.contains_key(today.as_str()) {
+            self.create_note(&today, Some(folder_path))?;
+            let abs_path = self.notes[today.as_str()].clone();
+            let raw = std::fs::read_to_string(&abs_path)?;
+            let updated = crate::markdown::rebuild_with_frontmatter(
+                &raw,
+                "",
+                None,
+                Some("Calendar".to_string()),
+            );
+            std::fs::write(&abs_path, updated)?;
+        }
+
+        self.read_note(&today)
+    }
+
     /// Create a subdirectory within the cave.
     ///
     /// `path` is a relative path from the cave root (e.g. `Path::new("notes")` or `Path::new("projects/2026")`).
@@ -1348,5 +1382,48 @@ mod tests {
         let cave = Cave::open(dir.path().to_path_buf()).unwrap();
         let folders = cave.list_folders().unwrap();
         assert_eq!(folders, vec!["visible"]);
+    }
+
+    #[test]
+    fn test_open_daily_note_creates_folder_and_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let note = cave.open_daily_note("Daily").unwrap();
+
+        assert_eq!(note.meta.slug, today);
+        assert_eq!(note.meta.relative_path, format!("Daily/{today}.md"));
+        assert!(dir.path().join("Daily").is_dir());
+        assert!(dir.path().join(format!("Daily/{today}.md")).exists());
+        assert_eq!(note.meta.icon.as_deref(), Some("Calendar"));
+    }
+
+    #[test]
+    fn test_open_daily_note_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let note1 = cave.open_daily_note("Daily").unwrap();
+        let note2 = cave.open_daily_note("Daily").unwrap();
+
+        // Second call must not create a duplicate or modify the slug
+        assert_eq!(note1.meta.slug, note2.meta.slug);
+        let daily_notes: Vec<_> = std::fs::read_dir(dir.path().join("Daily"))
+            .unwrap()
+            .collect();
+        assert_eq!(daily_notes.len(), 1, "should only have one daily note file");
+    }
+
+    #[test]
+    fn test_open_daily_note_existing_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Journal")).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let note = cave.open_daily_note("Journal").unwrap();
+        assert_eq!(note.meta.slug, today);
+        assert!(dir.path().join(format!("Journal/{today}.md")).exists());
     }
 }

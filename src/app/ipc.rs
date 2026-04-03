@@ -66,6 +66,7 @@ pub async fn save_config(
     markdown_font: FontConfig,
     reading_font: FontConfig,
     agent_font: FontConfig,
+    daily_note_folder: String,
 ) -> Result<AppConfig, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -74,6 +75,7 @@ pub async fn save_config(
         markdown_font: FontConfig,
         reading_font: FontConfig,
         agent_font: FontConfig,
+        daily_note_folder: String,
     }
     invoke_cmd(
         "save_config",
@@ -82,6 +84,7 @@ pub async fn save_config(
             markdown_font,
             reading_font,
             agent_font,
+            daily_note_folder,
         },
     )
     .await
@@ -157,6 +160,10 @@ pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, S
 
 pub async fn read_note(name: &str) -> Result<Note, String> {
     invoke_cmd("read_note", &HashMap::from([("name", name)])).await
+}
+
+pub async fn open_daily_note() -> Result<Note, String> {
+    invoke_no_args("open_daily_note").await
 }
 
 pub async fn render_note(name: &str) -> Result<RenderedNote, String> {

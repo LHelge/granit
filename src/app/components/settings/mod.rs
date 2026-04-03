@@ -1,6 +1,7 @@
 mod agent;
 mod font_picker;
 mod markdown;
+mod notes;
 mod reading;
 
 use super::icons::Icon;
@@ -9,6 +10,7 @@ use agent::AgentSettings;
 use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry};
 use leptos::prelude::*;
 use markdown::MarkdownSettings;
+use notes::NotesSettings;
 use reading::ReadingSettings;
 
 /// Flat representation of one provider for form editing.
@@ -117,6 +119,8 @@ pub(super) struct SettingsForm {
     pub markdown_font: FontConfig,
     pub reading_font: FontConfig,
     pub agent_font: FontConfig,
+    // Notes
+    pub daily_note_folder: String,
     // System fonts (loaded async, read-only after init)
     pub system_fonts: Vec<String>,
 }
@@ -134,6 +138,7 @@ impl SettingsForm {
             markdown_font: config.markdown_font.clone(),
             reading_font: config.reading_font.clone(),
             agent_font: config.agent_font.clone(),
+            daily_note_folder: config.daily_note_folder.clone(),
             system_fonts: Vec::new(),
         }
     }
@@ -145,6 +150,7 @@ enum SettingsSection {
     Markdown,
     Reading,
     Agent,
+    Notes,
 }
 
 impl SettingsSection {
@@ -153,10 +159,11 @@ impl SettingsSection {
             Self::Markdown => "Markdown",
             Self::Reading => "Reading",
             Self::Agent => "Agent",
+            Self::Notes => "Notes",
         }
     }
 
-    const ALL: [Self; 3] = [Self::Markdown, Self::Reading, Self::Agent];
+    const ALL: [Self; 4] = [Self::Markdown, Self::Reading, Self::Agent, Self::Notes];
 }
 
 #[component]
@@ -196,7 +203,15 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 selected_model: existing.selected_model,
                 max_history: existing.max_history,
             };
-            match ipc::save_config(agent, f.markdown_font, f.reading_font, f.agent_font).await {
+            match ipc::save_config(
+                agent,
+                f.markdown_font,
+                f.reading_font,
+                f.agent_font,
+                f.daily_note_folder,
+            )
+            .await
+            {
                 Ok(new_config) => {
                     config.set(new_config);
                     set_open.set(false);
@@ -278,6 +293,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
 
                             <Show when=move || active_section.get() == SettingsSection::Agent>
                                 <AgentSettings form=form />
+                            </Show>
+
+                            <Show when=move || active_section.get() == SettingsSection::Notes>
+                                <NotesSettings form=form />
                             </Show>
                         </div>
 

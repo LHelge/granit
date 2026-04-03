@@ -91,6 +91,7 @@ fn save_config(
     markdown_font: FontConfig,
     reading_font: FontConfig,
     agent_font: FontConfig,
+    daily_note_folder: String,
     state: tauri::State<AppState>,
 ) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config()?;
@@ -98,6 +99,7 @@ fn save_config(
     config.markdown_font = markdown_font;
     config.reading_font = reading_font;
     config.agent_font = agent_font;
+    config.daily_note_folder = daily_note_folder;
     config.save_global()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent()?;
@@ -230,6 +232,16 @@ fn list_folders(state: tauri::State<AppState>) -> Result<Vec<String>, CaveError>
 #[tauri::command]
 fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveError> {
     with_cave(&state, |cave| cave.read_note(&name))
+}
+
+#[tauri::command]
+fn open_daily_note(state: tauri::State<AppState>) -> Result<Note, CaveError> {
+    let folder = state
+        .lock_config()
+        .map_err(|_| CaveError::Io("Failed to lock config".to_string()))?
+        .daily_note_folder
+        .clone();
+    with_cave_mut(&state, |cave| cave.open_daily_note(&folder))
 }
 
 #[tauri::command]
@@ -471,6 +483,7 @@ pub fn run() {
             list_notes,
             list_folders,
             read_note,
+            open_daily_note,
             save_note,
             delete_note,
             rename_note,

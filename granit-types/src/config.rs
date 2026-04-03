@@ -66,6 +66,8 @@ pub struct AppConfig {
     pub agent_font: FontConfig,
     pub sidebar: SidebarConfig,
     pub agent_panel: SidebarConfig,
+    /// Folder name/path (relative to cave root) where daily notes are stored.
+    pub daily_note_folder: String,
     /// The currently open cave path, if any. Runtime-only — not persisted.
     pub active_cave: Option<String>,
 }
@@ -80,6 +82,7 @@ impl Default for AppConfig {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
+            daily_note_folder: "Daily".to_string(),
             active_cave: None,
         }
     }

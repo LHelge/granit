@@ -1,6 +1,7 @@
 mod components;
 
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 pub(crate) mod ipc;
 use components::{
     editor::EditOpen, icons::Icon, AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar,
@@ -273,7 +274,33 @@ pub fn App() -> impl IntoView {
         >
             // Top bar
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
-                <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
+                <div class="flex items-center gap-1">
+                    <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
+                    <Show when=move || ctx.config.get().active_cave.is_some()>
+                        <button
+                            class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                            on:click=move |_| {
+                                spawn_local(async move {
+                                    match ipc::open_daily_note().await {
+                                        Ok(note) => {
+                                            ctx.active_note.set(Some(note));
+                                            if let Ok(notes) = ipc::fetch_notes().await {
+                                                ctx.notes.set(notes);
+                                            }
+                                            if let Ok(folders) = ipc::fetch_folders().await {
+                                                ctx.folders.set(folders);
+                                            }
+                                        }
+                                        Err(e) => { ctx.push_error("daily-note", e); }
+                                    }
+                                });
+                            }
+                            title="Open daily note"
+                        >
+                            <Icon icon=icondata_lu::LuCalendar width="1rem" height="1rem"/>
+                        </button>
+                    </Show>
+                </div>
                 <div class="flex items-center gap-1">
                     <button
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
