@@ -1,10 +1,10 @@
 ---
 id: 79f
 title: Extend note metadata for optional icon
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:13.567383222Z
-updated: 2026-04-03T14:10:13.567383222Z
+updated: 2026-04-03T20:02:18.583173695Z
 tags:
 - backend
 - types

@@ -8,7 +8,8 @@ pub use error::CaveError;
 pub use note::{Note, NoteMeta};
 
 use note::{
-    ensure_md_extension, note_meta_from_relative_path, validate_folder_path, validate_name,
+    ensure_md_extension, note_meta_from_relative_path, note_meta_with_icon, validate_folder_path,
+    validate_name,
 };
 
 /// A cave — an open directory of markdown notes.
@@ -237,11 +238,13 @@ impl Cave {
     }
 
     /// List all `.md` notes in this cave (recursively), sorted by slug.
+    ///
+    /// Each note's frontmatter is read to populate the `icon` field.
     pub fn list_notes(&self) -> Result<Vec<NoteMeta>, CaveError> {
         let mut notes: Vec<NoteMeta> = self
             .notes
             .values()
-            .map(|abs| note_meta_from_relative_path(&self.relative_path(abs)))
+            .map(|abs| note_meta_with_icon(&self.relative_path(abs), abs))
             .collect();
         notes.sort_by_key(|n| n.slug.to_lowercase());
         Ok(notes)
@@ -297,8 +300,10 @@ impl Cave {
         let raw = std::fs::read_to_string(abs_path)?;
         let body = crate::markdown::strip_frontmatter(&raw).to_string();
         let rel = self.relative_path(abs_path);
+        let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
         Ok(Note {
-            meta: note_meta_from_relative_path(&rel),
+            meta,
             content: body,
         })
     }
@@ -322,10 +327,12 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
         let existing_raw = std::fs::read_to_string(abs_path)?;
-        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None);
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None, None);
         std::fs::write(abs_path, updated.as_str())?;
         let rel = self.relative_path(abs_path);
-        Ok(note_meta_from_relative_path(&rel))
+        let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        Ok(meta)
     }
 
     /// Replace `old_text` with `new_text` in an existing note (looked up by slug).
@@ -350,7 +357,7 @@ impl Cave {
             return Err(CaveError::EditNotFound);
         }
         let new_body = body.replacen(old_text, new_text, 1);
-        let new_content = crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None);
+        let new_content = crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None, None);
         std::fs::write(&abs_path, &new_content)?;
 
         let rel = self.relative_path(&abs_path);
@@ -406,7 +413,7 @@ impl Cave {
         // No-op if already in the target dir.
         if old_abs == new_abs {
             let rel = self.relative_path(&old_abs);
-            return Ok(note_meta_from_relative_path(&rel));
+            return Ok(note_meta_with_icon(&rel, &old_abs));
         }
 
         // Prevent overwriting an existing file at the destination.
@@ -420,7 +427,7 @@ impl Cave {
         self.notes.insert(slug.to_string(), new_abs.clone());
 
         let rel = self.relative_path(&new_abs);
-        Ok(note_meta_from_relative_path(&rel))
+        Ok(note_meta_with_icon(&rel, &new_abs))
     }
 
     /// Move a folder under a new parent within the cave.
@@ -528,20 +535,21 @@ impl Cave {
         self.notes.insert(new_name.to_string(), new_abs.clone());
 
         let rel = self.relative_path(&new_abs);
-        Ok(note_meta_from_relative_path(&rel))
+        Ok(note_meta_with_icon(&rel, &new_abs))
     }
 
-    /// Update a note's filename, content, and optionally tags in one operation.
+    /// Update a note's filename, content, and optionally tags and icon in one operation.
     ///
     /// If `old_slug` and `new_name` differ the file is renamed first (same directory),
     /// then the new content is written. If `tags` is `Some`, the frontmatter tags
-    /// are replaced.
+    /// are replaced. If `icon` is `Some`, the icon is set (`Some("")` clears it).
     pub fn update_note(
         &mut self,
         old_slug: &str,
         new_name: &str,
         content: &str,
         tags: Option<Vec<String>>,
+        icon: Option<String>,
     ) -> Result<NoteMeta, CaveError> {
         validate_name(old_slug)?;
         validate_name(new_name)?;
@@ -570,7 +578,7 @@ impl Cave {
         };
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
-        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags);
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags, icon);
         if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
@@ -586,7 +594,9 @@ impl Cave {
         }
 
         let rel = self.relative_path(&final_abs);
-        Ok(note_meta_from_relative_path(&rel))
+        let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        Ok(meta)
     }
 
     /// Rename a folder in-place (same parent directory, new name).
@@ -1229,7 +1239,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
-            .update_note("note", "note", "new content", None)
+            .update_note("note", "note", "new content", None, None)
             .unwrap();
         assert_eq!(meta.slug, "note");
 
@@ -1244,7 +1254,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
-            .update_note("old", "new-name", "updated content", None)
+            .update_note("old", "new-name", "updated content", None, None)
             .unwrap();
         assert_eq!(meta.slug, "new-name");
         assert!(!dir.path().join("old.md").exists());
@@ -1259,7 +1269,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
-            .update_note("ghost", "ghost", "content", None)
+            .update_note("ghost", "ghost", "content", None, None)
             .unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
@@ -1271,7 +1281,9 @@ mod tests {
         std::fs::write(dir.path().join("b.md"), "b content").unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let err = cave.update_note("a", "b", "new content", None).unwrap_err();
+        let err = cave
+            .update_note("a", "b", "new content", None, None)
+            .unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
         // Original file must be untouched
         let content = std::fs::read_to_string(dir.path().join("a.md")).unwrap();

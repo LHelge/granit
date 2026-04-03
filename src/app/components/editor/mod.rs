@@ -1,4 +1,5 @@
 mod frontmatter;
+mod icon_picker;
 mod reader;
 pub(crate) mod text_editing;
 mod writer;
@@ -11,8 +12,8 @@ use reader::Reader;
 use writer::Writer;
 
 use super::icons::Icon;
-use icondata_lu;
 use crate::app::ipc;
+use icondata_lu;
 
 // ── Shared context: open next note in edit mode ────────────────────
 
@@ -58,6 +59,8 @@ pub(super) struct EditorCtx {
     prev_slug: RwSignal<Option<String>>,
     /// Frontmatter tags for the current note.
     pub tags: RwSignal<Vec<String>>,
+    /// Frontmatter icon ID for the current note, e.g. `"Star"`.
+    pub icon: RwSignal<Option<String>>,
 }
 
 impl EditorCtx {
@@ -68,8 +71,9 @@ impl EditorCtx {
         name: &str,
         content: &str,
         tags: Option<Vec<String>>,
+        icon: Option<String>,
     ) -> Result<NoteMeta, String> {
-        let meta = ipc::update_note(slug, name, content, tags).await?;
+        let meta = ipc::update_note(slug, name, content, tags, icon).await?;
         if let Ok(notes) = ipc::fetch_notes().await {
             self.notes.set(notes);
         }
@@ -89,13 +93,14 @@ impl EditorCtx {
         let content = self.content.get_untracked();
         let title = self.title_input.get_untracked().trim().to_string();
         let tags = self.tags.get_untracked();
+        let icon = self.icon.get_untracked();
         let name = if title.is_empty() {
             slug.clone()
         } else {
             title
         };
         leptos::task::spawn_local(async move {
-            if let Err(e) = self.persist(&slug, &name, &content, Some(tags)).await {
+            if let Err(e) = self.persist(&slug, &name, &content, Some(tags), icon).await {
                 self.error.set(Some(format!("Autosave failed: {e}")));
             }
         });
@@ -117,9 +122,13 @@ impl EditorCtx {
         self.error.set(None);
         let old_slug = note.meta.slug.clone();
         let tags = self.tags.get_untracked();
+        let icon = self.icon.get_untracked();
 
         leptos::task::spawn_local(async move {
-            match self.persist(&old_slug, &name, &content, Some(tags)).await {
+            match self
+                .persist(&old_slug, &name, &content, Some(tags), icon)
+                .await
+            {
                 Ok(meta) => {
                     self.prev_slug.set(Some(meta.slug.clone()));
                     let slug = meta.slug.clone();
@@ -194,6 +203,7 @@ pub fn Editor() -> impl IntoView {
         open_in_edit: expect_context::<OpenInEdit>().0,
         prev_slug: RwSignal::new(None),
         tags: RwSignal::new(Vec::new()),
+        icon: RwSignal::new(None),
     };
     provide_context(ctx);
 
@@ -247,19 +257,18 @@ pub fn Editor() -> impl IntoView {
             ctx.content.set(String::new());
             ctx.title_input.set(String::new());
             ctx.tags.set(Vec::new());
+            ctx.icon.set(None);
         }
         ctx.error.set(None);
     });
 
-    // Sync tags from rendered note frontmatter whenever it changes.
+    // Sync tags and icon from rendered note frontmatter whenever it changes.
     Effect::new(move || {
-        let tags = ctx
-            .rendered_note
-            .get()
-            .and_then(|r| r.frontmatter)
-            .map(|fm| fm.tags)
-            .unwrap_or_default();
+        let fm = ctx.rendered_note.get().and_then(|r| r.frontmatter);
+        let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
+        let icon = fm.and_then(|f| f.icon);
         ctx.tags.set(tags);
+        ctx.icon.set(icon);
     });
 
     let has_note = move || ctx.active_note.get().is_some();

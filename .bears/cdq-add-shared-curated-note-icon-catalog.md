@@ -1,10 +1,10 @@
 ---
 id: cdq
 title: Add shared curated note icon catalog
-status: open
+status: done
 priority: P2
 created: 2026-04-03T14:10:28.391594707Z
-updated: 2026-04-03T14:10:28.391594707Z
+updated: 2026-04-03T20:30:56.364310087Z
 tags:
 - frontend
 - ui

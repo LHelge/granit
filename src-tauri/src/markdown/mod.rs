@@ -118,6 +118,7 @@ pub fn initial_content(_slug: &str) -> String {
         tags: Vec::new(),
         created_at: Some(now),
         modified_at: Some(now),
+        icon: None,
     };
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
     format!("---\n{yaml}---\n")
@@ -131,8 +132,20 @@ pub fn strip_frontmatter(raw: &str) -> &str {
     body
 }
 
+/// Extract the `icon` field from YAML frontmatter without rendering markdown.
+///
+/// Returns `None` if the note has no frontmatter, the frontmatter is
+/// malformed, or the `icon` field is absent.
+pub(crate) fn read_frontmatter_icon(raw: &str) -> Option<String> {
+    extract_frontmatter(raw).0.and_then(|fm| fm.icon)
+}
+
 /// Read the existing frontmatter from `existing_raw`, update `modified_at`,
-/// optionally override tags, and prepend it to `new_body`.
+/// optionally override tags and icon, and prepend it to `new_body`.
+///
+/// - `tags`: `None` = preserve existing tags; `Some(v)` = replace.
+/// - `icon`: `None` = preserve existing icon; `Some("")` = clear;
+///   `Some(s)` = set to `s`.
 ///
 /// If the existing content has no parseable frontmatter the body is returned
 /// unchanged.
@@ -140,6 +153,7 @@ pub fn rebuild_with_frontmatter(
     existing_raw: &str,
     new_body: &str,
     tags: Option<Vec<String>>,
+    icon: Option<String>,
 ) -> String {
     let (fm, _) = extract_frontmatter(existing_raw);
     let Some(mut fm) = fm else {
@@ -148,6 +162,9 @@ pub fn rebuild_with_frontmatter(
     fm.modified_at = Some(Utc::now());
     if let Some(tags) = tags {
         fm.tags = tags;
+    }
+    if let Some(icon) = icon {
+        fm.icon = if icon.is_empty() { None } else { Some(icon) };
     }
     // Strip any frontmatter the caller may have included in new_body to
     // avoid duplication (e.g. agent tools sending full-file content).
@@ -634,6 +651,90 @@ mod tests {
             result.html.contains("broken-link"),
             "broken-link title should be in the rendered link: {}",
             result.html
+        );
+    }
+
+    // ── icon frontmatter parsing ──────────────────────────────────────────────
+
+    #[test]
+    fn test_frontmatter_with_icon() {
+        let raw = "---\ntags:\n  - rust\nicon: LuPencil\n---\n# Body";
+        let (fm, body) = extract_frontmatter(raw);
+        let fm = fm.expect("frontmatter should be parsed");
+        assert_eq!(fm.icon.as_deref(), Some("LuPencil"));
+        assert_eq!(fm.tags, ["rust"]);
+        assert_eq!(body, "# Body");
+    }
+
+    #[test]
+    fn test_frontmatter_without_icon() {
+        let raw = "---\ntags:\n  - rust\n---\n# Body";
+        let (fm, _body) = extract_frontmatter(raw);
+        let fm = fm.expect("frontmatter should be parsed");
+        assert!(fm.icon.is_none());
+    }
+
+    #[test]
+    fn test_frontmatter_icon_roundtrip() {
+        let fm = Frontmatter {
+            tags: vec!["test".to_string()],
+            created_at: None,
+            modified_at: None,
+            icon: Some("LuFolder".to_string()),
+        };
+        let yaml = serde_yml::to_string(&fm).unwrap();
+        let parsed: Frontmatter = serde_yml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.icon.as_deref(), Some("LuFolder"));
+        assert_eq!(parsed.tags, ["test"]);
+    }
+
+    #[test]
+    fn test_frontmatter_icon_none_not_serialized() {
+        let fm = Frontmatter {
+            tags: Vec::new(),
+            created_at: None,
+            modified_at: None,
+            icon: None,
+        };
+        let yaml = serde_yml::to_string(&fm).unwrap();
+        assert!(
+            !yaml.contains("icon"),
+            "icon: None should be omitted: {yaml}"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_preserves_icon() {
+        let existing = "---\ntags:\n  - old\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nOld body";
+        let result = rebuild_with_frontmatter(existing, "New body", None, None);
+        assert!(
+            result.contains("icon: LuStar"),
+            "icon should be preserved: {result}"
+        );
+        assert!(result.contains("New body"));
+    }
+
+    #[test]
+    fn test_rebuild_overrides_icon() {
+        let existing = "---\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let result = rebuild_with_frontmatter(existing, "Body", None, Some("LuFolder".to_string()));
+        assert!(
+            result.contains("icon: LuFolder"),
+            "icon should be updated: {result}"
+        );
+        assert!(
+            !result.contains("LuStar"),
+            "old icon should be gone: {result}"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_clears_icon() {
+        let existing = "---\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let result = rebuild_with_frontmatter(existing, "Body", None, Some(String::new()));
+        assert!(
+            !result.contains("icon:"),
+            "icon should be cleared: {result}"
         );
     }
 }

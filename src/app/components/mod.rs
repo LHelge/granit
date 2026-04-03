@@ -3,6 +3,7 @@ mod cave_selector;
 pub(crate) mod editor;
 pub mod icons;
 mod model_selector;
+pub mod note_icons;
 mod provider_selector;
 mod settings;
 mod sidebar;

@@ -1,10 +1,10 @@
 ---
 id: 2qt
 title: Verify icon parsing, persistence, and fallback behavior
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:44.776058114Z
-updated: 2026-04-03T14:10:44.776058114Z
+updated: 2026-04-03T21:08:41.213171452Z
 tags:
 - testing
 - backend

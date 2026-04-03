@@ -6,7 +6,7 @@ use granit_types::NoteMeta;
 use super::rename_input::RenameInput;
 use super::{use_tree_ctx, ContextMenu, ContextTarget, DragPayload, RenameTarget};
 use crate::app::components::icons::Icon;
-use icondata_lu;
+use crate::app::components::note_icons::resolve_note_icon;
 use crate::app::ipc;
 
 /// Renders a single note row in the tree, with drag, context menu, and rename support.
@@ -101,7 +101,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                         >
                             <span class="w-3 shrink-0" />
                             <span class="inline-flex w-3.5 h-3.5 shrink-0 text-stone-500">
-                                <Icon icon=icondata_lu::LuFileText width="100%" height="100%"/>
+                                <Icon icon=resolve_note_icon(meta.icon.as_deref().unwrap_or("")) width="100%" height="100%"/>
                             </span>
                             {slug_click.clone()}
                         </button>

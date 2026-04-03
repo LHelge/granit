@@ -13,6 +13,8 @@ pub struct Frontmatter {
     pub created_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modified_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// Result of rendering a markdown note: rendered HTML plus extracted metadata.
@@ -33,12 +35,24 @@ pub struct RenderedNote {
 }
 
 /// Metadata for a note in the cave.
+///
+/// Intentionally kept separate from [`Note`] (full content). `list_notes`
+/// returns many `NoteMeta` at once for the sidebar/tree — sending full body
+/// content for every note would be expensive in both I/O and IPC payload size,
+/// and grows linearly with cave size. Frontmatter is parsed (just the small
+/// header block) to populate fields like `icon`; the body is discarded.
+///
+/// Use [`Note`] when the editor needs the body, or [`RenderedNote`] when the
+/// renderer needs HTML + full frontmatter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteMeta {
     /// Filename without extension (e.g., "my-note").
     pub slug: String,
     /// Relative path from cave root (e.g., "subfolder/my-note.md").
     pub relative_path: String,
+    /// Optional icon ID in PascalCase without vendor prefix (e.g., "Pencil"), from frontmatter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// Full note content returned when reading a note.

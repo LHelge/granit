@@ -2,10 +2,10 @@
 id: gcy
 title: Per-note custom icons with searchable picker
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:07.368511904Z
-updated: 2026-04-03T14:10:07.368511904Z
+updated: 2026-04-03T21:08:43.542133890Z
 tags:
 - notes
 - frontend

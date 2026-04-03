@@ -1,10 +1,10 @@
 ---
 id: 6rf
 title: Build searchable icon picker in frontmatter editor
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:39.361014027Z
-updated: 2026-04-03T14:10:39.361014027Z
+updated: 2026-04-03T21:07:12.304940624Z
 tags:
 - frontend
 - editor

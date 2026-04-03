@@ -2,17 +2,20 @@ use leptos::prelude::*;
 
 use super::use_editor_ctx;
 
-/// Inline tag editor shown between the title and content textarea.
+/// Inline frontmatter editor shown between the title and content textarea.
 ///
-/// Displays existing tags as removable pills and provides an input
-/// to add new tags.
+/// Shows a tag editor (removable pills + add input). The icon picker is
+/// rendered separately in [`Writer`], beside the title.
 #[component]
 pub(super) fn FrontmatterEditor() -> impl IntoView {
     let ctx = use_editor_ctx();
-    let (input, set_input) = signal(String::new());
+
+    // ── Tag state ────────────────────────────────────────────────────────────
+
+    let (tag_input, set_tag_input) = signal(String::new());
 
     let add_tag = move || {
-        let tag = input.get_untracked().trim().to_lowercase();
+        let tag = tag_input.get_untracked().trim().to_lowercase();
         if tag.is_empty() {
             return;
         }
@@ -21,7 +24,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
             tags.push(tag);
             ctx.tags.set(tags);
         }
-        set_input.set(String::new());
+        set_tag_input.set(String::new());
     };
 
     let remove_tag = move |tag: String| {
@@ -31,6 +34,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
     };
 
     view! {
+        // ── Tag editor ────────────────────────────────────────────────────────
         <div class="not-prose flex flex-wrap items-center gap-1.5 mb-3">
             <For
                 each=move || ctx.tags.get()
@@ -56,8 +60,8 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
                 type="text"
                 class="bg-transparent text-xs text-stone-400 outline-none placeholder:text-stone-600 w-24"
                 placeholder="Add tag…"
-                prop:value=move || input.get()
-                on:input=move |ev| set_input.set(event_target_value(&ev))
+                prop:value=move || tag_input.get()
+                on:input=move |ev| set_tag_input.set(event_target_value(&ev))
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                     match ev.key().as_str() {
                         "Enter" => {

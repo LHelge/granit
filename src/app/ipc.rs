@@ -179,6 +179,7 @@ pub async fn update_note(
     new_name: &str,
     content: &str,
     tags: Option<Vec<String>>,
+    icon: Option<String>,
 ) -> Result<NoteMeta, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -187,6 +188,7 @@ pub async fn update_note(
         new_name: &'a str,
         content: &'a str,
         tags: Option<Vec<String>>,
+        icon: Option<String>,
     }
     invoke_cmd(
         "update_note",
@@ -195,6 +197,7 @@ pub async fn update_note(
             new_name,
             content,
             tags,
+            icon,
         },
     )
     .await

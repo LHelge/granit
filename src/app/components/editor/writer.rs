@@ -3,6 +3,7 @@ use leptos::web_sys::wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
 use super::frontmatter::FrontmatterEditor;
+use super::icon_picker::IconPicker;
 use super::text_editing::{self, EditResult, TextareaState};
 use super::{use_editor_ctx, EditorCtx};
 
@@ -121,23 +122,29 @@ pub(super) fn Writer() -> impl IntoView {
     });
 
     view! {
-        <input
-            type="text"
-            node_ref=title_ref
-            class="not-prose w-full bg-transparent text-white text-4xl font-extrabold leading-tight outline-none mb-2"
-            placeholder="Untitled"
-            prop:value=move || ctx.title_input.get()
-            on:input=move |ev| ctx.title_input.set(event_target_value(&ev))
-            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                if ev.key() == "Enter" {
-                    ev.prevent_default();
-                    if let Some(el) = content_ref.get() {
-                        let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                        let _ = textarea.focus();
+        <div class="not-prose flex items-center gap-2 mb-2">
+            <IconPicker
+                value=Signal::derive(move || ctx.icon.get())
+                on_change=move |v| ctx.icon.set(v)
+            />
+            <input
+                type="text"
+                node_ref=title_ref
+                class="w-full bg-transparent text-white text-4xl font-extrabold leading-[1.111] outline-none p-0"
+                placeholder="Untitled"
+                prop:value=move || ctx.title_input.get()
+                on:input=move |ev| ctx.title_input.set(event_target_value(&ev))
+                on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                    if ev.key() == "Enter" {
+                        ev.prevent_default();
+                        if let Some(el) = content_ref.get() {
+                            let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                            let _ = textarea.focus();
+                        }
                     }
                 }
-            }
-        />
+            />
+        </div>
         <FrontmatterEditor />
         <textarea
             node_ref=content_ref

@@ -1,10 +1,10 @@
 ---
 id: gte
 title: Render custom note icons in tree view
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:32.700934109Z
-updated: 2026-04-03T14:10:32.700934109Z
+updated: 2026-04-03T20:32:48.280662369Z
 tags:
 - frontend
 - tree

@@ -1,10 +1,10 @@
 ---
 id: 6uq
 title: Carry icons through cave and IPC flows
-status: open
+status: done
 priority: P1
 created: 2026-04-03T14:10:19.975947105Z
-updated: 2026-04-03T14:10:19.975947105Z
+updated: 2026-04-03T20:17:01.927030798Z
 tags:
 - backend
 - ipc

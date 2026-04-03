@@ -4,6 +4,18 @@ use super::CaveError;
 
 pub use granit_types::{Note, NoteMeta};
 
+/// Build note metadata including the icon from a file on disk.
+///
+/// Reads frontmatter from `abs_path` to populate `icon`. Falls back to `None`
+/// if the file cannot be read or has no icon field.
+pub(crate) fn note_meta_with_icon(relative_path: &Path, abs_path: &std::path::Path) -> NoteMeta {
+    let mut meta = note_meta_from_relative_path(relative_path);
+    if let Ok(raw) = std::fs::read_to_string(abs_path) {
+        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
+    }
+    meta
+}
+
 /// Build note metadata from a relative path (e.g. `Path::new("folder/note.md")`).
 ///
 /// `NoteMeta.relative_path` is always stored with forward slashes so it is
@@ -25,6 +37,7 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> NoteMeta {
     NoteMeta {
         slug,
         relative_path: path_str,
+        icon: None,
     }
 }
 

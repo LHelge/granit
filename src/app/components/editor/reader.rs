@@ -1,7 +1,10 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::app::ipc;
+use crate::app::{
+    components::{icons::Icon, note_icons::resolve_note_icon},
+    ipc,
+};
 
 use super::use_editor_ctx;
 
@@ -54,7 +57,12 @@ pub(super) fn Reader() -> impl IntoView {
     };
 
     view! {
-        <h1 class="!mt-0 !mb-1">
+        <h1 class="!mt-0 !mb-1 flex items-center gap-2">
+            {move || ctx.icon.get().map(|id| view! {
+                <span class="inline-flex w-6 h-6 shrink-0 text-stone-400">
+                    <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
+                </span>
+            })}
             {move || ctx.rendered_note.get().map(|r| r.title).unwrap_or_default()}
         </h1>
         {move || {
