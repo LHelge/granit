@@ -352,8 +352,10 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         DisplayItem::ToolCall(info) => {
                             view! {
                                 <div class="flex justify-start">
-                                    <div class="px-3 py-1.5 rounded-lg bg-stone-800/60 border border-stone-700 text-stone-400 text-xs font-mono">
-                                        <span class="text-stone-500">"⚙ "</span>
+                                    <div class="px-3 py-1.5 rounded-lg bg-stone-800/60 border border-stone-700 text-stone-400 text-xs font-mono flex items-center gap-1.5">
+                                        <span class="inline-flex w-3 h-3 shrink-0 text-stone-500">
+                                            <Icon icon=icondata_lu::LuWrench width="100%" height="100%"/>
+                                        </span>
                                         <span class="text-stone-300">{info.name}</span>
                                     </div>
                                 </div>
