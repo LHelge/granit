@@ -70,7 +70,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                     view! {
                         <button
                             class=move || {
-                                let base = "w-full text-left py-1 text-sm truncate transition-colors flex items-center gap-1";
+                                let base = "w-full text-left py-0.5 text-base truncate transition-colors flex items-center gap-1";
                                 if ctx.active_note.get().map(|n| n.meta.slug == slug).unwrap_or(false) {
                                     format!("{base} bg-stone-700 text-stone-100")
                                 } else {
