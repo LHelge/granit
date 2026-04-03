@@ -1,10 +1,10 @@
 ---
 id: 3ej
 title: 'Cleanup: remove dead secrets code, close superseded tasks'
-status: open
+status: done
 priority: P2
 created: 2026-03-31T21:51:24.791998852Z
-updated: 2026-03-31T21:51:24.791998852Z
+updated: 2026-04-03T23:36:12.647355491Z
 tags:
 - cleanup
 depends_on:

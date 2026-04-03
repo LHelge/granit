@@ -2,10 +2,10 @@
 id: xd5
 title: Dynamic model selection from provider
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-29T00:06:21.075709713Z
-updated: 2026-03-29T00:06:21.075709713Z
+updated: 2026-04-03T23:36:15.623606563Z
 ---
 
 ## Scope

@@ -1,10 +1,10 @@
 ---
 id: gt4
 title: Remove model field from settings modal
-status: open
+status: done
 priority: P2
 created: 2026-03-29T00:06:59.685104740Z
-updated: 2026-03-29T00:06:59.685104740Z
+updated: 2026-04-03T23:36:12.641210011Z
 tags:
 - frontend
 depends_on:

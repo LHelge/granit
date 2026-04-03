@@ -2,10 +2,10 @@
 id: c56
 title: Multi-provider config with inline API keys
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-03-31T21:49:38.490463472Z
-updated: 2026-03-31T21:49:38.490463472Z
+updated: 2026-04-03T23:36:15.628704105Z
 ---
 
 ## Scope

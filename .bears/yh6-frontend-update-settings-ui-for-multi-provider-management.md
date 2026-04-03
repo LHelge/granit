@@ -1,10 +1,10 @@
 ---
 id: yh6
 title: 'Frontend: update settings UI for multi-provider management'
-status: open
+status: done
 priority: P2
 created: 2026-03-31T21:51:15.440534520Z
-updated: 2026-03-31T21:51:15.440534520Z
+updated: 2026-04-03T23:36:12.645991864Z
 tags:
 - frontend
 depends_on:
