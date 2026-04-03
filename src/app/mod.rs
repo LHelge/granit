@@ -1,13 +1,11 @@
-use leptos::prelude::*;
-
 mod components;
-pub(crate) mod ipc;
 
-use components::editor::EditOpen;
-use components::icons::Icon;
-use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
+use leptos::prelude::*;
+pub(crate) mod ipc;
+use components::{
+    editor::EditOpen, icons::Icon, AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar,
+};
 use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
-use icondata_lu;
 
 // ── Sidebar resize constants ───────────────────────────────────────
 

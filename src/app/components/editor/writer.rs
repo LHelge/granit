@@ -1,11 +1,12 @@
+use super::{
+    frontmatter::FrontmatterEditor,
+    icon_picker::IconPicker,
+    text_editing::{self, EditResult, TextareaState},
+    use_editor_ctx, EditorCtx,
+};
 use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
-
-use super::frontmatter::FrontmatterEditor;
-use super::icon_picker::IconPicker;
-use super::text_editing::{self, EditResult, TextareaState};
-use super::{use_editor_ctx, EditorCtx};
 
 fn request_animation_frame(f: impl FnOnce() + 'static) {
     let cb = Closure::once_into_js(f);

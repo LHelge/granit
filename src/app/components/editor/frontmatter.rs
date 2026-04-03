@@ -1,6 +1,5 @@
-use leptos::prelude::*;
-
 use super::use_editor_ctx;
+use leptos::prelude::*;
 
 /// Inline frontmatter editor shown between the title and content textarea.
 ///

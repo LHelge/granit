@@ -1,10 +1,8 @@
-use leptos::prelude::*;
-use wasm_bindgen::JsCast;
-
+use super::use_editor_ctx;
 use crate::app::{components::icons::Icon, ipc};
 use granit_types::resolve_note_icon;
-
-use super::use_editor_ctx;
+use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 /// Rendered preview of the active note with wiki-link navigation.
 #[component]

@@ -1,13 +1,10 @@
-use std::collections::HashMap;
-
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
-
 use granit_types::{
     AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
 };
+use serde::{de::DeserializeOwned, Serialize};
+use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 // ── Tauri IPC binding ──────────────────────────────────────────────
 

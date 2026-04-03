@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use crate::AgentConfig;
+use serde::{Deserialize, Serialize};
 
 /// Sidebar panel state (visibility + width).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

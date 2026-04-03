@@ -1,5 +1,4 @@
 use icondata_core::IconData;
-use icondata_lu;
 
 /// A single entry in the curated note icon catalog.
 pub struct NoteIconEntry {

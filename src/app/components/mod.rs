@@ -9,7 +9,6 @@ mod sidebar;
 mod tree_view;
 
 pub use agent_panel::AgentPanel;
-pub use editor::Editor;
-pub use editor::OpenInEdit;
+pub use editor::{Editor, OpenInEdit};
 pub use settings::SettingsModal;
 pub use sidebar::Sidebar;

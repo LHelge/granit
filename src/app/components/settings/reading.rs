@@ -1,8 +1,6 @@
-use leptos::prelude::*;
-
-use super::font_picker::FontPicker;
-use super::SettingsForm;
+use super::{font_picker::FontPicker, SettingsForm};
 use leptos::prelude::Callback;
+use leptos::prelude::*;
 
 #[component]
 pub fn ReadingSettings(form: RwSignal<SettingsForm>) -> impl IntoView {

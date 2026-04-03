@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-
 pub use leptos_icons::Icon;
 
 /// Provider logo icon. Maps `provider_type` (e.g. `"ollama"`, `"anthropic"`)

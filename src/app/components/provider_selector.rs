@@ -1,10 +1,9 @@
-use crate::app::components::icons::{Icon, ProviderIcon};
-use crate::app::ipc;
-use crate::app::AppCtx;
+use crate::app::{
+    components::icons::{Icon, ProviderIcon},
+    ipc, AppCtx,
+};
 use granit_types::ProviderInfo;
-use icondata_lu;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 #[component]
 pub fn ProviderSelector(

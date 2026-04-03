@@ -1,7 +1,6 @@
-use leptos::prelude::*;
-
 use crate::app::components::icons::Icon;
 use granit_types::{resolve_note_icon, NOTE_ICONS};
+use leptos::prelude::*;
 
 /// Searchable icon picker for the frontmatter editor.
 ///

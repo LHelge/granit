@@ -1,7 +1,5 @@
-use leptos::prelude::*;
-
 use crate::app::components::icons::Icon;
-use icondata_lu;
+use leptos::prelude::*;
 
 #[component]
 pub fn FontPicker(

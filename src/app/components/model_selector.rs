@@ -1,10 +1,6 @@
-use crate::app::components::icons::Icon;
-use crate::app::ipc;
-use crate::app::AppCtx;
+use crate::app::{components::icons::Icon, ipc, AppCtx};
 use granit_types::ModelInfo;
-use icondata_lu;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{prelude::*, task::spawn_local};
 
 #[component]
 pub fn ModelSelector(

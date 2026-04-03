@@ -1,13 +1,11 @@
+use super::{
+    rename_input::RenameInput, use_tree_ctx, ContextMenu, ContextTarget, DragPayload, RenameTarget,
+};
+use crate::app::{components::icons::Icon, ipc};
+use granit_types::resolve_note_icon;
+use granit_types::NoteMeta;
 use leptos::prelude::*;
 use web_sys::{DragEvent, MouseEvent};
-
-use granit_types::NoteMeta;
-
-use super::rename_input::RenameInput;
-use super::{use_tree_ctx, ContextMenu, ContextTarget, DragPayload, RenameTarget};
-use crate::app::components::icons::Icon;
-use crate::app::ipc;
-use granit_types::resolve_note_icon;
 
 /// Renders a single note row in the tree, with drag, context menu, and rename support.
 #[component]

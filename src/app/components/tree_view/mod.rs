@@ -4,18 +4,17 @@ mod note_node;
 mod rename_input;
 mod tree_model;
 
-use leptos::prelude::*;
-use web_sys::{DragEvent, MouseEvent};
-
-use granit_types::{Note, NoteMeta};
-
+use crate::app::{
+    components::editor::{EditOpen, OpenInEdit},
+    ipc,
+};
 use context_menu::TreeContextMenu;
 use folder_node::FolderNode;
+use granit_types::{Note, NoteMeta};
+use leptos::prelude::*;
 use note_node::NoteNode;
 use tree_model::{build_tree, TreeNode};
-
-use crate::app::components::editor::{EditOpen, OpenInEdit};
-use crate::app::ipc;
+use web_sys::{DragEvent, MouseEvent};
 
 // ── Shared state via context ───────────────────────────────────────
 

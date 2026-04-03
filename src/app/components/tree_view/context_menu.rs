@@ -1,8 +1,7 @@
-use leptos::prelude::*;
-use web_sys::MouseEvent;
-
 use super::{use_tree_ctx, ContextTarget, RenameTarget};
 use crate::app::ipc;
+use leptos::prelude::*;
+use web_sys::MouseEvent;
 
 const MENU_ITEM: &str =
     "w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors";

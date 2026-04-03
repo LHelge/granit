@@ -3,14 +3,11 @@ mod font_picker;
 mod markdown;
 mod reading;
 
-use leptos::prelude::*;
-
 use super::icons::Icon;
-use crate::app::ipc;
-use crate::app::AppCtx;
+use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
 use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry};
-use icondata_lu;
+use leptos::prelude::*;
 use markdown::MarkdownSettings;
 use reading::ReadingSettings;
 

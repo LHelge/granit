@@ -4,16 +4,12 @@ mod reader;
 pub(crate) mod text_editing;
 mod writer;
 
-use leptos::prelude::*;
-
-use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
-
-use reader::Reader;
-use writer::Writer;
-
 use super::icons::Icon;
 use crate::app::ipc;
-use icondata_lu;
+use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
+use leptos::prelude::*;
+use reader::Reader;
+use writer::Writer;
 
 // ── Shared context: open next note in edit mode ────────────────────
 

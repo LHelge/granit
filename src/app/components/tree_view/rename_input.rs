@@ -1,8 +1,5 @@
-use leptos::ev::KeyboardEvent;
-use leptos::prelude::*;
-
 use crate::app::components::icons::Icon;
-use icondata_lu;
+use leptos::{ev::KeyboardEvent, prelude::*};
 
 /// Inline rename input component. Shows a text input with the current name,
 /// commits on Enter, cancels on Escape or blur.

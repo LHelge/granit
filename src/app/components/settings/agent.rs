@@ -1,10 +1,6 @@
-use leptos::prelude::*;
-
-use super::font_picker::FontPicker;
-use super::{ProviderFormEntry, SettingsForm};
+use super::{font_picker::FontPicker, ProviderFormEntry, SettingsForm};
 use crate::app::components::icons::{Icon, ProviderIcon};
-use icondata_lu;
-use leptos::prelude::Callback;
+use leptos::prelude::*;
 
 #[component]
 pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {

@@ -1,5 +1,4 @@
-use super::cave_selector::CaveSelector;
-use super::tree_view::TreeView;
+use super::{cave_selector::CaveSelector, tree_view::TreeView};
 use crate::app::AppCtx;
 use leptos::prelude::*;
 

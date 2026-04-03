@@ -1,12 +1,14 @@
-use crate::app::components::icons::Icon;
-use crate::app::components::model_selector::ModelSelector;
-use crate::app::components::provider_selector::ProviderSelector;
-use crate::app::ipc;
-use crate::app::AppCtx;
+use crate::app::{
+    components::{icons::Icon, model_selector::ModelSelector, provider_selector::ProviderSelector},
+    ipc, AppCtx,
+};
+
 use granit_types::{ChatMessage, ChatRole, ModelInfo, ProviderInfo, ToolCallInfo};
-use icondata_lu;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
+use leptos::{
+    ev::{MouseEvent, SubmitEvent},
+    prelude::*,
+    task::spawn_local,
+};
 use wasm_bindgen::JsCast;
 
 #[derive(Clone)]
@@ -188,7 +190,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         });
     });
 
-    let on_submit = move |ev: leptos::ev::SubmitEvent| {
+    let on_submit = move |ev: SubmitEvent| {
         ev.prevent_default();
         let msg = input.get_untracked();
         if msg.trim().is_empty() || is_streaming.get_untracked() || !has_model.get_untracked() {
@@ -216,7 +218,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let app = expect_context::<AppCtx>();
 
     // Intercept clicks on links in rendered markdown within the agent panel.
-    let on_link_click = move |ev: leptos::ev::MouseEvent| {
+    let on_link_click = move |ev: MouseEvent| {
         let Some(target) = ev.target() else { return };
         let anchor = target
             .dyn_ref::<web_sys::Element>()
