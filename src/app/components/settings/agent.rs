@@ -2,9 +2,8 @@ use leptos::prelude::*;
 
 use super::font_picker::FontPicker;
 use super::{ProviderFormEntry, SettingsForm};
-use crate::app::components::icons::{
-    ChevronDownIcon, EyeIcon, EyeSlashIcon, PlusIcon, ProviderIcon, TrashIcon,
-};
+use crate::app::components::icons::{Icon, ProviderIcon};
+use icondata_lu;
 use leptos::prelude::Callback;
 
 #[component]
@@ -63,7 +62,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                     class="flex items-center gap-1 text-xs text-stone-400 hover:text-stone-200 transition-colors"
                     on:click=add_provider
                 >
-                    <PlusIcon />
+                    <Icon icon=icondata_lu::LuPlus width="1rem" height="1rem"/>
                     "Add"
                 </button>
             </div>
@@ -185,7 +184,12 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                     >
                         <ProviderIcon provider_type=Signal::derive(provider_type) class="w-3.5 h-3.5 shrink-0" />
                         <span>{move || PROVIDER_TYPES.iter().find(|(k, _)| *k == provider_type()).map(|(_, l)| *l).unwrap_or("Select")}</span>
-                        <ChevronDownIcon class="w-3 h-3 shrink-0 text-stone-400" open=Signal::derive(move || type_open.get()) />
+                        <span
+                            class="inline-flex w-3 h-3 shrink-0 text-stone-400 transition-transform"
+                            class:rotate-180=move || type_open.get()
+                        >
+                            <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                        </span>
                     </button>
                     <Show when=move || type_open.get()>
                         <div class="absolute top-full left-0 mt-1 bg-stone-800 border border-stone-600 rounded shadow-lg z-50 min-w-[10rem]">
@@ -221,7 +225,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                     title="Remove provider"
                     on:click=on_remove
                 >
-                    <TrashIcon />
+                    <Icon icon=icondata_lu::LuTrash2 width="1rem" height="1rem"/>
                 </button>
             </div>
 
@@ -253,9 +257,9 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                         on:click=move |_| set_show_key.update(|v| *v = !*v)
                     >
                         {move || if show_key.get() {
-                            view! { <EyeSlashIcon /> }.into_any()
+                            view! { <Icon icon=icondata_lu::LuEyeOff width="1rem" height="1rem"/> }.into_any()
                         } else {
-                            view! { <EyeIcon /> }.into_any()
+                            view! { <Icon icon=icondata_lu::LuEye width="1rem" height="1rem"/> }.into_any()
                         }}
                     </button>
                 </div>

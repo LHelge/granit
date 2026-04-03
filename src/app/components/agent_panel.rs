@@ -1,4 +1,5 @@
-use crate::app::components::icons::TrashIcon;
+use crate::app::components::icons::Icon;
+use icondata_lu;
 use crate::app::components::model_selector::ModelSelector;
 use crate::app::components::provider_selector::ProviderSelector;
 use crate::app::ipc;
@@ -295,7 +296,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         });
                     }
                 >
-                    <TrashIcon class="w-3.5 h-3.5" />
+                    <Icon icon=icondata_lu::LuTrash2 width="0.875rem" height="0.875rem"/>
                 </button>
             </div>
             // Message list

@@ -5,7 +5,8 @@ use super::rename_input::RenameInput;
 use super::tree_model::TreeNode;
 use super::{render_node, use_tree_ctx};
 use super::{ContextMenu, ContextTarget, DragPayload, RenameTarget};
-use crate::app::components::icons::{ChevronIcon, FolderIcon};
+use crate::app::components::icons::Icon;
+use icondata_lu;
 use crate::app::ipc;
 
 /// Renders a folder row in the tree, with collapsing, drag-drop, context menu,
@@ -112,8 +113,10 @@ pub(super) fn FolderNode(
                                 }
                             }
                         >
-                            <ChevronIcon open=Signal::from(open) />
-                            <FolderIcon />
+                            <span class=move || if open.get() { "inline-flex w-3 h-3 shrink-0 transition-transform rotate-90" } else { "inline-flex w-3 h-3 shrink-0 transition-transform" }>
+                                <Icon icon=icondata_lu::LuChevronRight width="100%" height="100%"/>
+                            </span>
+                            <Icon icon=icondata_lu::LuFolder width="0.875rem" height="0.875rem"/>
                             {name.clone()}
                         </button>
                     }

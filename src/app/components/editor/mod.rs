@@ -10,7 +10,8 @@ use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
 use reader::Reader;
 use writer::Writer;
 
-use super::icons::{PencilIcon, SaveIcon, XCloseIcon};
+use super::icons::Icon;
+use icondata_lu;
 use crate::app::ipc;
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -315,7 +316,7 @@ pub fn Editor() -> impl IntoView {
                                 title="Edit"
                                 on:click=move |_| ctx.toggle_mode()
                             >
-                                <PencilIcon />
+                                <Icon icon=icondata_lu::LuPencil width="1rem" height="1rem"/>
                             </button>
                         }
                     >
@@ -326,14 +327,14 @@ pub fn Editor() -> impl IntoView {
                             on:click=move |_| ctx.save()
                             disabled=move || ctx.saving.get()
                         >
-                            <SaveIcon />
+                            <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
                         </button>
                         <button
                             class="p-1.5 rounded text-stone-500 hover:text-stone-200 hover:bg-stone-700 transition-colors"
                             title="Cancel editing"
                             on:click=move |_| ctx.toggle_mode()
                         >
-                            <XCloseIcon />
+                            <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
                         </button>
                     </Show>
                 </div>

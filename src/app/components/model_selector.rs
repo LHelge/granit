@@ -1,4 +1,5 @@
-use crate::app::components::icons::ChevronDownIcon;
+use crate::app::components::icons::Icon;
+use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use granit_types::ModelInfo;
@@ -62,7 +63,12 @@ pub fn ModelSelector(
                     class=("italic", move || !has_selection())
                     class=("text-stone-500", move || !has_selection())
                 >{selected_label}</span>
-                <ChevronDownIcon class="w-3 h-3 shrink-0 text-stone-400" open=Signal::derive(move || dropdown_open.get()) />
+                <span
+                    class="inline-flex w-3 h-3 shrink-0 text-stone-400 transition-transform"
+                    class:rotate-180=move || dropdown_open.get()
+                >
+                    <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                </span>
             </button>
 
             <Show when=move || dropdown_open.get()>

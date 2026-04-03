@@ -123,12 +123,47 @@ wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing
 - The user is experienced with Rust backend development — keep backend explanations concise.
 - The user is less experienced with frontend/Leptos/Tailwind — provide more guidance, examples, and explanations for frontend changes.
 
+### Icons
+
+Icons use `leptos_icons` + `icondata_lu` (Lucide). SVGs are embedded in WASM at compile time — no CDN or font files.
+
+**Import:**
+```rust
+use crate::app::components::icons::Icon; // re-exports leptos_icons::Icon
+use icondata_lu;
+```
+
+**`Icon` has no `class` prop** — only `width`, `height`, and `style`.
+
+- Fixed-size, no color/spacing needed:
+  ```rust
+  <Icon icon=icondata_lu::LuPencil width="1rem" height="1rem"/>
+  ```
+- Color, shrink, or spacing via Tailwind — wrap in a span:
+  ```rust
+  <span class="inline-flex w-4 h-4 shrink-0 text-stone-400">
+      <Icon icon=icondata_lu::LuFolder width="100%" height="100%"/>
+  </span>
+  ```
+- Reactive rotation (e.g. chevrons in dropdowns):
+  ```rust
+  <span class="inline-flex w-3 h-3 transition-transform" class:rotate-180=move || open.get()>
+      <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+  </span>
+  ```
+
+**Tailwind size reference:** `w-3`=0.75rem, `w-3.5`=0.875rem, `w-4`=1rem, `w-5`=1.25rem
+
+`ProviderIcon` (custom brand logos from `/public/`) remains in `src/app/components/icons.rs`.
+
 ### Key Crates
 
 | Crate | Purpose |
 |-------|---------|
 | `tauri` 2 | Desktop app framework, IPC, windowing |
 | `leptos` 0.8 | Frontend UI (CSR/WASM) |
+| `leptos_icons` | Inline SVG icon renderer |
+| `icondata_lu` | Lucide icon data constants |
 | `pulldown-cmark` | Markdown → HTML |
 | `rig-core` | AI agent framework |
 | `thiserror` | Typed error derivation |

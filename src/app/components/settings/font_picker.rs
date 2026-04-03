@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 
-use crate::app::components::icons::ChevronDownIcon;
+use crate::app::components::icons::Icon;
+use icondata_lu;
 
 #[component]
 pub fn FontPicker(
@@ -64,7 +65,12 @@ pub fn FontPicker(
                         if v.is_empty() { "Select font…".to_string() } else { v }
                     }}
                 </span>
-                <ChevronDownIcon class="w-3.5 h-3.5 text-stone-400 shrink-0 ml-2" open=open />
+                <span
+                    class="inline-flex w-3.5 h-3.5 text-stone-400 shrink-0 ml-2 transition-transform"
+                    class:rotate-180=move || open.get()
+                >
+                    <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                </span>
             </button>
 
             // Dropdown

@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 
-use super::icons::{ChevronDownIcon, GearIcon};
+use super::icons::Icon;
+use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
 
@@ -66,7 +67,9 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                         on:click=move |_| set_dropdown_open.update(|v| *v = !*v)
                     >
                         <span class="truncate">{cave_label}</span>
-                        <ChevronDownIcon class="w-3.5 h-3.5 ml-1 shrink-0 text-stone-400" />
+                        <span class="inline-flex w-3.5 h-3.5 ml-1 shrink-0 text-stone-400">
+                            <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                        </span>
                     </button>
 
                     // Dropdown menu (opens upward)
@@ -114,7 +117,7 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                     title="Settings"
                     on:click=move |_| set_settings_open.set(true)
                 >
-                    <GearIcon />
+                    <Icon icon=icondata_lu::LuSettings width="1rem" height="1rem"/>
                 </button>
             </div>
         </div>

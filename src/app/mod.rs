@@ -4,7 +4,8 @@ mod components;
 pub(crate) mod ipc;
 
 use components::editor::EditOpen;
-use components::icons::{PanelLeftIcon, PanelRightIcon};
+use components::icons::Icon;
+use icondata_lu;
 use components::{AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar};
 use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
 
@@ -281,14 +282,14 @@ pub fn App() -> impl IntoView {
                         on:click=toggle_sidebar
                         title="Toggle sidebar"
                     >
-                        <PanelLeftIcon />
+                        <Icon icon=icondata_lu::LuPanelLeft width="1rem" height="1rem"/>
                     </button>
                     <button
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
                         on:click=toggle_agent
                         title="Toggle agent"
                     >
-                        <PanelRightIcon />
+                        <Icon icon=icondata_lu::LuPanelRight width="1rem" height="1rem"/>
                     </button>
                 </div>
             </header>

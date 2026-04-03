@@ -5,7 +5,8 @@ mod reading;
 
 use leptos::prelude::*;
 
-use super::icons::XCloseIcon;
+use super::icons::Icon;
+use icondata_lu;
 use crate::app::ipc;
 use crate::app::AppCtx;
 use agent::AgentSettings;
@@ -232,7 +233,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
                         on:click=move |_| set_open.set(false)
                     >
-                        <XCloseIcon />
+                        <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
                     </button>
                 </div>
 
