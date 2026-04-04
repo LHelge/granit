@@ -42,7 +42,6 @@ impl Cave {
     ///
     /// Subdirectories starting with `.` (hidden) are skipped, as is `.granit/`.
     /// Returns an error if two files share the same slug.
-    #[allow(clippy::map_entry)]
     fn scan_recursive(cave_root: &Path, dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
         let mut notes: HashMap<String, PathBuf> = HashMap::new();
         for entry in std::fs::read_dir(dir)? {
@@ -58,23 +57,28 @@ impl Cave {
                 }
                 let sub = Self::scan_recursive(cave_root, &p)?;
                 for (slug, abs_path) in sub {
-                    if let Some(existing) = notes.get(&slug) {
-                        let existing_rel = existing
-                            .strip_prefix(cave_root)
-                            .unwrap_or(existing)
-                            .to_string_lossy()
-                            .into_owned();
-                        let new_rel = abs_path
-                            .strip_prefix(cave_root)
-                            .unwrap_or(&abs_path)
-                            .to_string_lossy()
-                            .into_owned();
-                        return Err(CaveError::DuplicateSlug {
-                            slug,
-                            paths: vec![existing_rel, new_rel],
-                        });
+                    match notes.entry(slug) {
+                        std::collections::hash_map::Entry::Occupied(e) => {
+                            let existing_rel = e
+                                .get()
+                                .strip_prefix(cave_root)
+                                .unwrap_or(e.get())
+                                .to_string_lossy()
+                                .into_owned();
+                            let new_rel = abs_path
+                                .strip_prefix(cave_root)
+                                .unwrap_or(&abs_path)
+                                .to_string_lossy()
+                                .into_owned();
+                            return Err(CaveError::DuplicateSlug {
+                                slug: e.key().clone(),
+                                paths: vec![existing_rel, new_rel],
+                            });
+                        }
+                        std::collections::hash_map::Entry::Vacant(v) => {
+                            v.insert(abs_path);
+                        }
                     }
-                    notes.insert(slug, abs_path);
                 }
             } else if p.is_file() {
                 if let Some(ext) = p.extension() {
@@ -83,23 +87,28 @@ impl Cave {
                             .file_stem()
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_default();
-                        if let Some(existing) = notes.get(&slug) {
-                            let existing_rel = existing
-                                .strip_prefix(cave_root)
-                                .unwrap_or(existing)
-                                .to_string_lossy()
-                                .into_owned();
-                            let new_rel = p
-                                .strip_prefix(cave_root)
-                                .unwrap_or(&p)
-                                .to_string_lossy()
-                                .into_owned();
-                            return Err(CaveError::DuplicateSlug {
-                                slug,
-                                paths: vec![existing_rel, new_rel],
-                            });
+                        match notes.entry(slug) {
+                            std::collections::hash_map::Entry::Occupied(e) => {
+                                let existing_rel = e
+                                    .get()
+                                    .strip_prefix(cave_root)
+                                    .unwrap_or(e.get())
+                                    .to_string_lossy()
+                                    .into_owned();
+                                let new_rel = p
+                                    .strip_prefix(cave_root)
+                                    .unwrap_or(&p)
+                                    .to_string_lossy()
+                                    .into_owned();
+                                return Err(CaveError::DuplicateSlug {
+                                    slug: e.key().clone(),
+                                    paths: vec![existing_rel, new_rel],
+                                });
+                            }
+                            std::collections::hash_map::Entry::Vacant(v) => {
+                                v.insert(p);
+                            }
                         }
-                        notes.insert(slug, p);
                     }
                 }
             }
