@@ -270,4 +270,45 @@ mod tests {
         assert_eq!(config.reading_font, FontConfig::reading_default());
         assert_eq!(config.agent_font, FontConfig::agent_default());
     }
+
+    // ── to_ipc ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_to_ipc_recent_caves_as_strings() {
+        let mut config = AppConfig::default();
+        config.recent_caves = vec![
+            PathBuf::from("/home/user/notes"),
+            PathBuf::from("/tmp/cave"),
+        ];
+        let ipc = config.to_ipc();
+        assert_eq!(
+            ipc.recent_caves,
+            vec!["/home/user/notes".to_string(), "/tmp/cave".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_to_ipc_active_cave_propagated() {
+        let mut config = AppConfig::default();
+        config.active_cave = Some(PathBuf::from("/active/cave"));
+        let ipc = config.to_ipc();
+        assert_eq!(ipc.active_cave, Some("/active/cave".to_string()));
+    }
+
+    #[test]
+    fn test_to_ipc_active_cave_none_when_unset() {
+        let config = AppConfig::default();
+        let ipc = config.to_ipc();
+        assert!(ipc.active_cave.is_none());
+        assert!(ipc.recent_caves.is_empty());
+    }
+
+    #[test]
+    fn test_to_ipc_preserves_theme_and_fonts() {
+        let mut config = AppConfig::default();
+        config.theme = "cupcake".to_string();
+        let ipc = config.to_ipc();
+        assert_eq!(ipc.theme, "cupcake");
+        assert_eq!(ipc.markdown_font, FontConfig::markdown_default());
+    }
 }

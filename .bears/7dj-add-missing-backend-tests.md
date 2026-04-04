@@ -1,10 +1,10 @@
 ---
 id: 7dj
 title: Add missing backend tests
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:41:45.785242051Z
-updated: 2026-04-04T21:41:45.785242051Z
+updated: 2026-04-04T22:59:27.465165380Z
 tags:
 - testing
 - backend

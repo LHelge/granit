@@ -1,10 +1,10 @@
 ---
 id: zzd
 title: Fix potential deadlock in ensure_agent()
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:40:31.625350180Z
-updated: 2026-04-04T21:40:31.625350180Z
+updated: 2026-04-04T22:59:27.457976233Z
 tags:
 - errors
 - backend

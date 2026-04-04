@@ -1,10 +1,10 @@
 ---
 id: 7px
 title: Add symlink containment to cave operations
-status: open
+status: done
 priority: P3
 created: 2026-04-04T21:41:36.956878091Z
-updated: 2026-04-04T21:41:36.956878091Z
+updated: 2026-04-04T22:52:57.937144322Z
 tags:
 - security
 - backend

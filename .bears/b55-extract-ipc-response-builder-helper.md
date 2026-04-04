@@ -1,10 +1,10 @@
 ---
 id: b55
 title: Extract IPC response builder helper
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:40:46.864493867Z
-updated: 2026-04-04T21:40:46.864493867Z
+updated: 2026-04-04T22:59:27.464639772Z
 tags:
 - duplication
 - backend

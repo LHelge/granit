@@ -1,10 +1,10 @@
 ---
 id: qa7
 title: Use HashMap Entry API in cave scanning
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:41:19.399196196Z
-updated: 2026-04-04T21:41:19.399196196Z
+updated: 2026-04-04T22:47:40.149757463Z
 tags:
 - idiomatic
 - backend

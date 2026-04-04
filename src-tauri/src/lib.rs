@@ -46,24 +46,33 @@ impl AppState {
     }
 
     /// Ensure the agent is initialized from current config.
+    ///
+    /// Lock ordering: config is read and dropped *before* agent is locked,
+    /// so this can never deadlock with code that holds config and then acquires
+    /// agent (there is none), or vice-versa.
     fn ensure_agent(&self) -> Result<(), AgentError> {
-        let mut guard = self.lock_agent();
-        if guard.is_none() {
-            let config = self.lock_config();
-            *guard = Some(Agent::from_config(&config.agent, self.cave.clone())?);
+        if self.lock_agent().is_some() {
+            return Ok(());
         }
+        let agent_config = self.lock_config().agent.clone();
+        *self.lock_agent() = Some(Agent::from_config(&agent_config, self.cave.clone())?);
         Ok(())
+    }
+
+    /// Build the IPC response for commands that return the current config state.
+    fn ipc_response(&self, config: &AppConfig) -> IpcConfig {
+        let mut ipc = config.to_ipc();
+        ipc.active_cave = self
+            .active_cave_path()
+            .map(|p| p.to_string_lossy().into_owned());
+        ipc
     }
 }
 
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     let config = state.lock_config();
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = state
-        .active_cave_path()
-        .map(|p| p.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 #[tauri::command]
@@ -96,11 +105,7 @@ fn save_config(
     config.save()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent();
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = state
-        .active_cave_path()
-        .map(|p| p.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 #[tauri::command]
@@ -128,9 +133,7 @@ fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, 
     let mut config = state.lock_config();
     *config = AppConfig::load().map_err(|e| CaveError::Io(e.to_string()))?;
 
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = Some(path.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
@@ -327,11 +330,7 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcCon
     config.agent.selected_model = None;
     config.save()?;
     state.reset_agent();
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = state
-        .active_cave_path()
-        .map(|p| p.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 #[tauri::command]
@@ -359,11 +358,7 @@ fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<IpcCo
     config.agent.selected_model = Some(model_id);
     config.save()?;
     state.reset_agent();
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = state
-        .active_cave_path()
-        .map(|p| p.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 #[tauri::command]
@@ -443,11 +438,7 @@ fn set_active_theme(
     let mut config = state.lock_config();
     config.theme = id;
     config.save()?;
-    let mut ipc = config.to_ipc();
-    ipc.active_cave = state
-        .active_cave_path()
-        .map(|p| p.to_string_lossy().into_owned());
-    Ok(ipc)
+    Ok(state.ipc_response(&config))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -1460,4 +1460,44 @@ mod tests {
         assert_eq!(note.meta.slug, today);
         assert!(dir.path().join(format!("Journal/{today}.md")).exists());
     }
+
+    // ── resolve_slug / lookup_slug ─────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_slug_exact_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("my-note.md"), "").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(cave.resolve_slug("my-note").unwrap(), "my-note");
+    }
+
+    #[test]
+    fn test_resolve_slug_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("my-note.md"), "").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        // Regardless of casing, the canonical stored slug is returned.
+        assert_eq!(cave.resolve_slug("MY-NOTE").unwrap(), "my-note");
+        assert_eq!(cave.resolve_slug("My-Note").unwrap(), "my-note");
+        assert_eq!(cave.resolve_slug("my-NOTE").unwrap(), "my-note");
+    }
+
+    #[test]
+    fn test_resolve_slug_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let err = cave.resolve_slug("missing").unwrap_err();
+        assert!(matches!(err, CaveError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_lookup_slug_case_insensitive_returns_canonical() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Project-Alpha.md"), "").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        // lookup_slug used during wiki-link resolution
+        assert_eq!(cave.lookup_slug("project-alpha"), Some("Project-Alpha"));
+        assert_eq!(cave.lookup_slug("PROJECT-ALPHA"), Some("Project-Alpha"));
+        assert!(cave.lookup_slug("project-beta").is_none());
+    }
 }

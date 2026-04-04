@@ -1,10 +1,10 @@
 ---
 id: 3kk
 title: Extract cave child-path update helper
-status: in_progress
+status: done
 priority: P2
 created: 2026-04-04T21:41:02.995890694Z
-updated: 2026-04-04T22:41:32.554911038Z
+updated: 2026-04-04T22:45:23.744281507Z
 tags:
 - duplication
 - backend

@@ -596,6 +596,64 @@ mod tests {
 
     // ── HTML sanitization ─────────────────────────────────────────────────────
 
+    // ── rebuild_with_frontmatter ──────────────────────────────────────────────
+
+    #[test]
+    fn test_rebuild_strips_frontmatter_from_new_body() {
+        // When the caller passes content that still has a frontmatter block, it
+        // must be stripped so we don't get a double fence in the output.
+        let existing =
+            "---\ntags:\n- original\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nOld body";
+        let new_body_with_fm = "---\nsome: injected\n---\nNew body content";
+        let result = rebuild_with_frontmatter(existing, new_body_with_fm, None, None);
+        assert!(result.starts_with("---\n"), "must start with frontmatter");
+        assert!(
+            result.contains("original"),
+            "original tags must be preserved"
+        );
+        assert!(
+            !result.contains("some: injected"),
+            "new_body frontmatter must be stripped, got:\n{result}"
+        );
+        assert!(result.contains("New body content"), "body must be present");
+        // Exactly two --- delimiters: the open and close fence.
+        assert_eq!(
+            result.matches("\n---").count(),
+            1,
+            "only one closing --- expected; got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_with_tags_override() {
+        let existing =
+            "---\ntags:\n- old\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let result = rebuild_with_frontmatter(existing, "Body", Some(vec!["new".into()]), None);
+        assert!(result.contains("new"), "new tag must be present");
+        assert!(!result.contains("old"), "old tag must be removed");
+    }
+
+    #[test]
+    fn test_rebuild_with_icon_set_and_clear() {
+        let existing =
+            "---\ntags: []\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let with_icon = rebuild_with_frontmatter(existing, "Body", None, Some("Star".into()));
+        assert!(with_icon.contains("Star"), "icon must be set");
+
+        let cleared = rebuild_with_frontmatter(&with_icon, "Body", None, Some(String::new()));
+        assert!(
+            !cleared.contains("Star"),
+            "icon must be cleared after empty string"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_no_frontmatter_returns_body_unchanged() {
+        // If the original note has no frontmatter, return new_body as-is.
+        let result = rebuild_with_frontmatter("No frontmatter here", "new body", None, None);
+        assert_eq!(result, "new body");
+    }
+
     #[test]
     fn test_raw_html_script_is_escaped() {
         let html = render_html("<script>alert('xss')</script>");

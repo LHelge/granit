@@ -1,10 +1,10 @@
 ---
 id: e82
 title: Consolidate duplicate agent tools
-status: in_progress
+status: done
 priority: P2
 created: 2026-04-04T21:41:12.257098648Z
-updated: 2026-04-04T22:41:32.558484009Z
+updated: 2026-04-04T22:45:23.759218295Z
 tags:
 - duplication
 - backend

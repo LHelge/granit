@@ -1,10 +1,10 @@
 ---
 id: v2v
 title: Fix silent fallbacks and clean up dead code
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:41:28.867128410Z
-updated: 2026-04-04T21:41:28.867128410Z
+updated: 2026-04-04T22:47:40.158747965Z
 tags:
 - idiomatic
 - backend
