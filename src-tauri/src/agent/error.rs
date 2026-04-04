@@ -12,8 +12,6 @@ pub enum AgentError {
     ProviderIndexOutOfRange(usize),
     #[error("Failed to list models: {0}")]
     ModelListing(String),
-    #[error("State lock poisoned")]
-    Poisoned,
 }
 
 impl From<rig::http_client::Error> for AgentError {

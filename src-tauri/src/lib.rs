@@ -18,45 +18,38 @@ struct AppState {
 }
 
 impl AppState {
-    fn lock_config(&self) -> Result<std::sync::MutexGuard<'_, AppConfig>, ConfigError> {
-        self.config.lock().map_err(|_| ConfigError::Poisoned)
+    fn lock_config(&self) -> std::sync::MutexGuard<'_, AppConfig> {
+        self.config.lock().expect("config mutex poisoned")
     }
 
-    fn lock_cave(&self) -> Result<std::sync::MutexGuard<'_, Option<Cave>>, CaveError> {
-        self.cave.lock().map_err(|_| CaveError::Poisoned)
+    fn lock_cave(&self) -> std::sync::MutexGuard<'_, Option<Cave>> {
+        self.cave.lock().expect("cave mutex poisoned")
     }
 
-    fn lock_agent(&self) -> Result<std::sync::MutexGuard<'_, Option<Agent>>, AgentError> {
-        self.agent.lock().map_err(|_| AgentError::Poisoned)
+    fn lock_agent(&self) -> std::sync::MutexGuard<'_, Option<Agent>> {
+        self.agent.lock().expect("agent mutex poisoned")
     }
 
     /// Get the path of the currently open cave, if any.
-    fn active_cave_path(&self) -> Result<Option<PathBuf>, ConfigError> {
-        Ok(self
-            .cave
-            .lock()
-            .map_err(|_| ConfigError::Poisoned)?
-            .as_ref()
-            .map(|c| c.path().to_path_buf()))
+    fn active_cave_path(&self) -> Option<PathBuf> {
+        self.lock_cave().as_ref().map(|c| c.path().to_path_buf())
     }
 
     /// Replace the currently open cave.
-    fn set_cave(&self, cave: Option<Cave>) -> Result<(), ConfigError> {
-        *self.cave.lock().map_err(|_| ConfigError::Poisoned)? = cave;
-        Ok(())
+    fn set_cave(&self, cave: Option<Cave>) {
+        *self.lock_cave() = cave;
     }
 
     /// Reset the agent so it rebuilds with new config on next use.
-    fn reset_agent(&self) -> Result<(), ConfigError> {
-        *self.agent.lock().map_err(|_| ConfigError::Poisoned)? = None;
-        Ok(())
+    fn reset_agent(&self) {
+        *self.lock_agent() = None;
     }
 
     /// Ensure the agent is initialized from current config.
     fn ensure_agent(&self) -> Result<(), AgentError> {
-        let mut guard = self.lock_agent()?;
+        let mut guard = self.lock_agent();
         if guard.is_none() {
-            let config = self.config.lock().map_err(|_| AgentError::Poisoned)?;
+            let config = self.lock_config();
             *guard = Some(Agent::from_config(&config.agent, self.cave.clone())?);
         }
         Ok(())
@@ -65,10 +58,10 @@ impl AppState {
 
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
-    let config = state.lock_config()?;
+    let config = state.lock_config();
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .active_cave_path()?
+        .active_cave_path()
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
@@ -94,7 +87,7 @@ fn save_config(
     daily_note_folder: String,
     state: tauri::State<AppState>,
 ) -> Result<IpcConfig, ConfigError> {
-    let mut config = state.lock_config()?;
+    let mut config = state.lock_config();
     config.agent = agent;
     config.markdown_font = markdown_font;
     config.reading_font = reading_font;
@@ -102,10 +95,10 @@ fn save_config(
     config.daily_note_folder = daily_note_folder;
     config.save()?;
     // Reset the agent so it rebuilds with the new config on the next message.
-    state.reset_agent()?;
+    state.reset_agent();
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .active_cave_path()?
+        .active_cave_path()
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
@@ -116,7 +109,7 @@ fn save_sidebar_state(
     agent_panel: SidebarConfig,
     state: tauri::State<AppState>,
 ) -> Result<(), ConfigError> {
-    let mut config = state.lock_config()?;
+    let mut config = state.lock_config();
     config.sidebar = sidebar;
     config.agent_panel = agent_panel;
     config.save()?;
@@ -124,20 +117,16 @@ fn save_sidebar_state(
 }
 
 #[tauri::command]
-fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
-    // Ensure cave .granit/ dir exists
-    AppConfig::ensure_cave(&path)?;
+fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, CaveError> {
+    AppConfig::ensure_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
+    AppConfig::save_recent_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
 
-    // Update recent caves on disk before reading state
-    AppConfig::save_recent_cave(&path)?;
-
-    // Open the cave and reset the agent
-    state.set_cave(Some(Cave::open(path.clone())?))?;
-    state.reset_agent()?;
+    state.set_cave(Some(Cave::open(path.clone())?));
+    state.reset_agent();
 
     // Reload config from disk (now includes the updated recent_caves)
-    let mut config = state.lock_config()?;
-    *config = AppConfig::load()?;
+    let mut config = state.lock_config();
+    *config = AppConfig::load().map_err(|e| CaveError::Io(e.to_string()))?;
 
     let mut ipc = config.to_ipc();
     ipc.active_cave = Some(path.to_string_lossy().into_owned());
@@ -148,7 +137,7 @@ fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
 where
     F: FnOnce(&Cave) -> Result<T, CaveError>,
 {
-    let guard = state.lock_cave()?;
+    let guard = state.lock_cave();
     let cave = guard.as_ref().ok_or(CaveError::NoCaveOpen)?;
     f(cave)
 }
@@ -157,7 +146,7 @@ fn with_cave_mut<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveEr
 where
     F: FnOnce(&mut Cave) -> Result<T, CaveError>,
 {
-    let mut guard = state.lock_cave()?;
+    let mut guard = state.lock_cave();
     let cave = guard.as_mut().ok_or(CaveError::NoCaveOpen)?;
     f(cave)
 }
@@ -229,11 +218,7 @@ fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveEr
 
 #[tauri::command]
 fn open_daily_note(state: tauri::State<AppState>) -> Result<Note, CaveError> {
-    let folder = state
-        .lock_config()
-        .map_err(|_| CaveError::Io("Failed to lock config".to_string()))?
-        .daily_note_folder
-        .clone();
+    let folder = state.lock_config().daily_note_folder.clone();
     with_cave_mut(&state, |cave| cave.open_daily_note(&folder))
 }
 
@@ -295,8 +280,8 @@ fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNo
 
 #[tauri::command]
 fn render_markdown(content: String, state: tauri::State<AppState>) -> String {
-    let guard = state.lock_cave().ok();
-    let cave = guard.as_ref().and_then(|g| g.as_ref());
+    let guard = state.lock_cave();
+    let cave = guard.as_ref();
     match cave {
         Some(cave) => markdown::render_markdown_with_links(&content, |s| cave.lookup_slug(s)),
         None => markdown::render_html(&content),
@@ -315,13 +300,13 @@ fn set_active_note(slug: Option<String>, state: tauri::State<AppState>) -> Resul
 fn list_providers(
     state: tauri::State<AppState>,
 ) -> Result<Vec<granit_types::ProviderInfo>, ConfigError> {
-    let config = state.lock_config()?;
+    let config = state.lock_config();
     Ok(config
         .agent
         .providers
         .iter()
         .enumerate()
-        .map(|(i, entry)| granit_types::ProviderInfo {
+        .map(|(i, entry): (usize, _)| granit_types::ProviderInfo {
             index: i,
             display_name: entry.display_name(),
             provider_type: entry.provider.provider_type().to_string(),
@@ -331,7 +316,7 @@ fn list_providers(
 
 #[tauri::command]
 fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
-    let mut config = state.lock_config()?;
+    let mut config = state.lock_config();
     if index >= config.agent.providers.len() {
         return Err(ConfigError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -341,10 +326,10 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcCon
     config.agent.selected_provider = index;
     config.agent.selected_model = None;
     config.save()?;
-    state.reset_agent()?;
+    state.reset_agent();
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .active_cave_path()?
+        .active_cave_path()
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
@@ -352,7 +337,7 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcCon
 #[tauri::command]
 async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>, AgentError> {
     let provider = {
-        let config = state.config.lock().map_err(|_| AgentError::Poisoned)?;
+        let config = state.lock_config();
         if config.agent.providers.is_empty() {
             return Err(AgentError::NoProviders);
         }
@@ -370,13 +355,13 @@ async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>
 
 #[tauri::command]
 fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
-    let mut config = state.lock_config()?;
+    let mut config = state.lock_config();
     config.agent.selected_model = Some(model_id);
     config.save()?;
-    state.reset_agent()?;
+    state.reset_agent();
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .active_cave_path()?
+        .active_cave_path()
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }
@@ -394,7 +379,7 @@ async fn send_message(
 
     // Snapshot the agent's inner + history so no lock is held across await.
     let (agent_clone, history) = {
-        let guard = state.lock_agent()?;
+        let guard = state.lock_agent();
         let a = guard.as_ref().ok_or(AgentError::NotInitialized)?;
         a.snapshot()
     };
@@ -426,7 +411,7 @@ async fn send_message(
 
     // Persist history (skip empty responses to avoid API rejection).
     {
-        let mut guard = state.lock_agent()?;
+        let mut guard = state.lock_agent();
         if let Some(a) = guard.as_mut() {
             if !response.is_empty() {
                 a.push_history(Message::user(&msg));
@@ -443,7 +428,7 @@ async fn send_message(
 
 #[tauri::command]
 fn clear_chat(state: tauri::State<'_, AppState>) -> Result<(), AgentError> {
-    let mut guard = state.lock_agent()?;
+    let mut guard = state.lock_agent();
     if let Some(agent) = guard.as_mut() {
         agent.clear_history();
     }
@@ -455,12 +440,12 @@ fn set_active_theme(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<IpcConfig, ConfigError> {
-    let mut config = state.lock_config()?;
+    let mut config = state.lock_config();
     config.theme = id;
     config.save()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
-        .active_cave_path()?
+        .active_cave_path()
         .map(|p| p.to_string_lossy().into_owned());
     Ok(ipc)
 }

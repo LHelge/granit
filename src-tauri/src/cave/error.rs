@@ -20,9 +20,6 @@ pub enum CaveError {
 
     #[error("IO error: {0}")]
     Io(String),
-
-    #[error("Internal state error: mutex poisoned")]
-    Poisoned,
 }
 
 impl From<std::io::Error> for CaveError {
