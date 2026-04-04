@@ -1,10 +1,10 @@
 ---
 id: azw
 title: 'Dividers: Replace border-t separators with divider class'
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:15:02.703788175Z
-updated: 2026-04-04T21:15:02.703788175Z
+updated: 2026-04-04T21:55:37.633655368Z
 tags:
 - frontend
 parent: 9fd

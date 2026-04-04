@@ -1,10 +1,10 @@
 ---
 id: fsw
 title: 'Badges: Use badge classes for tags and theme labels'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:08.538028416Z
-updated: 2026-04-04T21:14:08.538028416Z
+updated: 2026-04-04T21:42:10.986020325Z
 tags:
 - frontend
 parent: 9fd

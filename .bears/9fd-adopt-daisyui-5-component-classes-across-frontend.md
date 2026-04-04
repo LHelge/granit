@@ -2,10 +2,10 @@
 id: 9fd
 title: Adopt DaisyUI 5 component classes across frontend
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:13:16.228166660Z
-updated: 2026-04-04T21:13:16.228166660Z
+updated: 2026-04-04T22:03:53.259398762Z
 ---
 
 ## Scope

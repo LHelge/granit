@@ -1,10 +1,10 @@
 ---
 id: pac
 title: 'Dropdowns: Evaluate and convert dropdowns to DaisyUI where feasible'
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:15:13.916033712Z
-updated: 2026-04-04T21:15:13.916033712Z
+updated: 2026-04-04T22:00:47.890458371Z
 tags:
 - frontend
 depends_on:

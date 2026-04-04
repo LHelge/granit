@@ -9,11 +9,11 @@ pub fn MarkdownSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     let font_size = Memo::new(move |_| form.get().markdown_font.font_size);
 
     view! {
-        <fieldset class="space-y-3">
-            <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">"Markdown"</legend>
+        <fieldset class="fieldset space-y-3">
+            <legend class="fieldset-legend">"Markdown"</legend>
 
             <div class="space-y-1">
-                <label class="block text-xs text-base-content/50">"Font family"</label>
+                <label class="label text-xs text-base-content/50">"Font family"</label>
                 <FontPicker
                     fonts=fonts
                     value=font_family
@@ -23,13 +23,13 @@ pub fn MarkdownSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             </div>
 
             <div class="space-y-1">
-                <label class="block text-xs text-base-content/50" for="md-font-size">"Font size (px)"</label>
+                <label class="label text-xs text-base-content/50" for="md-font-size">"Font size (px)"</label>
                 <input
                     id="md-font-size"
                     type="number"
                     min="8"
                     max="48"
-                    class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
+                    class="input input-bordered input-sm w-full"
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {

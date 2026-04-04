@@ -71,7 +71,7 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
 
                     // Dropdown menu (opens upward)
                     <Show when=move || dropdown_open.get()>
-                        <div class="absolute bottom-full left-0 right-0 mb-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 max-h-60 overflow-y-auto">
+                        <ul class="menu menu-sm absolute bottom-full left-0 right-0 mb-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 max-h-60 overflow-y-auto py-1">
                             // Recent caves
                             {move || {
                                 let cfg = ctx.config.get();
@@ -83,39 +83,41 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                                         .to_string();
                                     let full_path = path.clone();
                                     view! {
-                                        <button
-                                            class="w-full text-left px-3 py-1.5 text-sm text-base-content/70 hover:bg-base-content/10 transition-colors truncate"
-                                            title=full_path
-                                            on:click=move |_| open_and_refresh(path_clone.clone())
-                                        >
-                                            {display}
-                                        </button>
+                                        <li>
+                                            <button
+                                                class="truncate"
+                                                title=full_path
+                                                on:click=move |_| open_and_refresh(path_clone.clone())
+                                            >
+                                                {display}
+                                            </button>
+                                        </li>
                                     }
                                 }).collect_view()
                             }}
 
                             // Divider
-                            <div class="border-t border-base-content/20 my-1"></div>
+                            <li><hr /></li>
 
                             // Single "Open folder…" button (replaces duplicate open/create)
-                            <button
-                                class="w-full text-left px-3 py-1.5 text-sm text-base-content/70 hover:bg-base-content/10 transition-colors"
-                                on:click=on_pick_folder
-                            >
-                                "Open folder…"
-                            </button>
-                        </div>
+                            <li>
+                                <button on:click=on_pick_folder>
+                                    "Open folder…"
+                                </button>
+                            </li>
+                        </ul>
                     </Show>
                 </div>
 
                 // Settings gear icon
-                <button
-                    class="p-1.5 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
-                    title="Settings"
-                    on:click=move |_| set_settings_open.set(true)
-                >
-                    <Icon icon=icondata_lu::LuSettings width="1rem" height="1rem"/>
-                </button>
+                <div class="tooltip tooltip-top" data-tip="Settings">
+                    <button
+                        class="btn btn-ghost btn-xs btn-square"
+                        on:click=move |_| set_settings_open.set(true)
+                    >
+                        <Icon icon=icondata_lu::LuSettings width="1rem" height="1rem"/>
+                    </button>
+                </div>
             </div>
         </div>
     }

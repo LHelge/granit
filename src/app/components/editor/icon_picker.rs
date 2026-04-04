@@ -50,14 +50,19 @@ pub(super) fn IconPicker(
     view! {
         <div class="relative">
             // Trigger: icon only, sized to match the reader's icon span
-            <button
-                type="button"
-                class="inline-flex w-6 h-6 shrink-0 text-base-content/50 hover:text-base-content transition-colors"
-                title="Change icon"
-                on:click=toggle
-            >
-                <Icon icon=trigger_icon width="100%" height="100%"/>
-            </button>
+            <div class="tooltip tooltip-right" data-tip="Change icon">
+                <button
+                    type="button"
+                    class=move || if value.get().is_some() {
+                        "inline-flex w-6 h-6 shrink-0 text-accent hover:opacity-75 transition-opacity"
+                    } else {
+                        "inline-flex w-6 h-6 shrink-0 text-base-content/30 hover:text-base-content/60 transition-colors"
+                    }
+                    on:click=toggle
+                >
+                    <Icon icon=trigger_icon width="100%" height="100%"/>
+                </button>
+            </div>
 
             // Dropdown
             <Show when=move || open.get()>
@@ -69,7 +74,7 @@ pub(super) fn IconPicker(
                     <div class="p-2 border-b border-base-content/10">
                         <input
                             type="text"
-                            class="w-full bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
+                            class="input input-bordered input-xs w-full"
                             placeholder="Search icons…"
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
@@ -91,11 +96,10 @@ pub(super) fn IconPicker(
                                         <button
                                             type="button"
                                             class=move || {
-                                                let base = "flex items-center justify-center p-2 rounded text-base-content/50 hover:text-base-content hover:bg-base-content/10 transition-colors";
                                                 if is_selected() {
-                                                    format!("{base} bg-base-content/20 text-base-content")
+                                                    "btn btn-ghost btn-xs btn-square text-accent bg-accent/10"
                                                 } else {
-                                                    base.to_string()
+                                                    "btn btn-ghost btn-xs btn-square text-base-content/50"
                                                 }
                                             }
                                             title=label

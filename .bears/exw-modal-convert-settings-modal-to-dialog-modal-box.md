@@ -1,10 +1,10 @@
 ---
 id: exw
 title: 'Modal: Convert settings modal to dialog/modal-box'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:30.316271720Z
-updated: 2026-04-04T21:14:30.316271720Z
+updated: 2026-04-04T21:50:28.702314825Z
 tags:
 - frontend
 depends_on:

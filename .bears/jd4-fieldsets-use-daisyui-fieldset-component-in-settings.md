@@ -1,10 +1,10 @@
 ---
 id: jd4
 title: 'Fieldsets: Use DaisyUI fieldset component in settings'
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:15:07.856320402Z
-updated: 2026-04-04T21:15:07.856320402Z
+updated: 2026-04-04T21:57:49.557000924Z
 tags:
 - frontend
 depends_on:

@@ -1,10 +1,10 @@
 ---
 id: 54k
 title: 'Buttons: Replace hand-rolled button styles with btn classes'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:13:53.669925203Z
-updated: 2026-04-04T21:13:53.669925203Z
+updated: 2026-04-04T21:22:28.877671497Z
 tags:
 - frontend
 parent: 9fd

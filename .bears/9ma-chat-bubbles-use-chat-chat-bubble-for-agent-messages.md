@@ -1,10 +1,10 @@
 ---
 id: 9ma
 title: 'Chat bubbles: Use chat/chat-bubble for agent messages'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:36.009271859Z
-updated: 2026-04-04T21:14:36.009271859Z
+updated: 2026-04-04T21:52:37.068310821Z
 tags:
 - frontend
 depends_on:

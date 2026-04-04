@@ -232,27 +232,18 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         });
     };
 
-    let on_backdrop = move |_| set_open.set(false);
-
     view! {
-        // Backdrop
-        <div
-            class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"
-            on:click=on_backdrop
-        >
+        <dialog class="modal modal-open">
             // Modal panel
-            <div
-                class="bg-base-300 border border-base-content/20 rounded-lg shadow-xl w-[640px] h-[480px] max-w-[90vw] max-h-[80vh] flex flex-col"
-                on:click=move |ev| ev.stop_propagation()
-            >
+            <div class="modal-box w-[640px] max-w-[90vw] h-[480px] max-h-[80vh] p-0 flex flex-col">
                 // Header
-                <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/20">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/20 shrink-0">
                     <div>
                         <h2 class="text-sm font-semibold text-base-content">"Global Settings"</h2>
                         <p class="text-xs text-base-content/35 mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
                     </div>
                     <button
-                        class="p-1 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
+                        class="btn btn-ghost btn-xs btn-square"
                         on:click=move |_| set_open.set(false)
                     >
                         <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
@@ -262,25 +253,23 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 // Body: sidebar + content
                 <form class="flex flex-1 min-h-0" on:submit=on_save>
                     // Sidebar
-                    <nav class="w-40 shrink-0 border-r border-base-content/20 py-2">
-                        {SettingsSection::ALL.into_iter().map(|section| {
-                            let is_active = move || active_section.get() == section;
-                            view! {
-                                <button
-                                    type="button"
-                                    class=move || {
-                                        if is_active() {
-                                            "w-full text-left px-4 py-1.5 text-sm text-base-content bg-base-content/10"
-                                        } else {
-                                            "w-full text-left px-4 py-1.5 text-sm text-base-content/50 hover:text-base-content hover:bg-base-content/5 transition-colors"
-                                        }
-                                    }
-                                    on:click=move |_| set_active_section.set(section)
-                                >
-                                    {section.label()}
-                                </button>
-                            }
-                        }).collect_view()}
+                    <nav class="w-40 shrink-0 border-r border-base-content/20">
+                        <ul class="menu menu-sm py-2">
+                            {SettingsSection::ALL.into_iter().map(|section| {
+                                let is_active = move || active_section.get() == section;
+                                view! {
+                                    <li>
+                                        <button
+                                            type="button"
+                                            class=move || if is_active() { "menu-active" } else { "" }
+                                            on:click=move |_| set_active_section.set(section)
+                                        >
+                                            {section.label()}
+                                        </button>
+                                    </li>
+                                }
+                            }).collect_view()}
+                        </ul>
                     </nav>
 
                     // Content pane
@@ -315,17 +304,17 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         </div>
 
                         // Actions — pinned at bottom
-                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-base-content/20">
+                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-base-content/20 shrink-0">
                             <button
                                 type="button"
-                                class="px-3 py-1.5 text-sm rounded border border-base-content/20 text-base-content/70 hover:bg-base-content/10 transition-colors"
+                                class="btn btn-sm btn-ghost"
                                 on:click=move |_| set_open.set(false)
                             >
                                 "Cancel"
                             </button>
                             <button
                                 type="submit"
-                                class="px-3 py-1.5 text-sm rounded bg-base-content/20 text-base-content hover:bg-base-content/30 transition-colors disabled:opacity-50"
+                                class="btn btn-sm btn-primary"
                                 disabled=move || saving.get()
                             >
                                 {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}
@@ -334,6 +323,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                     </div>
                 </form>
             </div>
-        </div>
+            // Backdrop — click to close
+            <form method="dialog" class="modal-backdrop">
+                <button on:click=move |_| set_open.set(false)>"close"</button>
+            </form>
+        </dialog>
     }
 }

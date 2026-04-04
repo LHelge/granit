@@ -284,22 +284,23 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     on_changed=on_provider_changed
                 />
                 <div class="flex-1" />
-                <button
-                    type="button"
-                    class="p-1 text-base-content/35 hover:text-base-content/70 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Clear chat"
-                    prop:disabled=move || is_streaming.get()
-                    on:click=move |_| {
-                        messages.set(Vec::new());
-                        streaming_content.set(String::new());
-                        stream_error.set(None);
-                        spawn_local(async move {
-                            let _ = ipc::clear_chat().await;
-                        });
-                    }
-                >
-                    <Icon icon=icondata_lu::LuTrash2 width="0.875rem" height="0.875rem"/>
-                </button>
+                <div class="tooltip tooltip-bottom" data-tip="Clear chat">
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-xs btn-square"
+                        prop:disabled=move || is_streaming.get()
+                        on:click=move |_| {
+                            messages.set(Vec::new());
+                            streaming_content.set(String::new());
+                            stream_error.set(None);
+                            spawn_local(async move {
+                                let _ = ipc::clear_chat().await;
+                            });
+                        }
+                    >
+                        <Icon icon=icondata_lu::LuTrash2 width="0.875rem" height="0.875rem"/>
+                    </button>
+                </div>
             </div>
             // Message list
             <div
@@ -319,29 +320,25 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     match item {
                         DisplayItem::Message(dm) => {
                             let is_user = dm.message.role == ChatRole::User;
-                            let has_html = dm.rendered_html.is_some();
-                            let bubble_class = if is_user && has_html {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-content/20 text-base-content prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
-                            } else if is_user {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-content/20 text-base-content whitespace-pre-wrap break-words"
+                            let chat_class = if is_user { "chat chat-end" } else { "chat chat-start" };
+                            let bubble_class = if is_user {
+                                "chat-bubble chat-bubble-neutral prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
                             } else {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-300 text-base-content prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                                "chat-bubble prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
                             };
-                            let bubble_style = if is_user && !has_html { "" } else { "font-size: inherit" };
-                            let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
                             view! {
-                                <div class=wrapper_class>
+                                <div class=chat_class>
                                     {if let Some(rendered) = dm.rendered_html {
                                         view! {
                                             <div
                                                 class=bubble_class
-                                                style=bubble_style
+                                                style="font-size: inherit"
                                                 inner_html=rendered
                                             />
                                         }.into_any()
                                     } else {
                                         view! {
-                                            <div class=bubble_class>
+                                            <div class=bubble_class style="font-size: inherit">
                                                 {dm.message.content.clone()}
                                             </div>
                                         }.into_any()
@@ -351,8 +348,8 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         }
                         DisplayItem::ToolCall(info) => {
                             view! {
-                                <div class="flex justify-start">
-                                    <div class="px-3 py-1.5 rounded-lg bg-base-300/60 border border-base-content/10 text-base-content/50 text-xs font-mono flex items-center gap-1.5">
+                                <div class="chat chat-start">
+                                    <div class="chat-bubble chat-bubble-ghost text-xs font-mono flex items-center gap-1.5 py-1.5">
                                         <span class="inline-flex w-3 h-3 shrink-0 text-base-content/35">
                                             <Icon icon=icondata_lu::LuWrench width="100%" height="100%"/>
                                         </span>
@@ -366,14 +363,14 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
 
                 // Streaming response in progress
                 <Show when=move || is_streaming.get() || !streaming_content.get().is_empty()>
-                    <div class="flex justify-start">
-                        <div class="max-w-[85%] px-3 py-2 rounded-lg bg-base-content/10 text-base-content whitespace-pre-wrap break-words">
+                    <div class="chat chat-start">
+                        <div class="chat-bubble whitespace-pre-wrap break-words" style="font-size: inherit">
                             {move || {
                                 let content = streaming_content.get();
                                 if content.is_empty() {
-                                    view! { <span class="inline-block w-2 h-4 bg-primary animate-pulse rounded-sm" /> }.into_any()
+                                    view! { <span class="loading loading-dots loading-sm" /> }.into_any()
                                 } else {
-                                    view! { <span>{content}<span class="inline-block ml-0.5 w-1.5 h-3.5 bg-primary animate-pulse rounded-sm align-middle" /></span> }.into_any()
+                                    view! { <span>{content}<span class="loading loading-dots loading-xs ml-1 align-middle" /></span> }.into_any()
                                 }
                             }}
                         </div>
@@ -382,7 +379,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
 
                 // Error
                 <Show when=move || stream_error.get().is_some()>
-                    <div class="px-3 py-2 rounded-lg bg-error/15 border border-error/30 text-error/80">
+                    <div role="alert" class="alert alert-error alert-soft alert-sm">
                         {move || stream_error.get().unwrap_or_default()}
                     </div>
                 </Show>
@@ -398,7 +395,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     <textarea
                         style:font-family=move || config.get().agent_font.font_family
                         style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                        class="w-full bg-base-300 border border-base-content/20 rounded px-3 py-2 text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors disabled:opacity-50 resize-none"
+                        class="textarea textarea-bordered w-full resize-none disabled:opacity-50"
                         rows="4"
                         placeholder="Message... (Enter to send, Shift+Enter for newline)"
                         prop:value=move || input.get()
@@ -428,7 +425,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         <div class="flex-1" />
                         <button
                             type="submit"
-                            class="shrink-0 px-3 py-1.5 bg-base-content/10 text-base-content/70 rounded text-sm hover:bg-base-content/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="btn btn-sm btn-primary"
                             prop:disabled=move || is_streaming.get() || !has_model.get()
                         >
                             {move || if is_streaming.get() { "..." } else { "Send" }}

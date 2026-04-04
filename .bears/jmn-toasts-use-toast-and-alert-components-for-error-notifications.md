@@ -1,10 +1,10 @@
 ---
 id: jmn
 title: 'Toasts: Use toast and alert components for error notifications'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:13.468424232Z
-updated: 2026-04-04T21:14:13.468424232Z
+updated: 2026-04-04T21:43:43.247505976Z
 tags:
 - frontend
 parent: 9fd

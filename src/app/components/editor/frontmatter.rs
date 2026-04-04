@@ -43,7 +43,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
                 {
                     let tag_for_remove = tag.clone();
                     view! {
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-base-content/10 text-base-content/70">
+                        <span class="badge badge-ghost badge-sm gap-1">
                             {tag.clone()}
                             <button
                                 class="text-base-content/35 hover:text-base-content leading-none"

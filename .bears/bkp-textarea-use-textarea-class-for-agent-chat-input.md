@@ -1,10 +1,10 @@
 ---
 id: bkp
 title: 'Textarea: Use textarea class for agent chat input'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:03.537750025Z
-updated: 2026-04-04T21:14:03.537750025Z
+updated: 2026-04-04T21:41:03.932390916Z
 tags:
 - frontend
 parent: 9fd

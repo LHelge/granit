@@ -16,12 +16,12 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     };
 
     view! {
-        <fieldset class="space-y-3">
-            <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">"Agent"</legend>
+        <fieldset class="fieldset space-y-3">
+            <legend class="fieldset-legend">"Agent"</legend>
 
             // Font family
             <div class="space-y-1">
-                <label class="block text-xs text-base-content/50">"Font family"</label>
+                <label class="label text-xs text-base-content/50">"Font family"</label>
                 <FontPicker
                     fonts=fonts
                     value=font_family
@@ -32,13 +32,13 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
             // Font size
             <div class="space-y-1">
-                <label class="block text-xs text-base-content/50" for="ag-font-size">"Font size (px)"</label>
+                <label class="label text-xs text-base-content/50" for="ag-font-size">"Font size (px)"</label>
                 <input
                     id="ag-font-size"
                     type="number"
                     min="8"
                     max="48"
-                    class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
+                    class="input input-bordered input-sm w-full"
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {
@@ -48,14 +48,14 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 />
             </div>
 
-            <hr class="border-base-content/20" />
+            <div class="divider my-1" />
 
             // Provider list header
             <div class="flex items-center justify-between">
                 <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">"Providers"</span>
                 <button
                     type="button"
-                    class="flex items-center gap-1 text-xs text-base-content/50 hover:text-base-content transition-colors"
+                    class="btn btn-ghost btn-xs gap-1"
                     on:click=add_provider
                 >
                     <Icon icon=icondata_lu::LuPlus width="1rem" height="1rem"/>
@@ -188,48 +188,50 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                         </span>
                     </button>
                     <Show when=move || type_open.get()>
-                        <div class="absolute top-full left-0 mt-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 min-w-[10rem]">
+                        <ul class="menu menu-xs absolute top-full left-0 mt-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 min-w-[10rem] p-1">
                             {PROVIDER_TYPES.iter().map(|(ptype, label)| {
                                 let ptype_str = *ptype;
                                 let label_str = *label;
                                 let ptype_owned = ptype.to_string();
                                 view! {
-                                    <button
-                                        type="button"
-                                        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-content/10 transition-colors"
-                                        class=("bg-base-content/5", move || provider_type() == ptype_str)
-                                        on:click=move |_| on_type_select(ptype_str)
-                                    >
-                                        <ProviderIcon provider_type=Signal::stored(ptype_owned.clone()) class="w-3.5 h-3.5 shrink-0" />
-                                        {label_str}
-                                    </button>
+                                    <li>
+                                        <button
+                                            type="button"
+                                            class=move || if provider_type() == ptype_str { "menu-active" } else { "" }
+                                            on:click=move |_| on_type_select(ptype_str)
+                                        >
+                                            <ProviderIcon provider_type=Signal::stored(ptype_owned.clone()) class="w-3.5 h-3.5 shrink-0" />
+                                            {label_str}
+                                        </button>
+                                    </li>
                                 }
                             }).collect_view()}
-                        </div>
+                        </ul>
                     </Show>
                 </div>
                 <input
                     type="text"
-                    class="flex-1 min-w-0 bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
+                    class="input input-bordered input-xs flex-1 min-w-0"
                     placeholder=move || format!("Name (default: {})", type_label())
                     prop:value=move || form.get().providers.get(index).map(|p| p.name.clone()).unwrap_or_default()
                     on:input=on_name_input
                 />
-                <button
-                    type="button"
-                    class="shrink-0 p-1 rounded text-base-content/35 hover:text-error hover:bg-base-content/10 transition-colors"
-                    title="Remove provider"
-                    on:click=on_remove
-                >
-                    <Icon icon=icondata_lu::LuTrash2 width="1rem" height="1rem"/>
-                </button>
+                <div class="tooltip" data-tip="Remove provider">
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/35 hover:text-error!"
+                        on:click=on_remove
+                    >
+                        <Icon icon=icondata_lu::LuTrash2 width="1rem" height="1rem"/>
+                    </button>
+                </div>
             </div>
 
             // Base URL (Ollama only)
             <Show when=needs_base_url>
                 <input
                     type="text"
-                    class="w-full bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
+                    class="input input-bordered input-xs w-full"
                     placeholder="Base URL (default: http://localhost:11434)"
                     prop:value=move || form.get().providers.get(index).map(|p| p.base_url.clone()).unwrap_or_default()
                     on:input=on_base_url_input
@@ -241,23 +243,24 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                 <div class="flex items-center gap-1">
                     <input
                         type=move || if show_key.get() { "text" } else { "password" }
-                        class="flex-1 min-w-0 bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors font-mono"
+                        class="input input-bordered input-xs flex-1 min-w-0 font-mono"
                         placeholder="API key"
                         prop:value=move || form.get().providers.get(index).map(|p| p.api_key.clone()).unwrap_or_default()
                         on:input=on_api_key_input
                     />
-                    <button
-                        type="button"
-                        class="shrink-0 p-1 rounded text-base-content/35 hover:text-base-content transition-colors"
-                        title=move || if show_key.get() { "Hide API key" } else { "Show API key" }
-                        on:click=move |_| set_show_key.update(|v| *v = !*v)
-                    >
-                        {move || if show_key.get() {
-                            view! { <Icon icon=icondata_lu::LuEyeOff width="1rem" height="1rem"/> }.into_any()
-                        } else {
-                            view! { <Icon icon=icondata_lu::LuEye width="1rem" height="1rem"/> }.into_any()
-                        }}
-                    </button>
+                    <div class="tooltip" data-tip=move || if show_key.get() { "Hide API key" } else { "Show API key" }>
+                        <button
+                            type="button"
+                            class="btn btn-ghost btn-xs btn-square shrink-0"
+                            on:click=move |_| set_show_key.update(|v| *v = !*v)
+                        >
+                            {move || if show_key.get() {
+                                view! { <Icon icon=icondata_lu::LuEyeOff width="1rem" height="1rem"/> }.into_any()
+                            } else {
+                                view! { <Icon icon=icondata_lu::LuEye width="1rem" height="1rem"/> }.into_any()
+                            }}
+                        </button>
+                    </div>
                 </div>
             </Show>
         </div>

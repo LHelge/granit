@@ -1,10 +1,10 @@
 ---
 id: cqw
 title: 'Tooltips: Replace title attributes with tooltip component'
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:14:52.314397247Z
-updated: 2026-04-04T21:14:52.314397247Z
+updated: 2026-04-04T22:03:53.259198863Z
 tags:
 - frontend
 parent: 9fd

@@ -316,31 +316,34 @@ pub fn Editor() -> impl IntoView {
                         when=move || ctx.editing.get()
                         fallback=move || view! {
                             // Preview mode: pencil icon → switch to edit
-                            <button
-                                class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors"
-                                title="Edit"
-                                on:click=move |_| ctx.toggle_mode()
-                            >
-                                <Icon icon=icondata_lu::LuPencil width="1rem" height="1rem"/>
-                            </button>
+                            <div class="tooltip tooltip-bottom" data-tip="Edit">
+                                <button
+                                    class="btn btn-ghost btn-xs btn-square"
+                                    on:click=move |_| ctx.toggle_mode()
+                                >
+                                    <Icon icon=icondata_lu::LuPencil width="1rem" height="1rem"/>
+                                </button>
+                            </div>
                         }
                     >
                         // Edit mode: floppy disk → save, X → cancel
-                        <button
-                            class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors disabled:opacity-30"
-                            title="Save"
-                            on:click=move |_| ctx.save()
-                            disabled=move || ctx.saving.get()
-                        >
-                            <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
-                        </button>
-                        <button
-                            class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors"
-                            title="Cancel editing"
-                            on:click=move |_| ctx.toggle_mode()
-                        >
-                            <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
-                        </button>
+                        <div class="tooltip tooltip-bottom" data-tip="Save">
+                            <button
+                                class="btn btn-ghost btn-xs btn-square"
+                                on:click=move |_| ctx.save()
+                                disabled=move || ctx.saving.get()
+                            >
+                                <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
+                            </button>
+                        </div>
+                        <div class="tooltip tooltip-bottom" data-tip="Cancel editing">
+                            <button
+                                class="btn btn-ghost btn-xs btn-square"
+                                on:click=move |_| ctx.toggle_mode()
+                            >
+                                <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
+                            </button>
+                        </div>
                     </Show>
                 </div>
             </Show>
@@ -350,7 +353,7 @@ pub fn Editor() -> impl IntoView {
                 <div class="px-4 py-1.5 bg-error/15 border-b border-error/30 text-error/80 text-xs flex items-center gap-2 shrink-0">
                     <span class="flex-1">{move || ctx.error.get().unwrap_or_default()}</span>
                     <button
-                        class="text-error/70 hover:text-error"
+                        class="btn btn-ghost btn-xs btn-square text-error/70"
                         on:click=move |_| ctx.error.set(None)
                     >
                         "✕"

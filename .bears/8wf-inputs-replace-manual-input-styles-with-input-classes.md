@@ -1,10 +1,10 @@
 ---
 id: 8wf
 title: 'Inputs: Replace manual input styles with input classes'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:13:58.642377882Z
-updated: 2026-04-04T21:13:58.642377882Z
+updated: 2026-04-04T21:39:42.550629655Z
 tags:
 - frontend
 parent: 9fd

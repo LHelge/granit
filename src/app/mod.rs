@@ -293,7 +293,7 @@ pub fn App() -> impl IntoView {
                     <span class=format!("text-sm font-semibold tracking-wide text-base-content/70 mt-1 {title_margin}")>"Granit"</span>
                     <Show when=move || ctx.config.get().active_cave.is_some()>
                         <button
-                            class="p-1 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
+                            class="btn btn-ghost btn-xs btn-square"
                             on:click=move |_| {
                                 spawn_local(async move {
                                     match ipc::open_daily_note().await {
@@ -317,20 +317,22 @@ pub fn App() -> impl IntoView {
                     </Show>
                 </div>
                 <div class="flex items-center gap-1">
-                    <button
-                        class="p-1 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
-                        on:click=toggle_sidebar
-                        title="Toggle sidebar"
-                    >
-                        <Icon icon=icondata_lu::LuPanelLeft width="1rem" height="1rem"/>
-                    </button>
-                    <button
-                        class="p-1 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
-                        on:click=toggle_agent
-                        title="Toggle agent"
-                    >
-                        <Icon icon=icondata_lu::LuPanelRight width="1rem" height="1rem"/>
-                    </button>
+                    <div class="tooltip tooltip-bottom" data-tip="Toggle sidebar">
+                        <button
+                            class="btn btn-ghost btn-xs btn-square"
+                            on:click=toggle_sidebar
+                        >
+                            <Icon icon=icondata_lu::LuPanelLeft width="1rem" height="1rem"/>
+                        </button>
+                    </div>
+                    <div class="tooltip tooltip-bottom" data-tip="Toggle agent">
+                        <button
+                            class="btn btn-ghost btn-xs btn-square"
+                            on:click=toggle_agent
+                        >
+                            <Icon icon=icondata_lu::LuPanelRight width="1rem" height="1rem"/>
+                        </button>
+                    </div>
                 </div>
             </header>
 
@@ -369,16 +371,16 @@ pub fn App() -> impl IntoView {
             </Show>
 
             // Toast notifications (bottom-right)
-            <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+            <div class="toast toast-end toast-bottom z-50">
                 <For
                     each=move || ctx.errors.get()
                     key=|e| e.id
                     let:err
                 >
-                    <div class="pointer-events-auto flex items-start gap-2 px-3 py-2.5 rounded-lg shadow-lg bg-error/10 border border-error/35 text-base-content text-xs backdrop-blur-sm animate-[toast-in_0.2s_ease-out]">
-                        <span class="flex-1 leading-relaxed">{err.message.clone()}</span>
+                    <div role="alert" class="alert alert-error alert-soft alert-sm shadow-lg max-w-sm">
+                        <span class="flex-1 text-xs leading-relaxed">{err.message.clone()}</span>
                         <button
-                            class="mt-0.5 text-error/70 hover:text-error shrink-0"
+                            class="btn btn-ghost btn-xs btn-square"
                             on:click={
                                 let id = err.id;
                                 move |_| ctx.dismiss(id)

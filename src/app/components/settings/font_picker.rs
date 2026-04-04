@@ -52,7 +52,7 @@ pub fn FontPicker(
             // Selected value button
             <button
                 type="button"
-                class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content outline-none focus:border-primary transition-colors text-left flex items-center justify-between"
+                class="input input-bordered input-sm w-full text-left flex items-center justify-between"
                 on:click=toggle
             >
                 <span
@@ -81,7 +81,7 @@ pub fn FontPicker(
                     <div class="p-1.5 border-b border-base-content/10">
                         <input
                             type="text"
-                            class="w-full bg-base-300 border border-base-content/20 rounded px-2 py-1 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary"
+                            class="input input-bordered input-sm w-full"
                             placeholder="Search fonts…"
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
@@ -89,12 +89,12 @@ pub fn FontPicker(
                     </div>
 
                     // Font list
-                    <div class="overflow-y-auto flex-1">
+                    <ul class="menu menu-sm overflow-y-auto flex-1 p-0">
                         {move || {
                             let items = filtered();
                             if items.is_empty() {
                                 view! {
-                                    <p class="px-3 py-2 text-sm text-base-content/35 italic">"No matching fonts"</p>
+                                    <li><span class="italic text-base-content/35">"No matching fonts"</span></li>
                                 }.into_any()
                             } else {
                                 items.into_iter().map(|font| {
@@ -103,23 +103,24 @@ pub fn FontPicker(
                                     let font_select = font.clone();
                                     let is_selected = move || value.get() == font_name;
                                     view! {
-                                        <button
-                                            type="button"
-                                            class="w-full text-left px-3 py-1.5 text-sm text-base-content hover:bg-base-content/10 transition-colors truncate"
-                                            class=("bg-base-content/10", is_selected)
-                                            style:font-family=format!("'{font_style}'")
-                                            on:click=move |_| {
-                                                set_value.run(font_select.clone());
-                                                set_open.set(false);
-                                            }
-                                        >
-                                            {font.clone()}
-                                        </button>
+                                        <li>
+                                            <button
+                                                type="button"
+                                                class=move || if is_selected() { "menu-active truncate" } else { "truncate" }
+                                                style:font-family=format!("'{font_style}'")
+                                                on:click=move |_| {
+                                                    set_value.run(font_select.clone());
+                                                    set_open.set(false);
+                                                }
+                                            >
+                                                {font.clone()}
+                                            </button>
+                                        </li>
                                     }
                                 }).collect_view().into_any()
                             }
                         }}
-                    </div>
+                    </ul>
                 </div>
             </Show>
         </div>

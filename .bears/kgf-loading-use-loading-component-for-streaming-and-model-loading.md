@@ -1,10 +1,10 @@
 ---
 id: kgf
 title: 'Loading: Use loading component for streaming and model loading'
-status: open
+status: done
 priority: P2
 created: 2026-04-04T21:14:57.721206885Z
-updated: 2026-04-04T21:14:57.721206885Z
+updated: 2026-04-04T21:54:36.701977099Z
 tags:
 - frontend
 depends_on:

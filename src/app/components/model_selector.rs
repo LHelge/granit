@@ -58,7 +58,13 @@ pub fn ModelSelector(
                     class="truncate max-w-[16rem]"
                     class=("italic", move || !has_selection())
                     class=("text-base-content/35", move || !has_selection())
-                >{selected_label}</span>
+                >
+                    {move || if models_loading.get() {
+                        view! { <span class="loading loading-spinner loading-xs" /> }.into_any()
+                    } else {
+                        view! { {selected_label()} }.into_any()
+                    }}
+                </span>
                 <span
                     class="inline-flex w-3 h-3 shrink-0 text-base-content/50 transition-transform"
                     class:rotate-180=move || dropdown_open.get()
@@ -69,7 +75,7 @@ pub fn ModelSelector(
 
             <Show when=move || dropdown_open.get()>
                 // Opens upward since this sits at the bottom of the panel
-                <div class="absolute bottom-full left-0 mb-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[12rem]">
+                <ul class="menu menu-xs absolute bottom-full left-0 mb-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[12rem] py-1">
                     {move || {
                         let cfg = config.get();
                         let selected = cfg.agent.selected_model.clone().unwrap_or_default();
@@ -78,18 +84,19 @@ pub fn ModelSelector(
                             let display = m.display_name().to_string();
                             let id = m.id.clone();
                             view! {
-                                <button
-                                    type="button"
-                                    class="w-full flex items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-content/10 transition-colors truncate"
-                                    class=("bg-base-content/5", is_active)
-                                    on:click=move |_| on_select(id.clone())
-                                >
-                                    {display}
-                                </button>
+                                <li>
+                                    <button
+                                        type="button"
+                                        class=if is_active { "menu-active" } else { "" }
+                                        on:click=move |_| on_select(id.clone())
+                                    >
+                                        {display}
+                                    </button>
+                                </li>
                             }
                         }).collect_view()
                     }}
-                </div>
+                </ul>
             </Show>
         </div>
     }

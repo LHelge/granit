@@ -1,10 +1,10 @@
 ---
 id: swf
 title: 'Menu: Use menu component for context menus'
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:14:41.360895683Z
-updated: 2026-04-04T21:14:41.360895683Z
+updated: 2026-04-04T21:48:57.000087310Z
 tags:
 - frontend
 parent: 9fd
