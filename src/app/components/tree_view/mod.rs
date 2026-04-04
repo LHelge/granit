@@ -197,7 +197,7 @@ pub fn TreeView() -> impl IntoView {
             {move || {
                 if let Some(err) = app.first_error_for("notes") {
                     return view! {
-                        <p class="p-2 text-sm text-red-400 italic">
+                        <p class="p-2 text-sm text-error italic">
                             {format!("Error loading notes: {err}")}
                         </p>
                     }
@@ -206,7 +206,7 @@ pub fn TreeView() -> impl IntoView {
                 let note_list = ctx.notes.get();
                 let folder_list = ctx.folders.get();
                 if note_list.is_empty() && folder_list.is_empty() {
-                    view! { <p class="p-2 text-sm text-stone-500 italic">"No notes yet"</p> }
+                    view! { <p class="p-2 text-sm text-fg-faint italic">"No notes yet"</p> }
                         .into_any()
                 } else {
                     let tree = build_tree(note_list, folder_list);

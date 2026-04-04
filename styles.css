@@ -2,8 +2,51 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
-  --color-stone-850: #231f1e;
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
+
+  /* Semantic theme color tokens — backed by --theme-* CSS vars that the
+     frontend sets at runtime when a theme is loaded. Tailwind picks these
+     up so utilities like bg-window, text-fg, border-edge, etc. work. */
+  --color-window:       var(--theme-window);
+  --color-panel:        var(--theme-panel);
+  --color-card:         var(--theme-card);
+  --color-item-hover:   var(--theme-item-hover);
+  --color-item-active:  var(--theme-item-active);
+  --color-highlight:    var(--theme-highlight);
+  --color-fg:           var(--theme-fg);
+  --color-fg-secondary: var(--theme-fg-secondary);
+  --color-fg-muted:     var(--theme-fg-muted);
+  --color-fg-faint:     var(--theme-fg-faint);
+  --color-edge:         var(--theme-edge);
+  --color-edge-subtle:  var(--theme-edge-subtle);
+  --color-edge-hover:   var(--theme-edge-hover);
+  --color-edge-focus:   var(--theme-edge-focus);
+  --color-accent:       var(--theme-accent);
+  --color-error:        var(--theme-error);
+  --color-success:      var(--theme-success);
+  --color-warning:      var(--theme-warning);
+}
+
+/* Default theme (dark, stone-based) — applied until JS loads the active theme */
+:root {
+  --theme-window:       #1c1917;
+  --theme-panel:        #231f1e;
+  --theme-card:         #292524;
+  --theme-item-hover:   #44403c;
+  --theme-item-active:  #57534e;
+  --theme-highlight:    #78716c;
+  --theme-fg:           #e7e5e4;
+  --theme-fg-secondary: #d6d3d1;
+  --theme-fg-muted:     #a8a29e;
+  --theme-fg-faint:     #78716c;
+  --theme-edge:         #57534e;
+  --theme-edge-subtle:  #44403c;
+  --theme-edge-hover:   #78716c;
+  --theme-edge-focus:   #a8a29e;
+  --theme-accent:       #7098d8;
+  --theme-error:        #f87171;
+  --theme-success:      #7ab870;
+  --theme-warning:      #c8a048;
 }
 
 /* Tighten prose typography spacing */
@@ -61,14 +104,14 @@
 }
 
 .broken-link {
-  color: var(--color-stone-500);
+  color: var(--theme-fg-faint);
   text-decoration: underline;
   text-decoration-style: dashed;
   cursor: pointer;
 }
 
 .broken-link:hover {
-  color: var(--color-stone-300);
+  color: var(--theme-fg-secondary);
 }
 
 /* Toast slide-in animation */
@@ -77,6 +120,7 @@
     opacity: 0;
     transform: translateX(1rem);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);

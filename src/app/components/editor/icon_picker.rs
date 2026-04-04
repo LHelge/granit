@@ -52,7 +52,7 @@ pub(super) fn IconPicker(
             // Trigger: icon only, sized to match the reader's icon span
             <button
                 type="button"
-                class="inline-flex w-6 h-6 shrink-0 text-stone-400 hover:text-stone-200 transition-colors"
+                class="inline-flex w-6 h-6 shrink-0 text-fg-muted hover:text-fg transition-colors"
                 title="Change icon"
                 on:click=toggle
             >
@@ -64,12 +64,12 @@ pub(super) fn IconPicker(
                 // Invisible backdrop — closes picker on outside click
                 <div class="fixed inset-0 z-40" on:click=close/>
 
-                <div class="absolute left-0 top-7 z-50 w-72 bg-stone-800 border border-stone-600 rounded shadow-lg flex flex-col">
+                <div class="absolute left-0 top-7 z-50 w-72 bg-card border border-edge rounded shadow-lg flex flex-col">
                     // Search input
-                    <div class="p-2 border-b border-stone-700">
+                    <div class="p-2 border-b border-edge-subtle">
                         <input
                             type="text"
-                            class="w-full bg-stone-900 border border-stone-600 rounded px-2 py-1 text-xs text-stone-200 placeholder-stone-500 outline-none focus:border-stone-400 transition-colors"
+                            class="w-full bg-window border border-edge rounded px-2 py-1 text-xs text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
                             placeholder="Search icons…"
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
@@ -90,9 +90,9 @@ pub(super) fn IconPicker(
                                     view! {
                                         <button
                                             type="button"
-                                            class="flex items-center justify-center p-2 rounded text-stone-400 hover:text-stone-200 hover:bg-stone-700 transition-colors"
-                                            class:bg-stone-600=is_selected
-                                            class:text-stone-100=is_selected
+                                            class="flex items-center justify-center p-2 rounded text-fg-muted hover:text-fg hover:bg-item-hover transition-colors"
+                                            class:bg-item-active=is_selected
+                                            class:text-fg=is_selected
                                             title=label
                                             on:click=move |_| {
                                                 on_change.run(Some(id.to_string()));

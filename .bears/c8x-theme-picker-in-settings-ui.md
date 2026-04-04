@@ -1,10 +1,10 @@
 ---
 id: c8x
 title: Theme picker in settings UI
-status: open
+status: done
 priority: P2
 created: 2026-04-02T23:14:24.872128611Z
-updated: 2026-04-02T23:14:24.872128611Z
+updated: 2026-04-03T23:51:18.463698939Z
 tags:
 - frontend
 depends_on:

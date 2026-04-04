@@ -4,9 +4,9 @@ use leptos::prelude::*;
 use web_sys::MouseEvent;
 
 const MENU_ITEM: &str =
-    "w-full text-left px-3 py-1.5 text-stone-200 hover:bg-stone-700 transition-colors";
+    "w-full text-left px-3 py-1.5 text-fg hover:bg-item-hover transition-colors";
 const MENU_ITEM_DANGER: &str =
-    "w-full text-left px-3 py-1.5 text-red-400 hover:bg-stone-700 transition-colors";
+    "w-full text-left px-3 py-1.5 text-error hover:bg-item-hover transition-colors";
 
 /// Renders the floating context menu overlay + panel.
 #[component]
@@ -28,7 +28,7 @@ pub(super) fn TreeContextMenu() -> impl IntoView {
                     }
                 />
                 <div
-                    class="fixed z-50 bg-stone-800 border border-stone-600 rounded shadow-lg py-1 min-w-40 text-sm"
+                    class="fixed z-50 bg-card border border-edge rounded shadow-lg py-1 min-w-40 text-sm"
                     style=format!("left:{x}px;top:{y}px")
                 >
                     {match target {

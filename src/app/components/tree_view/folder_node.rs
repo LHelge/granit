@@ -84,8 +84,8 @@ pub(super) fn FolderNode(
                     view! {
                         <button
                             class=move || {
-                                let base = "w-full text-left py-0.5 text-base text-stone-400 hover:text-stone-200 transition-colors flex items-center gap-1";
-                                if drag_over.get() { format!("{base} bg-stone-600/40") } else { base.to_string() }
+                                let base = "w-full text-left py-0.5 text-base text-fg-muted hover:text-fg transition-colors flex items-center gap-1";
+                                if drag_over.get() { format!("{base} bg-item-active/40") } else { base.to_string() }
                             }
                             style=indent_style.clone()
                             on:click=move |_| open.update(|v| *v = !*v)

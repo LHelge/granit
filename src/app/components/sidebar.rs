@@ -9,14 +9,14 @@ pub fn Sidebar(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) -> 
 
     view! {
         <aside
-            class="shrink-0 bg-stone-850 border-r border-stone-700 flex flex-col overflow-hidden"
+            class="shrink-0 bg-panel border-r border-edge-subtle flex flex-col overflow-hidden"
             style:width=move || format!("{}px", width.get())
         >
             // Note list
             <div class="flex-1 overflow-y-auto">
                 <Show
                     when=has_cave
-                    fallback=|| view! { <p class="p-2 text-sm text-stone-500 italic">"No cave open"</p> }
+                    fallback=|| view! { <p class="p-2 text-sm text-fg-faint italic">"No cave open"</p> }
                 >
                     <TreeView />
                 </Show>

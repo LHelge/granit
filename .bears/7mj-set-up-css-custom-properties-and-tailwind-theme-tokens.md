@@ -1,10 +1,10 @@
 ---
 id: 7mj
 title: Set up CSS custom properties and Tailwind theme tokens
-status: open
+status: done
 priority: P1
 created: 2026-04-02T23:10:57.955801991Z
-updated: 2026-04-02T23:10:57.955801991Z
+updated: 2026-04-03T23:51:11.473892214Z
 tags:
 - frontend
 depends_on:

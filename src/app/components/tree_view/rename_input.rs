@@ -45,7 +45,7 @@ pub(super) fn RenameInput(
             {if note {
                 view! {
                     <span class="w-3 shrink-0" />
-                    <span class="inline-flex w-3.5 h-3.5 shrink-0 text-stone-500">
+                    <span class="inline-flex w-3.5 h-3.5 shrink-0 text-fg-faint">
                         <Icon icon=icondata_lu::LuFileText width="100%" height="100%"/>
                     </span>
                 }.into_any()
@@ -61,7 +61,7 @@ pub(super) fn RenameInput(
                 type="text"
                 prop:value=move || text.get()
                 node_ref=input_ref
-                class="flex-1 bg-stone-700 text-stone-100 text-sm px-1 py-0 rounded border border-stone-500 focus:outline-none focus:border-stone-400 min-w-0"
+                class="flex-1 bg-item-hover text-fg text-sm px-1 py-0 rounded border border-edge-hover focus:outline-none focus:border-edge-focus min-w-0"
                 on:input=move |ev| set_text.set(event_target_value(&ev))
                 on:keydown=on_keydown
                 on:blur=on_blur

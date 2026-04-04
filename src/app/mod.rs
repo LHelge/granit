@@ -6,12 +6,44 @@ pub(crate) mod ipc;
 use components::{
     editor::EditOpen, icons::Icon, AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar,
 };
-use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
+use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig, Theme};
 
 // ── Sidebar resize constants ───────────────────────────────────────
 
 const MIN_SIDEBAR_W: u16 = 180;
 const MAX_SIDEBAR_W: u16 = 600;
+
+/// Apply a theme's palette to the document root as CSS custom properties.
+/// This updates the `--theme-*` variables defined in `styles.css`.
+pub fn apply_theme(theme: &Theme) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(root) = doc.document_element() else {
+        return;
+    };
+    use wasm_bindgen::JsCast;
+    let el = root.unchecked_into::<web_sys::HtmlElement>();
+    let style = el.style();
+    let _ = style.set_property("--theme-window", &theme.window_bg);
+    let _ = style.set_property("--theme-panel", &theme.panel_bg);
+    let _ = style.set_property("--theme-card", &theme.card_bg);
+    let _ = style.set_property("--theme-item-hover", &theme.item_hover_bg);
+    let _ = style.set_property("--theme-item-active", &theme.item_active_bg);
+    let _ = style.set_property("--theme-highlight", &theme.highlight_bg);
+    let _ = style.set_property("--theme-fg", &theme.text_primary);
+    let _ = style.set_property("--theme-fg-secondary", &theme.text_secondary);
+    let _ = style.set_property("--theme-fg-muted", &theme.text_muted);
+    let _ = style.set_property("--theme-fg-faint", &theme.text_faint);
+    let _ = style.set_property("--theme-edge", &theme.border_color);
+    let _ = style.set_property("--theme-edge-subtle", &theme.border_subtle);
+    let _ = style.set_property("--theme-edge-hover", &theme.border_hover);
+    let _ = style.set_property("--theme-edge-focus", &theme.border_focus);
+    let _ = style.set_property("--theme-accent", &theme.accent);
+    let _ = style.set_property("--theme-error", &theme.error);
+    let _ = style.set_property("--theme-success", &theme.success);
+    let _ = style.set_property("--theme-warning", &theme.warning);
+}
 
 #[derive(Clone, Copy)]
 enum ResizeTarget {
@@ -162,6 +194,11 @@ pub fn App() -> impl IntoView {
         set_agent_width.set(cfg.agent_panel.width);
         ctx.config.set(cfg);
 
+        // Load and apply the active theme
+        if let Ok(theme) = ipc::get_active_theme().await {
+            apply_theme(&theme);
+        }
+
         // Re-open the last cave so the backend has a cave_path set
         if let Some(path) = recent {
             match ipc::open_cave(&path).await {
@@ -268,17 +305,17 @@ pub fn App() -> impl IntoView {
 
     view! {
         <div
-            class=move || format!("flex flex-col h-screen bg-stone-900 text-stone-200 font-sans {}", resize_cursor())
+            class=move || format!("flex flex-col h-screen bg-window text-fg font-sans {}", resize_cursor())
             on:mousemove=on_global_mousemove
             on:mouseup=on_global_mouseup
         >
             // Top bar
-            <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-stone-850 border-b border-stone-700 shrink-0">
+            <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-panel border-b border-edge-subtle shrink-0">
                 <div class="flex items-center gap-1">
-                    <span class=format!("text-sm font-semibold tracking-wide text-stone-300 mt-1 {title_margin}")>"Granit"</span>
+                    <span class=format!("text-sm font-semibold tracking-wide text-fg-secondary mt-1 {title_margin}")>"Granit"</span>
                     <Show when=move || ctx.config.get().active_cave.is_some()>
                         <button
-                            class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                            class="p-1 rounded hover:bg-item-hover text-fg-muted hover:text-fg transition-colors"
                             on:click=move |_| {
                                 spawn_local(async move {
                                     match ipc::open_daily_note().await {
@@ -303,14 +340,14 @@ pub fn App() -> impl IntoView {
                 </div>
                 <div class="flex items-center gap-1">
                     <button
-                        class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                        class="p-1 rounded hover:bg-item-hover text-fg-muted hover:text-fg transition-colors"
                         on:click=toggle_sidebar
                         title="Toggle sidebar"
                     >
                         <Icon icon=icondata_lu::LuPanelLeft width="1rem" height="1rem"/>
                     </button>
                     <button
-                        class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                        class="p-1 rounded hover:bg-item-hover text-fg-muted hover:text-fg transition-colors"
                         on:click=toggle_agent
                         title="Toggle agent"
                     >
@@ -329,7 +366,7 @@ pub fn App() -> impl IntoView {
                     />
                     // Resize handle
                     <div
-                        class="w-1 shrink-0 cursor-col-resize hover:bg-stone-500 active:bg-stone-400 transition-colors"
+                        class="w-1 shrink-0 cursor-col-resize hover:bg-highlight active:bg-accent transition-colors"
                         on:mousedown=start_sidebar_resize
                     />
                 </Show>
@@ -341,7 +378,7 @@ pub fn App() -> impl IntoView {
                 <Show when=move || agent_visible.get()>
                     // Resize handle
                     <div
-                        class="w-1 shrink-0 cursor-col-resize hover:bg-stone-500 active:bg-stone-400 transition-colors"
+                        class="w-1 shrink-0 cursor-col-resize hover:bg-highlight active:bg-accent transition-colors"
                         on:mousedown=start_agent_resize
                     />
                     <AgentPanel width=agent_width />
@@ -360,10 +397,10 @@ pub fn App() -> impl IntoView {
                     key=|e| e.id
                     let:err
                 >
-                    <div class="pointer-events-auto flex items-start gap-2 px-3 py-2.5 rounded-lg shadow-lg bg-red-950/90 border border-red-800/60 text-red-200 text-xs backdrop-blur-sm animate-[toast-in_0.2s_ease-out]">
+                    <div class="pointer-events-auto flex items-start gap-2 px-3 py-2.5 rounded-lg shadow-lg bg-error/10 border border-error/35 text-fg text-xs backdrop-blur-sm animate-[toast-in_0.2s_ease-out]">
                         <span class="flex-1 leading-relaxed">{err.message.clone()}</span>
                         <button
-                            class="mt-0.5 text-red-400 hover:text-red-200 shrink-0"
+                            class="mt-0.5 text-error/70 hover:text-error shrink-0"
                             on:click={
                                 let id = err.id;
                                 move |_| ctx.dismiss(id)

@@ -305,7 +305,7 @@ pub fn Editor() -> impl IntoView {
 
     view! {
         <main
-            class="flex-1 flex flex-col overflow-hidden bg-stone-900 relative outline-none"
+            class="flex-1 flex flex-col overflow-hidden bg-window relative outline-none"
             tabindex="-1"
             on:keydown=on_keydown
         >
@@ -317,7 +317,7 @@ pub fn Editor() -> impl IntoView {
                         fallback=move || view! {
                             // Preview mode: pencil icon → switch to edit
                             <button
-                                class="p-1.5 rounded text-stone-500 hover:text-stone-200 hover:bg-stone-700 transition-colors"
+                                class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors"
                                 title="Edit"
                                 on:click=move |_| ctx.toggle_mode()
                             >
@@ -327,7 +327,7 @@ pub fn Editor() -> impl IntoView {
                     >
                         // Edit mode: floppy disk → save, X → cancel
                         <button
-                            class="p-1.5 rounded text-stone-500 hover:text-stone-200 hover:bg-stone-700 transition-colors disabled:opacity-30"
+                            class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors disabled:opacity-30"
                             title="Save"
                             on:click=move |_| ctx.save()
                             disabled=move || ctx.saving.get()
@@ -335,7 +335,7 @@ pub fn Editor() -> impl IntoView {
                             <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
                         </button>
                         <button
-                            class="p-1.5 rounded text-stone-500 hover:text-stone-200 hover:bg-stone-700 transition-colors"
+                            class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors"
                             title="Cancel editing"
                             on:click=move |_| ctx.toggle_mode()
                         >
@@ -347,10 +347,10 @@ pub fn Editor() -> impl IntoView {
 
             // Error banner
             <Show when=move || ctx.error.get().is_some()>
-                <div class="px-4 py-1.5 bg-red-900/50 border-b border-red-700 text-red-300 text-xs flex items-center gap-2 shrink-0">
+                <div class="px-4 py-1.5 bg-error/15 border-b border-error/30 text-error/80 text-xs flex items-center gap-2 shrink-0">
                     <span class="flex-1">{move || ctx.error.get().unwrap_or_default()}</span>
                     <button
-                        class="text-red-400 hover:text-red-200"
+                        class="text-error/70 hover:text-error"
                         on:click=move |_| ctx.error.set(None)
                     >
                         "✕"
@@ -363,7 +363,7 @@ pub fn Editor() -> impl IntoView {
                 <Show
                     when=has_note
                     fallback=|| view! {
-                        <p class="text-stone-500 italic">"Select or create a note to get started"</p>
+                        <p class="text-fg-faint italic">"Select or create a note to get started"</p>
                     }
                 >
                     <div class="prose prose-invert max-w-none flex-1 flex flex-col min-h-0">

@@ -55,7 +55,7 @@ pub(super) fn Reader() -> impl IntoView {
     view! {
         <h1 class="!mt-0 !mb-1 flex items-center gap-2">
             {move || ctx.icon.get().map(|id| view! {
-                <span class="inline-flex w-6 h-6 shrink-0 text-stone-400">
+                <span class="inline-flex w-6 h-6 shrink-0 text-fg-muted">
                     <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
                 </span>
             })}
@@ -77,17 +77,17 @@ pub(super) fn Reader() -> impl IntoView {
                     {(!tags.is_empty()).then(|| view! {
                         <div class="flex flex-wrap items-center gap-2 mb-2">
                             {tags.into_iter().map(|tag| view! {
-                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-stone-700 text-stone-300">
+                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-item-hover text-fg-secondary">
                                     {tag}
                                 </span>
                             }).collect_view()}
                         </div>
                     })}
                     {created.map(|ts| view! {
-                        <span class="text-xs italic text-stone-500">{format!("Created: {ts}")}</span>
+                        <span class="text-xs italic text-fg-faint">{format!("Created: {ts}")}</span>
                     })}
                     {modified.map(|ts| view! {
-                        <span class="text-xs italic text-stone-500">{format!("Modified: {ts}")}</span>
+                        <span class="text-xs italic text-fg-faint">{format!("Modified: {ts}")}</span>
                     })}
                 </div>
             })

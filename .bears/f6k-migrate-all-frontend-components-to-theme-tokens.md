@@ -1,10 +1,10 @@
 ---
 id: f6k
 title: Migrate all frontend components to theme tokens
-status: open
+status: done
 priority: P1
 created: 2026-04-02T23:13:25.315241784Z
-updated: 2026-04-02T23:13:25.315241784Z
+updated: 2026-04-03T23:51:13.938262387Z
 tags:
 - frontend
 depends_on:

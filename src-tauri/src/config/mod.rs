@@ -59,6 +59,8 @@ pub struct AppConfig {
     pub agent_font: FontConfig,
     pub sidebar: SidebarConfig,
     pub agent_panel: SidebarConfig,
+    /// Active theme id (e.g. "default", "mocha").
+    pub theme: String,
     /// Folder name/path (relative to cave root) where daily notes are stored.
     pub daily_note_folder: String,
     /// Runtime-only: the path of the currently open cave. Not persisted to YAML.
@@ -75,6 +77,7 @@ struct RawConfig {
     agent_font: Option<RawFontConfig>,
     sidebar: Option<RawSidebarConfig>,
     agent_panel: Option<RawSidebarConfig>,
+    theme: Option<String>,
     daily_note_folder: Option<String>,
 }
 
@@ -149,6 +152,7 @@ impl AppConfig {
                 visible: Some(self.agent_panel.visible),
                 width: Some(self.agent_panel.width),
             }),
+            theme: Some(self.theme.clone()),
             daily_note_folder: Some(self.daily_note_folder.clone()),
         };
 
@@ -205,6 +209,7 @@ impl AppConfig {
             agent_font: self.agent_font.clone(),
             sidebar: self.sidebar.clone(),
             agent_panel: self.agent_panel.clone(),
+            theme: self.theme.clone(),
             daily_note_folder: self.daily_note_folder.clone(),
             active_cave: self
                 .active_cave
@@ -226,6 +231,7 @@ impl AppConfig {
                 agent_font: FontConfig::agent_default(),
                 sidebar: SidebarConfig::sidebar_default(),
                 agent_panel: SidebarConfig::agent_default(),
+                theme: "default".to_string(),
                 daily_note_folder: "Daily".to_string(),
                 active_cave: None,
             };
@@ -276,6 +282,7 @@ impl AppConfig {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
+            theme: "default".to_string(),
             daily_note_folder: "Daily".to_string(),
             active_cave: None,
         };
@@ -310,6 +317,9 @@ impl AppConfig {
         }
         if let Some(folder) = raw.daily_note_folder {
             config.daily_note_folder = folder;
+        }
+        if let Some(theme) = raw.theme {
+            config.theme = theme;
         }
     }
 }
@@ -488,6 +498,7 @@ mod tests {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
+            theme: "default".to_string(),
             daily_note_folder: "Daily".to_string(),
             active_cave: None,
         };

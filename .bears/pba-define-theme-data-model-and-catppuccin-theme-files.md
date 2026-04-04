@@ -1,10 +1,10 @@
 ---
 id: pba
 title: Define theme data model and Catppuccin theme files
-status: open
+status: done
 priority: P1
 created: 2026-04-02T23:09:52.730254257Z
-updated: 2026-04-02T23:09:52.730254257Z
+updated: 2026-04-03T23:43:06.104106788Z
 tags:
 - core
 parent: njk

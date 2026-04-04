@@ -3,6 +3,7 @@ mod font_picker;
 mod markdown;
 mod notes;
 mod reading;
+mod theme;
 
 use super::icons::Icon;
 use crate::app::{ipc, AppCtx};
@@ -12,6 +13,7 @@ use leptos::prelude::*;
 use markdown::MarkdownSettings;
 use notes::NotesSettings;
 use reading::ReadingSettings;
+use theme::ThemeSettings;
 
 /// Flat representation of one provider for form editing.
 #[derive(Clone)]
@@ -151,6 +153,7 @@ enum SettingsSection {
     Reading,
     Agent,
     Notes,
+    Theme,
 }
 
 impl SettingsSection {
@@ -160,10 +163,17 @@ impl SettingsSection {
             Self::Reading => "Reading",
             Self::Agent => "Agent",
             Self::Notes => "Notes",
+            Self::Theme => "Theme",
         }
     }
 
-    const ALL: [Self; 4] = [Self::Markdown, Self::Reading, Self::Agent, Self::Notes];
+    const ALL: [Self; 5] = [
+        Self::Markdown,
+        Self::Reading,
+        Self::Agent,
+        Self::Notes,
+        Self::Theme,
+    ];
 }
 
 #[component]
@@ -232,17 +242,17 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         >
             // Modal panel
             <div
-                class="bg-stone-800 border border-stone-600 rounded-lg shadow-xl w-[640px] h-[480px] max-w-[90vw] max-h-[80vh] flex flex-col"
+                class="bg-card border border-edge rounded-lg shadow-xl w-[640px] h-[480px] max-w-[90vw] max-h-[80vh] flex flex-col"
                 on:click=move |ev| ev.stop_propagation()
             >
                 // Header
-                <div class="flex items-center justify-between px-4 py-3 border-b border-stone-600">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
                     <div>
-                        <h2 class="text-sm font-semibold text-stone-200">"Global Settings"</h2>
-                        <p class="text-xs text-stone-500 mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
+                        <h2 class="text-sm font-semibold text-fg">"Global Settings"</h2>
+                        <p class="text-xs text-fg-faint mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
                     </div>
                     <button
-                        class="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-stone-200 transition-colors"
+                        class="p-1 rounded hover:bg-item-hover text-fg-muted hover:text-fg transition-colors"
                         on:click=move |_| set_open.set(false)
                     >
                         <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
@@ -252,7 +262,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 // Body: sidebar + content
                 <form class="flex flex-1 min-h-0" on:submit=on_save>
                     // Sidebar
-                    <nav class="w-40 shrink-0 border-r border-stone-600 py-2">
+                    <nav class="w-40 shrink-0 border-r border-edge py-2">
                         {SettingsSection::ALL.into_iter().map(|section| {
                             let is_active = move || active_section.get() == section;
                             view! {
@@ -260,9 +270,9 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                                     type="button"
                                     class=move || {
                                         if is_active() {
-                                            "w-full text-left px-4 py-1.5 text-sm text-stone-200 bg-stone-700"
+                                            "w-full text-left px-4 py-1.5 text-sm text-fg bg-item-hover"
                                         } else {
-                                            "w-full text-left px-4 py-1.5 text-sm text-stone-400 hover:text-stone-200 hover:bg-stone-700/50 transition-colors"
+                                            "w-full text-left px-4 py-1.5 text-sm text-fg-muted hover:text-fg hover:bg-item-hover/50 transition-colors"
                                         }
                                     }
                                     on:click=move |_| set_active_section.set(section)
@@ -278,7 +288,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         <div class="flex-1 overflow-y-auto p-4 space-y-4">
                             // Save error
                             <Show when=move || save_error.get().is_some()>
-                                <p class="text-xs text-red-400">
+                                <p class="text-xs text-error">
                                     {move || save_error.get().unwrap_or_default()}
                                 </p>
                             </Show>
@@ -298,20 +308,24 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                             <Show when=move || active_section.get() == SettingsSection::Notes>
                                 <NotesSettings form=form />
                             </Show>
+
+                            <Show when=move || active_section.get() == SettingsSection::Theme>
+                                <ThemeSettings />
+                            </Show>
                         </div>
 
                         // Actions — pinned at bottom
-                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-stone-600">
+                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-edge">
                             <button
                                 type="button"
-                                class="px-3 py-1.5 text-sm rounded border border-stone-600 text-stone-300 hover:bg-stone-700 transition-colors"
+                                class="px-3 py-1.5 text-sm rounded border border-edge text-fg-secondary hover:bg-item-hover transition-colors"
                                 on:click=move |_| set_open.set(false)
                             >
                                 "Cancel"
                             </button>
                             <button
                                 type="submit"
-                                class="px-3 py-1.5 text-sm rounded bg-stone-600 text-stone-200 hover:bg-stone-500 transition-colors disabled:opacity-50"
+                                class="px-3 py-1.5 text-sm rounded bg-item-active text-fg hover:bg-highlight transition-colors disabled:opacity-50"
                                 disabled=move || saving.get()
                             >
                                 {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}

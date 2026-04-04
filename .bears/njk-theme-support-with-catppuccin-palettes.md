@@ -2,10 +2,10 @@
 id: njk
 title: Theme support with Catppuccin palettes
 type: epic
-status: open
+status: done
 priority: P2
 created: 2026-04-02T23:08:54.278899191Z
-updated: 2026-04-02T23:08:54.278899191Z
+updated: 2026-04-03T23:51:21.344996997Z
 ---
 
 ## Scope

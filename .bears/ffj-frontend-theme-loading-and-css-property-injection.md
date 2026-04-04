@@ -1,10 +1,10 @@
 ---
 id: ffj
 title: Frontend theme loading and CSS property injection
-status: open
+status: done
 priority: P1
 created: 2026-04-02T23:14:06.550649695Z
-updated: 2026-04-02T23:14:06.550649695Z
+updated: 2026-04-03T23:51:16.313360032Z
 tags:
 - frontend
 depends_on:

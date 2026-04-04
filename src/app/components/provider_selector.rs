@@ -49,14 +49,14 @@ pub fn ProviderSelector(
     view! {
         <div class="relative">
             <button
-                class="flex items-center gap-1.5 px-2 py-1 text-xs bg-stone-800 border border-stone-600 rounded hover:border-stone-500 transition-colors text-stone-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                class="flex items-center gap-1.5 px-2 py-1 text-xs bg-card border border-edge rounded hover:border-edge-hover transition-colors text-fg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                 prop:disabled=move || disabled.get()
                 on:click=move |_| set_dropdown_open.update(|v| *v = !*v)
             >
                 <ProviderIcon provider_type=Signal::derive(selected_type) class="w-3.5 h-3.5 shrink-0" />
                 <span class="truncate">{selected_label}</span>
                 <span
-                    class="inline-flex w-3 h-3 shrink-0 text-stone-400 transition-transform"
+                    class="inline-flex w-3 h-3 shrink-0 text-fg-muted transition-transform"
                     class:rotate-180=move || dropdown_open.get()
                 >
                     <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
@@ -64,7 +64,7 @@ pub fn ProviderSelector(
             </button>
 
             <Show when=move || dropdown_open.get()>
-                <div class="absolute top-full left-0 mt-1 bg-stone-800 border border-stone-600 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[10rem]">
+                <div class="absolute top-full left-0 mt-1 bg-card border border-edge rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[10rem]">
                     {move || {
                         let cfg = config.get();
                         let selected = cfg.agent.selected_provider;
@@ -75,8 +75,8 @@ pub fn ProviderSelector(
                             let ptype = p.provider_type.clone();
                             view! {
                                 <button
-                                    class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 transition-colors truncate"
-                                    class=("bg-stone-700/50", is_active)
+                                    class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-fg-secondary hover:bg-item-hover transition-colors truncate"
+                                    class=("bg-item-hover/50", is_active)
                                     on:click=move |_| on_select(idx)
                                 >
                                     <ProviderIcon provider_type=Signal::stored(ptype.clone()) class="w-3.5 h-3.5 shrink-0" />

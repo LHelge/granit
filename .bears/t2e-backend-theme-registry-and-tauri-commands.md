@@ -1,10 +1,10 @@
 ---
 id: t2e
 title: Backend theme registry and Tauri commands
-status: open
+status: done
 priority: P1
 created: 2026-04-02T23:10:27.495520508Z
-updated: 2026-04-02T23:10:27.495520508Z
+updated: 2026-04-03T23:51:07.497348686Z
 tags:
 - backend
 depends_on:
