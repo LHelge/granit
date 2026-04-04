@@ -4,8 +4,8 @@ mod icons;
 mod note;
 
 pub use agent::{
-    AgentConfig, ChatMessage, ChatRole, ModelInfo, ProviderConfig, ProviderEntry, ProviderInfo,
-    ToolCallInfo,
+    default_system_prompt, AgentConfig, ChatMessage, ChatRole, ModelInfo, ProviderConfig,
+    ProviderEntry, ProviderInfo, ToolCallInfo, ToolInfo,
 };
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use icons::{resolve_note_icon, NoteIconEntry, NOTE_ICONS};

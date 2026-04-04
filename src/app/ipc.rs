@@ -1,5 +1,5 @@
 use granit_types::{
-    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
+    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -291,6 +291,10 @@ pub async fn send_message(msg: &str) -> Result<(), String> {
 
 pub async fn clear_chat() -> Result<(), String> {
     invoke_unit("clear_chat", &()).await
+}
+
+pub async fn list_tools() -> Result<Vec<ToolInfo>, String> {
+    invoke_no_args("list_tools").await
 }
 
 // ── Themes ─────────────────────────────────────────────────────────

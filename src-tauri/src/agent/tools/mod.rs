@@ -23,17 +23,70 @@ use crate::cave::{Cave, CaveError};
 /// Shared handle to the currently open cave, used by all agent tools.
 pub type SharedCave = Arc<Mutex<Option<Cave>>>;
 
-/// Build the standard set of cave tools as boxed trait objects.
-pub fn cave_toolset(cave: SharedCave) -> Vec<Box<dyn ToolDyn>> {
-    vec![
-        Box::new(ReadNoteTool { cave: cave.clone() }),
-        Box::new(ListNotesTool { cave: cave.clone() }),
-        Box::new(CreateNoteTool { cave: cave.clone() }),
-        Box::new(UpdateNoteTool { cave: cave.clone() }),
-        Box::new(EditNoteTool { cave: cave.clone() }),
-        Box::new(DeleteNoteTool { cave: cave.clone() }),
-        Box::new(SearchNotesTool { cave }),
-    ]
+/// Metadata about each available cave tool.
+struct ToolEntry {
+    name: &'static str,
+    description: &'static str,
+    build: fn(SharedCave) -> Box<dyn ToolDyn>,
+}
+
+/// The full catalogue of cave tools. Order is stable.
+const TOOL_CATALOGUE: &[ToolEntry] = &[
+    ToolEntry {
+        name: "read_note",
+        description: "Read a note's content by slug (or the currently active note)",
+        build: |cave| Box::new(ReadNoteTool { cave }),
+    },
+    ToolEntry {
+        name: "list_notes",
+        description: "List all notes in the cave with their slugs",
+        build: |cave| Box::new(ListNotesTool { cave }),
+    },
+    ToolEntry {
+        name: "create_note",
+        description: "Create a new markdown note in the cave",
+        build: |cave| Box::new(CreateNoteTool { cave }),
+    },
+    ToolEntry {
+        name: "update_note",
+        description: "Replace the entire body of a note",
+        build: |cave| Box::new(UpdateNoteTool { cave }),
+    },
+    ToolEntry {
+        name: "edit_note",
+        description: "Find and replace text within a note's body",
+        build: |cave| Box::new(EditNoteTool { cave }),
+    },
+    ToolEntry {
+        name: "delete_note",
+        description: "Delete a note from the cave",
+        build: |cave| Box::new(DeleteNoteTool { cave }),
+    },
+    ToolEntry {
+        name: "search_notes",
+        description: "Search notes by slug (case-insensitive)",
+        build: |cave| Box::new(SearchNotesTool { cave }),
+    },
+];
+
+/// Return metadata for all known tools (for the settings UI).
+pub fn tool_info_list() -> Vec<granit_types::ToolInfo> {
+    TOOL_CATALOGUE
+        .iter()
+        .map(|e| granit_types::ToolInfo {
+            name: e.name.to_string(),
+            description: e.description.to_string(),
+        })
+        .collect()
+}
+
+/// Build the cave toolset, excluding any disabled tool names.
+pub fn cave_toolset(cave: SharedCave, disabled: &[String]) -> Vec<Box<dyn ToolDyn>> {
+    TOOL_CATALOGUE
+        .iter()
+        .filter(|e| !disabled.iter().any(|d| d == e.name))
+        .map(|e| (e.build)(cave.clone()))
+        .collect()
 }
 
 /// Error type for agent tool operations.

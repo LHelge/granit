@@ -1,5 +1,6 @@
 use super::{font_picker::FontPicker, ProviderFormEntry, SettingsForm};
 use crate::app::components::icons::{Icon, ProviderIcon};
+use granit_types::default_system_prompt;
 use leptos::prelude::*;
 
 #[component]
@@ -46,6 +47,113 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         }
                     }
                 />
+            </div>
+
+            <div class="divider my-1" />
+
+            // Max history
+            <div class="space-y-1">
+                <label class="label text-xs text-base-content/50" for="ag-max-history">"Max history (messages)"</label>
+                <input
+                    id="ag-max-history"
+                    type="number"
+                    min="1"
+                    max="10000"
+                    class="input input-bordered input-sm w-full"
+                    prop:value=move || form.get().max_history.to_string()
+                    on:input=move |ev| {
+                        if let Ok(v) = event_target_value(&ev).parse::<usize>() {
+                            form.update(|f| f.max_history = v);
+                        }
+                    }
+                />
+            </div>
+
+            // Max turns
+            <div class="space-y-1">
+                <label class="label text-xs text-base-content/50" for="ag-max-turns">"Max turns (tool-call rounds)"</label>
+                <input
+                    id="ag-max-turns"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="input input-bordered input-sm w-full"
+                    prop:value=move || form.get().max_turns.to_string()
+                    on:input=move |ev| {
+                        if let Ok(v) = event_target_value(&ev).parse::<usize>() {
+                            form.update(|f| f.max_turns = v);
+                        }
+                    }
+                />
+            </div>
+
+            // System prompt
+            <div class="space-y-1">
+                <label class="label text-xs text-base-content/50" for="ag-system-prompt">"System prompt"</label>
+                <textarea
+                    id="ag-system-prompt"
+                    class="textarea textarea-bordered textarea-sm w-full h-24 font-mono text-xs"
+                    placeholder="Enter a custom system prompt…"
+                    prop:value=move || form.get().system_prompt.clone()
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev);
+                        form.update(|f| f.system_prompt = val);
+                    }
+                />
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    on:click=move |_| {
+                        form.update(|f| f.system_prompt = default_system_prompt());
+                    }
+                >
+                    "Reset to default"
+                </button>
+            </div>
+
+            <div class="divider my-1" />
+
+            // Tools
+            <div class="space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">"Tools"</span>
+                {move || {
+                    let tools = form.get().available_tools;
+                    if tools.is_empty() {
+                        view! { <p class="text-xs text-base-content/35 italic">"Loading tools\u{2026}"</p> }.into_any()
+                    } else {
+                        tools.into_iter().map(|tool| {
+                            let tool_name = tool.name.clone();
+                            let tool_name_toggle = tool.name.clone();
+                            let is_enabled = move || {
+                                !form.get().disabled_tools.contains(&tool_name)
+                            };
+                            let on_toggle = move |_| {
+                                let name = tool_name_toggle.clone();
+                                form.update(|f| {
+                                    if f.disabled_tools.contains(&name) {
+                                        f.disabled_tools.retain(|t| t != &name);
+                                    } else {
+                                        f.disabled_tools.push(name);
+                                    }
+                                });
+                            };
+                            view! {
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        class="toggle toggle-sm toggle-primary"
+                                        prop:checked=is_enabled
+                                        on:change=on_toggle
+                                    />
+                                    <div>
+                                        <span class="text-xs font-mono">{tool.name.clone()}</span>
+                                        <p class="text-xs text-base-content/40">{tool.description.clone()}</p>
+                                    </div>
+                                </label>
+                            }
+                        }).collect_view().into_any()
+                    }
+                }}
             </div>
 
             <div class="divider my-1" />

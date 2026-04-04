@@ -380,7 +380,7 @@ async fn send_message(
     };
 
     let mut stream = agent_clone
-        .stream_with_history(msg.as_str(), history, 10)
+        .stream_with_history(msg.as_str(), history)
         .await?;
 
     let app_handle = app.clone();
@@ -428,6 +428,11 @@ fn clear_chat(state: tauri::State<'_, AppState>) -> Result<(), AgentError> {
         agent.clear_history();
     }
     Ok(())
+}
+
+#[tauri::command]
+fn list_tools() -> Vec<granit_types::ToolInfo> {
+    agent::tools::tool_info_list()
 }
 
 #[tauri::command]
@@ -482,6 +487,7 @@ pub fn run() {
             select_model,
             send_message,
             clear_chat,
+            list_tools,
             set_active_theme,
         ])
         .run(tauri::generate_context!())

@@ -8,7 +8,7 @@ mod theme;
 use super::icons::Icon;
 use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
-use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry};
+use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo};
 use leptos::prelude::*;
 use markdown::MarkdownSettings;
 use notes::NotesSettings;
@@ -123,6 +123,13 @@ pub(super) struct SettingsForm {
     pub agent_font: FontConfig,
     // Notes
     pub daily_note_folder: String,
+    // Agent behaviour
+    pub max_history: usize,
+    pub max_turns: usize,
+    pub system_prompt: String,
+    pub disabled_tools: Vec<String>,
+    // Available tools (loaded async, read-only after init)
+    pub available_tools: Vec<ToolInfo>,
     // System fonts (loaded async, read-only after init)
     pub system_fonts: Vec<String>,
 }
@@ -141,6 +148,15 @@ impl SettingsForm {
             reading_font: config.reading_font.clone(),
             agent_font: config.agent_font.clone(),
             daily_note_folder: config.daily_note_folder.clone(),
+            max_history: config.agent.max_history,
+            max_turns: config.agent.max_turns,
+            system_prompt: config
+                .agent
+                .system_prompt
+                .clone()
+                .unwrap_or_else(granit_types::default_system_prompt),
+            disabled_tools: config.agent.disabled_tools.clone(),
+            available_tools: Vec::new(),
             system_fonts: Vec::new(),
         }
     }
@@ -187,10 +203,13 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
 
-    // Load system fonts on modal open
+    // Load system fonts and available tools on modal open
     leptos::task::spawn_local(async move {
         if let Ok(fonts) = ipc::list_system_fonts().await {
             form.update(|f| f.system_fonts = fonts);
+        }
+        if let Ok(tools) = ipc::list_tools().await {
+            form.update(|f| f.available_tools = tools);
         }
     });
 
@@ -207,11 +226,19 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             let selected_provider = existing
                 .selected_provider
                 .min(providers.len().saturating_sub(1));
+            let system_prompt = if f.system_prompt.trim().is_empty() {
+                None
+            } else {
+                Some(f.system_prompt)
+            };
             let agent = AgentConfig {
                 providers,
                 selected_provider,
                 selected_model: existing.selected_model,
-                max_history: existing.max_history,
+                max_history: f.max_history,
+                max_turns: f.max_turns,
+                system_prompt,
+                disabled_tools: f.disabled_tools,
             };
             match ipc::save_config(
                 agent,

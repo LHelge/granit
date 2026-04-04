@@ -14,20 +14,7 @@ use rig::tool::ToolDyn;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
-const SYSTEM_PROMPT_BASE: &str = r#"<|think|> You are a helpful assistant integrated into Granit, a personal note-taking app. 
-The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
-You can link the user to existing notes by using wiki-style links like [[slug]]. 
-You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
-Be mindful that edits should only replace text in the body of the note, not the frontmatter."#;
-
-fn build_system_prompt() -> String {
-    let ids: Vec<&str> = granit_types::NOTE_ICONS.iter().map(|e| e.id).collect();
-    format!(
-        "{}\n\nWhen creating or updating notes you can optionally set an icon using one of these IDs:\n{}",
-        SYSTEM_PROMPT_BASE,
-        ids.join(", ")
-    )
-}
+use granit_types::default_system_prompt;
 
 /// Provider-agnostic agent wrapping different rig-core agent types.
 pub(crate) enum ProviderAgent {
@@ -86,6 +73,7 @@ pub struct Agent {
     inner: ProviderAgent,
     pub history: VecDeque<Message>,
     max_history: usize,
+    max_turns: usize,
 }
 
 impl Agent {
@@ -98,12 +86,15 @@ impl Agent {
             AgentError::ProviderIndexOutOfRange(config.selected_provider),
         )?;
 
-        let cave_tools = tools::cave_toolset(cave);
+        let cave_tools = tools::cave_toolset(cave, &config.disabled_tools);
         let model = config
             .selected_model
             .as_deref()
             .unwrap_or(entry.provider.default_model());
-        let system_prompt = build_system_prompt();
+        let system_prompt = match &config.system_prompt {
+            Some(custom) if !custom.trim().is_empty() => custom.clone(),
+            _ => default_system_prompt(),
+        };
         let inner = match &entry.provider {
             ProviderConfig::Ollama { base_url } => {
                 Self::build_ollama(base_url.as_deref(), model, cave_tools, &system_prompt)?
@@ -123,6 +114,7 @@ impl Agent {
             inner,
             history: VecDeque::new(),
             max_history: config.max_history,
+            max_turns: config.max_turns,
         })
     }
 
@@ -229,7 +221,6 @@ impl Agent {
         &self,
         prompt: &str,
         history: Vec<Message>,
-        max_turns: usize,
     ) -> Result<AgentStream, AgentError> {
         use futures::StreamExt;
         use rig::streaming::StreamingPrompt;
@@ -260,7 +251,7 @@ impl Agent {
             let stream = agent
                 .stream_prompt(prompt)
                 .with_history(history)
-                .multi_turn(max_turns)
+                .multi_turn(self.max_turns)
                 .await;
             Ok(AgentStream {
                 inner: Box::pin(stream.map(|item| {
@@ -391,6 +382,9 @@ mod tests {
             selected_provider: 0,
             selected_model: None,
             max_history: 100,
+            max_turns: 10,
+            system_prompt: None,
+            disabled_tools: Vec::new(),
         }
     }
 
@@ -400,6 +394,9 @@ mod tests {
             selected_provider: 0,
             selected_model: None,
             max_history: 100,
+            max_turns: 10,
+            system_prompt: None,
+            disabled_tools: Vec::new(),
         }
     }
 
@@ -424,6 +421,9 @@ mod tests {
             selected_provider: 0,
             selected_model: None,
             max_history: 100,
+            max_turns: 10,
+            system_prompt: None,
+            disabled_tools: Vec::new(),
         };
         let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_err());

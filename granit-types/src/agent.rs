@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+use crate::NOTE_ICONS;
+
+const SYSTEM_PROMPT_BASE: &str = r#"<|think|> You are a helpful assistant integrated into Granit, a personal note-taking app. 
+The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
+You can link the user to existing notes by using wiki-style links like [[slug]]. 
+You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
+Be mindful that edits should only replace text in the body of the note, not the frontmatter."#;
+
+/// Build the default system prompt including available note icon IDs.
+pub fn default_system_prompt() -> String {
+    let ids: Vec<&str> = NOTE_ICONS.iter().map(|e| e.id).collect();
+    format!(
+        "{}\n\nWhen creating or updating notes you can optionally set an icon using one of these IDs:\n{}",
+        SYSTEM_PROMPT_BASE,
+        ids.join(", ")
+    )
+}
+
 /// Tagged provider configuration.
 ///
 /// Each variant carries only the fields relevant to that provider.
@@ -104,10 +122,24 @@ pub struct AgentConfig {
     /// Oldest messages are dropped when the limit is exceeded.
     #[serde(default = "default_max_history")]
     pub max_history: usize,
+    /// Maximum multi-turn tool-call rounds per prompt.
+    #[serde(default = "default_max_turns")]
+    pub max_turns: usize,
+    /// Optional user-defined system prompt override.
+    /// When `None`, the built-in default is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    /// Tool names that should NOT be registered with the agent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_tools: Vec<String>,
 }
 
 fn default_max_history() -> usize {
     100
+}
+
+fn default_max_turns() -> usize {
+    10
 }
 
 impl AgentConfig {
@@ -126,6 +158,9 @@ impl Default for AgentConfig {
             selected_provider: 0,
             selected_model: None,
             max_history: default_max_history(),
+            max_turns: default_max_turns(),
+            system_prompt: None,
+            disabled_tools: Vec::new(),
         }
     }
 }
@@ -187,6 +222,13 @@ pub enum ChatRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallInfo {
     pub name: String,
+}
+
+/// Metadata about an available agent tool, for the settings UI.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolInfo {
+    pub name: String,
+    pub description: String,
 }
 
 #[cfg(test)]
@@ -324,6 +366,9 @@ mod tests {
             selected_provider: 1,
             selected_model: Some("claude-sonnet-4-20250514".into()),
             max_history: 50,
+            max_turns: 5,
+            system_prompt: Some("You are helpful.".into()),
+            disabled_tools: vec!["delete_note".into()],
         };
 
         let yaml = serde_yml::to_string(&config).unwrap();
