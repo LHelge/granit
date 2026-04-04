@@ -93,6 +93,7 @@ impl ProviderEntry {
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
+    #[serde(default = "AgentConfig::default_providers")]
     pub providers: Vec<ProviderEntry>,
     #[serde(default)]
     pub selected_provider: usize,
@@ -109,13 +110,19 @@ fn default_max_history() -> usize {
     100
 }
 
+impl AgentConfig {
+    fn default_providers() -> Vec<ProviderEntry> {
+        vec![ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Ollama { base_url: None },
+        }]
+    }
+}
+
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            providers: vec![ProviderEntry {
-                name: None,
-                provider: ProviderConfig::Ollama { base_url: None },
-            }],
+            providers: Self::default_providers(),
             selected_provider: 0,
             selected_model: None,
             max_history: default_max_history(),

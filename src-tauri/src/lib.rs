@@ -100,7 +100,7 @@ fn save_config(
     config.reading_font = reading_font;
     config.agent_font = agent_font;
     config.daily_note_folder = daily_note_folder;
-    config.save_global()?;
+    config.save()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent()?;
     let mut ipc = config.to_ipc();
@@ -119,33 +119,26 @@ fn save_sidebar_state(
     let mut config = state.lock_config()?;
     config.sidebar = sidebar;
     config.agent_panel = agent_panel;
-    config.save_global()?;
+    config.save()?;
     Ok(())
 }
 
 #[tauri::command]
 fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
-    // Ensure cave .granit/ dir and defaults exist
+    // Ensure cave .granit/ dir exists
     AppConfig::ensure_cave(&path)?;
 
-    // Persist the recent-caves update to the global config BEFORE loading
-    // the merged config, so cave overrides don't bleed into the global file.
+    // Update recent caves on disk before reading state
     AppConfig::save_recent_cave(&path)?;
 
-    // Reload config with cave overrides
-    let new_config = AppConfig::load(Some(&path))?;
-
-    // Open the cave
+    // Open the cave and reset the agent
     state.set_cave(Some(Cave::open(path.clone())?))?;
-
-    // Reset agent so it rebuilds with new config on next message
     state.reset_agent()?;
 
-    // Update in-memory config with the merged (global + cave) values
+    // Reload config from disk (now includes the updated recent_caves)
     let mut config = state.lock_config()?;
-    *config = new_config;
+    *config = AppConfig::load()?;
 
-    // Return config with active_cave set to the just-opened path
     let mut ipc = config.to_ipc();
     ipc.active_cave = Some(path.to_string_lossy().into_owned());
     Ok(ipc)
@@ -347,7 +340,7 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcCon
     }
     config.agent.selected_provider = index;
     config.agent.selected_model = None;
-    config.save_global()?;
+    config.save()?;
     state.reset_agent()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
@@ -379,7 +372,7 @@ async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>
 fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config()?;
     config.agent.selected_model = Some(model_id);
-    config.save_global()?;
+    config.save()?;
     state.reset_agent()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
@@ -464,7 +457,7 @@ fn set_active_theme(
 ) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config()?;
     config.theme = id;
-    config.save_global()?;
+    config.save()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
         .active_cave_path()?
@@ -474,7 +467,7 @@ fn set_active_theme(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let config = AppConfig::ensure_global().expect("failed to initialize config");
+    let config = AppConfig::ensure().expect("failed to initialize config");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
