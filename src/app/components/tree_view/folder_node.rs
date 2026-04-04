@@ -113,7 +113,9 @@ pub(super) fn FolderNode(
                             <span class=move || if open.get() { "inline-flex w-3 h-3 shrink-0 transition-transform rotate-90" } else { "inline-flex w-3 h-3 shrink-0 transition-transform" }>
                                 <Icon icon=icondata_lu::LuChevronRight width="100%" height="100%"/>
                             </span>
-                            <Icon icon=icondata_lu::LuFolder width="0.875rem" height="0.875rem"/>
+                            <span class="inline-flex w-3.5 h-3.5 shrink-0 text-warning">
+                                <Icon icon=icondata_lu::LuFolder width="100%" height="100%"/>
+                            </span>
                             {name.clone()}
                         </button>
                     }

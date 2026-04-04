@@ -55,7 +55,7 @@ pub(super) fn Reader() -> impl IntoView {
     view! {
         <h1 class="!mt-0 !mb-1 flex items-center gap-2">
             {move || ctx.icon.get().map(|id| view! {
-                <span class="inline-flex w-6 h-6 shrink-0 text-fg-muted">
+                <span class="inline-flex w-6 h-6 shrink-0 text-accent">
                     <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
                 </span>
             })}

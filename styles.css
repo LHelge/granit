@@ -97,6 +97,17 @@
   content: none;
 }
 
+/* Prose link color — resolved wiki-links and regular anchors */
+.prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)) {
+  color: var(--theme-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
+}
+
+.prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)):hover {
+  text-decoration-color: var(--theme-accent);
+}
+
 /* Unresolved wiki-links: styled as muted links */
 /* Title bar drag region for macOS overlay style */
 .titlebar {
