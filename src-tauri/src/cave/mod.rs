@@ -519,19 +519,7 @@ impl Cave {
 
         std::fs::rename(&src_abs, &new_abs)?;
 
-        // Update all indexed note paths that were under the old location.
-        let updates: Vec<(String, PathBuf)> = self
-            .notes
-            .iter()
-            .filter(|(_, abs)| abs.starts_with(&src_abs))
-            .map(|(slug, abs)| {
-                let suffix = abs.strip_prefix(&src_abs).unwrap();
-                (slug.clone(), new_abs.join(suffix))
-            })
-            .collect();
-        for (slug, new_path) in updates {
-            self.notes.insert(slug, new_path);
-        }
+        self.update_child_paths(&src_abs, &new_abs);
 
         Ok(())
     }
@@ -637,6 +625,23 @@ impl Cave {
     ///
     /// `source` is the relative path of the folder to rename.
     /// `new_name` is the new name for the folder (just the final component, not a path).
+    /// Update indexed note paths after a folder is moved or renamed.
+    /// Replaces `old_prefix` with `new_prefix` for every note under the old location.
+    fn update_child_paths(&mut self, old_prefix: &Path, new_prefix: &Path) {
+        let updates: Vec<(String, PathBuf)> = self
+            .notes
+            .iter()
+            .filter(|(_, abs)| abs.starts_with(old_prefix))
+            .map(|(slug, abs)| {
+                let suffix = abs.strip_prefix(old_prefix).unwrap();
+                (slug.clone(), new_prefix.join(suffix))
+            })
+            .collect();
+        for (slug, new_path) in updates {
+            self.notes.insert(slug, new_path);
+        }
+    }
+
     pub fn rename_folder(&mut self, source: &Path, new_name: &str) -> Result<(), CaveError> {
         validate_folder_path(source)?;
         validate_name(new_name)?;
@@ -662,19 +667,7 @@ impl Cave {
 
         std::fs::rename(&src_abs, &new_abs)?;
 
-        // Update all indexed note paths that were under the old location.
-        let updates: Vec<(String, PathBuf)> = self
-            .notes
-            .iter()
-            .filter(|(_, abs)| abs.starts_with(&src_abs))
-            .map(|(slug, abs)| {
-                let suffix = abs.strip_prefix(&src_abs).unwrap();
-                (slug.clone(), new_abs.join(suffix))
-            })
-            .collect();
-        for (slug, new_path) in updates {
-            self.notes.insert(slug, new_path);
-        }
+        self.update_child_paths(&src_abs, &new_abs);
 
         Ok(())
     }

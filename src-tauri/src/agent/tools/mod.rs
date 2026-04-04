@@ -1,19 +1,15 @@
 mod create_note;
 mod delete_note;
-mod edit_active_note;
 mod edit_note;
 mod list_notes;
-mod read_active_note;
 mod read_note;
 mod search_notes;
 mod update_note;
 
 pub use create_note::CreateNoteTool;
 pub use delete_note::DeleteNoteTool;
-pub use edit_active_note::EditActiveNoteTool;
 pub use edit_note::EditNoteTool;
 pub use list_notes::ListNotesTool;
-pub use read_active_note::ReadActiveNoteTool;
 pub use read_note::ReadNoteTool;
 pub use search_notes::SearchNotesTool;
 pub use update_note::UpdateNoteTool;
@@ -31,12 +27,10 @@ pub type SharedCave = Arc<Mutex<Option<Cave>>>;
 pub fn cave_toolset(cave: SharedCave) -> Vec<Box<dyn ToolDyn>> {
     vec![
         Box::new(ReadNoteTool { cave: cave.clone() }),
-        Box::new(ReadActiveNoteTool { cave: cave.clone() }),
         Box::new(ListNotesTool { cave: cave.clone() }),
         Box::new(CreateNoteTool { cave: cave.clone() }),
         Box::new(UpdateNoteTool { cave: cave.clone() }),
         Box::new(EditNoteTool { cave: cave.clone() }),
-        Box::new(EditActiveNoteTool { cave: cave.clone() }),
         Box::new(DeleteNoteTool { cave: cave.clone() }),
         Box::new(SearchNotesTool { cave }),
     ]
