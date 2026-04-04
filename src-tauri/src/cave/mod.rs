@@ -181,6 +181,7 @@ impl Cave {
             if !d.is_dir() {
                 return Err(CaveError::NotFound(f.to_string_lossy().into_owned()));
             }
+            self.check_containment(&d)?;
             d
         } else {
             self.path.clone()
@@ -255,6 +256,7 @@ impl Cave {
     pub fn create_folder(&mut self, path: &Path) -> Result<(), CaveError> {
         validate_folder_path(path)?;
         let abs = self.path.join(path);
+        self.check_containment(&abs)?;
         if abs.exists() {
             return Err(CaveError::AlreadyExists(
                 path.to_string_lossy().into_owned(),
@@ -274,6 +276,7 @@ impl Cave {
         if !abs.exists() {
             return Err(CaveError::NotFound(path.to_string_lossy().into_owned()));
         }
+        self.check_containment(&abs)?;
         // Filesystem first — only update the index after the delete succeeds.
         std::fs::remove_dir_all(&abs)?;
         self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
@@ -443,6 +446,7 @@ impl Cave {
             if !abs.is_dir() {
                 return Err(CaveError::NotFound(d.to_string_lossy().into_owned()));
             }
+            self.check_containment(&abs)?;
             abs
         } else {
             self.path.clone()
@@ -491,6 +495,7 @@ impl Cave {
         if !src_abs.is_dir() {
             return Err(CaveError::NotFound(source.to_string_lossy().into_owned()));
         }
+        self.check_containment(&src_abs)?;
 
         let folder_name = source
             .file_name()
@@ -501,6 +506,7 @@ impl Cave {
             if !abs.is_dir() {
                 return Err(CaveError::NotFound(d.to_string_lossy().into_owned()));
             }
+            self.check_containment(&abs)?;
             abs
         } else {
             self.path.clone()
@@ -634,6 +640,31 @@ impl Cave {
     ///
     /// `source` is the relative path of the folder to rename.
     /// `new_name` is the new name for the folder (just the final component, not a path).
+    /// Verify that `abs_path` is contained within the cave root by comparing
+    /// canonical paths. Walks up to the nearest existing ancestor so this works
+    /// for paths that are about to be created as well as paths that already exist.
+    /// Returns `CaveError::InvalidName` if the path escapes the cave root.
+    fn check_containment(&self, abs_path: &Path) -> Result<(), CaveError> {
+        let canonical_root =
+            std::fs::canonicalize(&self.path).map_err(|e| CaveError::Io(e.to_string()))?;
+        let mut candidate = abs_path;
+        let canonical_candidate = loop {
+            if candidate.exists() {
+                break std::fs::canonicalize(candidate)
+                    .map_err(|e| CaveError::Io(e.to_string()))?;
+            }
+            candidate = candidate
+                .parent()
+                .ok_or_else(|| CaveError::InvalidName("path escapes the cave root".to_string()))?;
+        };
+        if !canonical_candidate.starts_with(&canonical_root) {
+            return Err(CaveError::InvalidName(
+                "path escapes the cave root".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Update indexed note paths after a folder is moved or renamed.
     /// Replaces `old_prefix` with `new_prefix` for every note under the old location.
     fn update_child_paths(&mut self, old_prefix: &Path, new_prefix: &Path) {
@@ -659,6 +690,7 @@ impl Cave {
         if !src_abs.is_dir() {
             return Err(CaveError::NotFound(source.to_string_lossy().into_owned()));
         }
+        self.check_containment(&src_abs)?;
 
         let parent = src_abs.parent().unwrap_or(&self.path);
         let new_abs = parent.join(new_name);
