@@ -6,7 +6,7 @@ Granit is a minimal, opinionated desktop note-taking app built for personal use.
 
 - **Backend**: Tauri 2 (Rust) — single source of truth for all data and logic
 - **Frontend**: Leptos 0.8 (Rust → WASM, CSR mode) compiled with Trunk
-- **Styling**: Tailwind CSS (utility classes in `view!` macros)
+- **Styling**: Tailwind CSS + DaisyUI 5 (utility classes and DaisyUI component classes in `view!` macros; see `.github/instructions/daisyui.instructions.md`)
 - **Markdown**: `pulldown-cmark` in the backend — frontend receives rendered HTML
 - **AI Agent**: `rig-core` with configurable LLM provider (OpenAI, Anthropic, etc.)
 - **Error handling**: `thiserror` for typed error enums
@@ -113,7 +113,7 @@ wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing
 - **Language**: All code, comments, and documentation in English.
 - **Errors**: Define typed error enums with `thiserror`. No `anyhow`. Return `Result<T, MyError>` from commands.
 - **Tauri commands**: One `#[tauri::command]` per operation. Keep handlers thin — delegate to modules.
-- **Frontend**: Leptos reactive signals (`signal()`, `RwSignal`). Tailwind utility classes. Minimal JavaScript interop.
+- **Frontend**: Leptos reactive signals (`signal()`, `RwSignal`). Tailwind CSS + DaisyUI 5 component classes. Minimal JavaScript interop.
 - **Testing**: Unit tests in the backend (`#[cfg(test)]` modules). Test cave operations, markdown parsing, and agent tools. No E2E tests yet.
 - **Naming**: Snake_case for Rust. Kebab-case for filenames. Cave note filenames are user-controlled.
 - **No over-engineering**: This is a personal tool. Build what's needed now. No plugin system, no sync, no abstractions for hypothetical features.
@@ -121,7 +121,7 @@ wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing
 ### Developer Experience
 
 - The user is experienced with Rust backend development — keep backend explanations concise.
-- The user is less experienced with frontend/Leptos/Tailwind — provide more guidance, examples, and explanations for frontend changes.
+- The user is less experienced with frontend/Leptos/Tailwind/DaisyUI — provide more guidance, examples, and explanations for frontend changes.
 
 ### Icons
 

@@ -82,9 +82,13 @@ fn NoteList(notes: ReadSignal<Vec<Note>>) -> impl IntoView {
 }
 ```
 
-## Tailwind CSS
+## Tailwind CSS and DaisyUI
 
-Use utility classes directly in `view!` macros. Common patterns:
+Styling uses **Tailwind CSS 4** for utilities and **DaisyUI 5** for component classes. See `.github/instructions/daisyui.instructions.md` for full DaisyUI reference.
+
+Prefer DaisyUI component classes (`btn`, `input`, `card`, `menu`, etc.) over hand-rolling equivalent Tailwind utilities. Combine them with Tailwind for layout and fine-tuned overrides.
+
+Use utility classes and DaisyUI component classes directly in `view!` macros. Common patterns:
 
 ```rust
 view! {
@@ -94,13 +98,13 @@ view! {
         <main class="flex-1 p-6">/* content */</main>
     </div>
 
-    // Buttons
-    <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+    // DaisyUI button
+    <button class="btn btn-primary">
         "Save"
     </button>
 
-    // Text input
-    <input type="text" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2" />
+    // DaisyUI text input
+    <input type="text" class="input input-bordered w-full" />
 }
 ```
 
