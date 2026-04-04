@@ -1,81 +1,328 @@
-use crate::app::{apply_theme, ipc, AppCtx};
-use granit_types::ThemeMeta;
+use crate::app::{ipc, set_daisy_theme, AppCtx};
 use leptos::prelude::*;
+
+/// A DaisyUI theme entry: (data-theme value, display label, is_dark).
+struct ThemeEntry {
+    id: &'static str,
+    label: &'static str,
+    is_dark: bool,
+}
+
+const DAISY_THEMES: &[ThemeEntry] = &[
+    ThemeEntry {
+        id: "light",
+        label: "Light",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "dark",
+        label: "Dark",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "cupcake",
+        label: "Cupcake",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "bumblebee",
+        label: "Bumblebee",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "emerald",
+        label: "Emerald",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "corporate",
+        label: "Corporate",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "synthwave",
+        label: "Synthwave",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "retro",
+        label: "Retro",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "cyberpunk",
+        label: "Cyberpunk",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "valentine",
+        label: "Valentine",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "halloween",
+        label: "Halloween",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "garden",
+        label: "Garden",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "forest",
+        label: "Forest",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "aqua",
+        label: "Aqua",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "lofi",
+        label: "Lo-fi",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "pastel",
+        label: "Pastel",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "fantasy",
+        label: "Fantasy",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "wireframe",
+        label: "Wireframe",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "black",
+        label: "Black",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "luxury",
+        label: "Luxury",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "dracula",
+        label: "Dracula",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "cmyk",
+        label: "CMYK",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "autumn",
+        label: "Autumn",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "business",
+        label: "Business",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "acid",
+        label: "Acid",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "lemonade",
+        label: "Lemonade",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "night",
+        label: "Night",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "coffee",
+        label: "Coffee",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "winter",
+        label: "Winter",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "dim",
+        label: "Dim",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "nord",
+        label: "Nord",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "sunset",
+        label: "Sunset",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "caramellatte",
+        label: "Caramel Latte",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "abyss",
+        label: "Abyss",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "silk",
+        label: "Silk",
+        is_dark: false,
+    },
+];
+
+const CATPPUCCIN_THEMES: &[ThemeEntry] = &[
+    ThemeEntry {
+        id: "catppuccin-latte",
+        label: "Latte",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "catppuccin-frappe",
+        label: "Frappé",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "catppuccin-macchiato",
+        label: "Macchiato",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "catppuccin-mocha",
+        label: "Mocha",
+        is_dark: true,
+    },
+];
 
 #[component]
 pub fn ThemeSettings() -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
-    let (themes, set_themes) = signal(Vec::<ThemeMeta>::new());
-    let (loading, set_loading) = signal(true);
-    let (applying, set_applying) = signal(false);
-
-    // Active theme id is persisted in config
     let active_id = move || ctx.config.get().theme;
 
-    leptos::task::spawn_local(async move {
-        if let Ok(list) = ipc::list_themes().await {
-            set_themes.set(list);
-        }
-        set_loading.set(false);
-    });
+    let apply = move |id: &'static str| {
+        set_daisy_theme(id);
+        leptos::task::spawn_local(async move {
+            match ipc::set_active_theme(id).await {
+                Ok(new_cfg) => ctx.config.set(new_cfg),
+                Err(e) => {
+                    ctx.push_error("theme", format!("Failed to set theme: {e}"));
+                }
+            }
+        });
+    };
 
     view! {
-        <fieldset>
-            <legend class="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-3">"Theme"</legend>
-            <Show when=move || loading.get()>
-                <p class="text-xs text-fg-faint italic">"Loading themes…"</p>
-            </Show>
-            <Show when=move || !loading.get()>
-                <div class="space-y-1.5">
-                    {move || themes.get().into_iter().map(|theme| {
-                        let id = theme.id.clone();
-                        let id_for_click = id.clone();
-                        let is_active = move || active_id() == id;
+        <div class="space-y-4">
+
+            // ── Catppuccin themes ─────────────────────────────────
+            <fieldset>
+                <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
+                    "Catppuccin"
+                </legend>
+                <div class="grid grid-cols-2 gap-1">
+                    {CATPPUCCIN_THEMES.iter().map(|t| {
+                        let id = t.id;
+                        let label = t.label;
+                        let is_dark = t.is_dark;
                         view! {
-                            <button
-                                type="button"
-                                class=move || {
-                                    if is_active() {
-                                        "w-full flex items-center justify-between px-3 py-2 rounded text-sm text-fg bg-item-hover border border-edge transition-colors"
-                                    } else {
-                                        "w-full flex items-center justify-between px-3 py-2 rounded text-sm text-fg-secondary hover:text-fg hover:bg-item-hover/60 border border-transparent transition-colors disabled:opacity-50"
-                                    }
-                                }
-                                disabled=move || applying.get()
-                                on:click=move |_| {
-                                    let id = id_for_click.clone();
-                                    set_applying.set(true);
-                                    leptos::task::spawn_local(async move {
-                                        match ipc::set_active_theme(&id).await {
-                                            Ok(new_cfg) => {
-                                                ctx.config.set(new_cfg);
-                                                if let Ok(theme) = ipc::get_active_theme().await {
-                                                    apply_theme(&theme);
-                                                }
-                                            }
-                                            Err(e) => {
-                                                ctx.push_error("theme", format!("Failed to set theme: {e}"));
-                                            }
-                                        }
-                                        set_applying.set(false);
-                                    });
-                                }
-                            >
-                                <span>{theme.name}</span>
-                                <span class=move || {
-                                    if theme.is_dark {
-                                        "text-xs px-1.5 py-0.5 rounded-full bg-item-active text-fg-muted"
-                                    } else {
-                                        "text-xs px-1.5 py-0.5 rounded-full bg-card text-fg-faint"
-                                    }
-                                }>
-                                    {if theme.is_dark { "dark" } else { "light" }}
-                                </span>
-                            </button>
+                            <ThemeSwatch
+                                id=id
+                                label=label
+                                is_dark=is_dark
+                                active_id=active_id
+                                on_select=move || apply(id)
+                            />
                         }
                     }).collect_view()}
                 </div>
-            </Show>
-        </fieldset>
+            </fieldset>
+
+            // ── DaisyUI built-in themes ───────────────────────────
+            <fieldset>
+                <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
+                    "Built-in"
+                </legend>
+                <div class="grid grid-cols-2 gap-1">
+                    {DAISY_THEMES.iter().map(|t| {
+                        let id = t.id;
+                        let label = t.label;
+                        let is_dark = t.is_dark;
+                        view! {
+                            <ThemeSwatch
+                                id=id
+                                label=label
+                                is_dark=is_dark
+                                active_id=active_id
+                                on_select=move || apply(id)
+                            />
+                        }
+                    }).collect_view()}
+                </div>
+            </fieldset>
+
+        </div>
+    }
+}
+
+#[component]
+fn ThemeSwatch(
+    id: &'static str,
+    label: &'static str,
+    is_dark: bool,
+    active_id: impl Fn() -> String + Copy + Send + Sync + 'static,
+    on_select: impl Fn() + Copy + 'static,
+) -> impl IntoView {
+    let is_active = move || active_id() == id;
+
+    view! {
+        <button
+            type="button"
+            class=move || {
+                if is_active() {
+                    "flex items-center justify-between px-2.5 py-1.5 rounded text-sm \
+                     bg-base-content/15 border border-primary text-base-content transition-colors"
+                } else {
+                    "flex items-center justify-between px-2.5 py-1.5 rounded text-sm \
+                     border border-transparent hover:bg-base-content/10 \
+                     text-base-content/70 hover:text-base-content transition-colors"
+                }
+            }
+            on:click=move |_| on_select()
+        >
+            // Color preview — scoped to this theme via data-theme
+            <div data-theme=id class="flex shrink-0 rounded overflow-hidden border border-black/10">
+                <div class="w-3 h-4 bg-base-200"></div>
+                <div class="w-3 h-4 bg-primary"></div>
+                <div class="w-3 h-4 bg-secondary"></div>
+                <div class="w-3 h-4 bg-accent"></div>
+            </div>
+            <span class="flex-1 truncate ml-2">{label}</span>
+            <span class=move || {
+                if is_active() {
+                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-primary/20 text-primary"
+                } else if is_dark {
+                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-stone-800 text-stone-200"
+                } else {
+                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-stone-100 text-stone-600"
+                }
+            }>
+                {if is_dark { "dark" } else { "light" }}
+            </span>
+        </button>
     }
 }

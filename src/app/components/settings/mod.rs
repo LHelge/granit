@@ -242,17 +242,17 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         >
             // Modal panel
             <div
-                class="bg-card border border-edge rounded-lg shadow-xl w-[640px] h-[480px] max-w-[90vw] max-h-[80vh] flex flex-col"
+                class="bg-base-300 border border-base-content/20 rounded-lg shadow-xl w-[640px] h-[480px] max-w-[90vw] max-h-[80vh] flex flex-col"
                 on:click=move |ev| ev.stop_propagation()
             >
                 // Header
-                <div class="flex items-center justify-between px-4 py-3 border-b border-edge">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/20">
                     <div>
-                        <h2 class="text-sm font-semibold text-fg">"Global Settings"</h2>
-                        <p class="text-xs text-fg-faint mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
+                        <h2 class="text-sm font-semibold text-base-content">"Global Settings"</h2>
+                        <p class="text-xs text-base-content/35 mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
                     </div>
                     <button
-                        class="p-1 rounded hover:bg-item-hover text-fg-muted hover:text-fg transition-colors"
+                        class="p-1 rounded hover:bg-base-content/10 text-base-content/50 hover:text-base-content transition-colors"
                         on:click=move |_| set_open.set(false)
                     >
                         <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
@@ -262,7 +262,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 // Body: sidebar + content
                 <form class="flex flex-1 min-h-0" on:submit=on_save>
                     // Sidebar
-                    <nav class="w-40 shrink-0 border-r border-edge py-2">
+                    <nav class="w-40 shrink-0 border-r border-base-content/20 py-2">
                         {SettingsSection::ALL.into_iter().map(|section| {
                             let is_active = move || active_section.get() == section;
                             view! {
@@ -270,9 +270,9 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                                     type="button"
                                     class=move || {
                                         if is_active() {
-                                            "w-full text-left px-4 py-1.5 text-sm text-fg bg-item-hover"
+                                            "w-full text-left px-4 py-1.5 text-sm text-base-content bg-base-content/10"
                                         } else {
-                                            "w-full text-left px-4 py-1.5 text-sm text-fg-muted hover:text-fg hover:bg-item-hover/50 transition-colors"
+                                            "w-full text-left px-4 py-1.5 text-sm text-base-content/50 hover:text-base-content hover:bg-base-content/5 transition-colors"
                                         }
                                     }
                                     on:click=move |_| set_active_section.set(section)
@@ -315,17 +315,17 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         </div>
 
                         // Actions — pinned at bottom
-                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-edge">
+                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-base-content/20">
                             <button
                                 type="button"
-                                class="px-3 py-1.5 text-sm rounded border border-edge text-fg-secondary hover:bg-item-hover transition-colors"
+                                class="px-3 py-1.5 text-sm rounded border border-base-content/20 text-base-content/70 hover:bg-base-content/10 transition-colors"
                                 on:click=move |_| set_open.set(false)
                             >
                                 "Cancel"
                             </button>
                             <button
                                 type="submit"
-                                class="px-3 py-1.5 text-sm rounded bg-item-active text-fg hover:bg-highlight transition-colors disabled:opacity-50"
+                                class="px-3 py-1.5 text-sm rounded bg-base-content/20 text-base-content hover:bg-base-content/30 transition-colors disabled:opacity-50"
                                 disabled=move || saving.get()
                             >
                                 {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}

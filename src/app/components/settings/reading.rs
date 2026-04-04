@@ -10,10 +10,10 @@ pub fn ReadingSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
     view! {
         <fieldset class="space-y-3">
-            <legend class="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">"Reading"</legend>
+            <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">"Reading"</legend>
 
             <div class="space-y-1">
-                <label class="block text-xs text-fg-muted">"Font family"</label>
+                <label class="block text-xs text-base-content/50">"Font family"</label>
                 <FontPicker
                     fonts=fonts
                     value=font_family
@@ -23,13 +23,13 @@ pub fn ReadingSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             </div>
 
             <div class="space-y-1">
-                <label class="block text-xs text-fg-muted" for="rd-font-size">"Font size (px)"</label>
+                <label class="block text-xs text-base-content/50" for="rd-font-size">"Font size (px)"</label>
                 <input
                     id="rd-font-size"
                     type="number"
                     min="8"
                     max="48"
-                    class="w-full bg-window border border-edge rounded px-3 py-1.5 text-sm text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
+                    class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {

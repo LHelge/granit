@@ -2,7 +2,6 @@ mod agent;
 mod cave;
 mod config;
 mod markdown;
-mod theme;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -10,14 +9,12 @@ use std::sync::{Arc, Mutex};
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
-use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote, Theme, ThemeMeta};
-use theme::ThemeRegistry;
+use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote};
 
 struct AppState {
     config: Mutex<AppConfig>,
     cave: SharedCave,
     agent: Mutex<Option<Agent>>,
-    theme_registry: ThemeRegistry,
 }
 
 impl AppState {
@@ -461,25 +458,12 @@ fn clear_chat(state: tauri::State<'_, AppState>) -> Result<(), AgentError> {
 }
 
 #[tauri::command]
-fn list_themes(state: tauri::State<'_, AppState>) -> Vec<ThemeMeta> {
-    state.theme_registry.list()
-}
-
-#[tauri::command]
-fn get_active_theme(state: tauri::State<'_, AppState>) -> Result<Theme, ConfigError> {
-    let config = state.lock_config()?;
-    Ok(state.theme_registry.get(&config.theme).clone())
-}
-
-#[tauri::command]
 fn set_active_theme(
     id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<IpcConfig, ConfigError> {
-    // Validate that the theme exists (falls back to "default" if not)
-    let resolved = state.theme_registry.get(&id).id.clone();
     let mut config = state.lock_config()?;
-    config.theme = resolved;
+    config.theme = id;
     config.save_global()?;
     let mut ipc = config.to_ipc();
     ipc.active_cave = state
@@ -499,7 +483,6 @@ pub fn run() {
             config: Mutex::new(config),
             cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
-            theme_registry: ThemeRegistry::new(),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
@@ -530,8 +513,6 @@ pub fn run() {
             select_model,
             send_message,
             clear_chat,
-            list_themes,
-            get_active_theme,
             set_active_theme,
         ])
         .run(tauri::generate_context!())

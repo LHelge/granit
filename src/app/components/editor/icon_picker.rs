@@ -52,7 +52,7 @@ pub(super) fn IconPicker(
             // Trigger: icon only, sized to match the reader's icon span
             <button
                 type="button"
-                class="inline-flex w-6 h-6 shrink-0 text-fg-muted hover:text-fg transition-colors"
+                class="inline-flex w-6 h-6 shrink-0 text-base-content/50 hover:text-base-content transition-colors"
                 title="Change icon"
                 on:click=toggle
             >
@@ -64,12 +64,12 @@ pub(super) fn IconPicker(
                 // Invisible backdrop — closes picker on outside click
                 <div class="fixed inset-0 z-40" on:click=close/>
 
-                <div class="absolute left-0 top-7 z-50 w-72 bg-card border border-edge rounded shadow-lg flex flex-col">
+                <div class="absolute left-0 top-7 z-50 w-72 bg-base-300 border border-base-content/20 rounded shadow-lg flex flex-col">
                     // Search input
-                    <div class="p-2 border-b border-edge-subtle">
+                    <div class="p-2 border-b border-base-content/10">
                         <input
                             type="text"
-                            class="w-full bg-window border border-edge rounded px-2 py-1 text-xs text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
+                            class="w-full bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
                             placeholder="Search icons…"
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
@@ -90,9 +90,14 @@ pub(super) fn IconPicker(
                                     view! {
                                         <button
                                             type="button"
-                                            class="flex items-center justify-center p-2 rounded text-fg-muted hover:text-fg hover:bg-item-hover transition-colors"
-                                            class:bg-item-active=is_selected
-                                            class:text-fg=is_selected
+                                            class=move || {
+                                                let base = "flex items-center justify-center p-2 rounded text-base-content/50 hover:text-base-content hover:bg-base-content/10 transition-colors";
+                                                if is_selected() {
+                                                    format!("{base} bg-base-content/20 text-base-content")
+                                                } else {
+                                                    base.to_string()
+                                                }
+                                            }
                                             title=label
                                             on:click=move |_| {
                                                 on_change.run(Some(id.to_string()));

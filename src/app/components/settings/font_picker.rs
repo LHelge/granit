@@ -52,7 +52,7 @@ pub fn FontPicker(
             // Selected value button
             <button
                 type="button"
-                class="w-full bg-window border border-edge rounded px-3 py-1.5 text-sm text-fg outline-none focus:border-edge-focus transition-colors text-left flex items-center justify-between"
+                class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content outline-none focus:border-primary transition-colors text-left flex items-center justify-between"
                 on:click=toggle
             >
                 <span
@@ -64,7 +64,7 @@ pub fn FontPicker(
                     }}
                 </span>
                 <span
-                    class="inline-flex w-3.5 h-3.5 text-fg-muted shrink-0 ml-2 transition-transform"
+                    class="inline-flex w-3.5 h-3.5 text-base-content/50 shrink-0 ml-2 transition-transform"
                     class:rotate-180=move || open.get()
                 >
                     <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
@@ -76,12 +76,12 @@ pub fn FontPicker(
                 // Invisible backdrop to close on outside click
                 <div class="fixed inset-0 z-40" on:click=on_backdrop />
 
-                <div class="absolute z-50 mt-1 w-full bg-window border border-edge rounded shadow-lg max-h-60 flex flex-col">
+                <div class="absolute z-50 mt-1 w-full bg-base-100 border border-base-content/20 rounded shadow-lg max-h-60 flex flex-col">
                     // Search input
-                    <div class="p-1.5 border-b border-edge-subtle">
+                    <div class="p-1.5 border-b border-base-content/10">
                         <input
                             type="text"
-                            class="w-full bg-card border border-edge rounded px-2 py-1 text-sm text-fg placeholder-fg-faint outline-none focus:border-edge-focus"
+                            class="w-full bg-base-300 border border-base-content/20 rounded px-2 py-1 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary"
                             placeholder="Search fonts…"
                             prop:value=move || search.get()
                             on:input=move |ev| set_search.set(event_target_value(&ev))
@@ -94,7 +94,7 @@ pub fn FontPicker(
                             let items = filtered();
                             if items.is_empty() {
                                 view! {
-                                    <p class="px-3 py-2 text-sm text-fg-faint italic">"No matching fonts"</p>
+                                    <p class="px-3 py-2 text-sm text-base-content/35 italic">"No matching fonts"</p>
                                 }.into_any()
                             } else {
                                 items.into_iter().map(|font| {
@@ -105,8 +105,8 @@ pub fn FontPicker(
                                     view! {
                                         <button
                                             type="button"
-                                            class="w-full text-left px-3 py-1.5 text-sm text-fg hover:bg-item-hover transition-colors truncate"
-                                            class=("bg-item-hover", is_selected)
+                                            class="w-full text-left px-3 py-1.5 text-sm text-base-content hover:bg-base-content/10 transition-colors truncate"
+                                            class=("bg-base-content/10", is_selected)
                                             style:font-family=format!("'{font_style}'")
                                             on:click=move |_| {
                                                 set_value.run(font_select.clone());

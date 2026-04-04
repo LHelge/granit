@@ -149,7 +149,7 @@ pub(super) fn Writer() -> impl IntoView {
         <FrontmatterEditor />
         <textarea
             node_ref=content_ref
-            class="not-prose w-full flex-1 bg-transparent text-fg-secondary resize-none outline-none leading-relaxed"
+            class="not-prose w-full flex-1 bg-transparent text-base-content/70 resize-none outline-none leading-relaxed"
             placeholder="Start writing..."
             style:font-family=move || ctx.config.get().markdown_font.font_family
             style:font-size=move || format!("{}px", ctx.config.get().markdown_font.font_size)

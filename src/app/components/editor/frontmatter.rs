@@ -43,10 +43,10 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
                 {
                     let tag_for_remove = tag.clone();
                     view! {
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-item-hover text-fg-secondary">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-base-content/10 text-base-content/70">
                             {tag.clone()}
                             <button
-                                class="text-fg-faint hover:text-fg leading-none"
+                                class="text-base-content/35 hover:text-base-content leading-none"
                                 on:click=move |_| remove_tag(tag_for_remove.clone())
                             >
                                 "×"
@@ -57,7 +57,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
             </For>
             <input
                 type="text"
-                class="bg-transparent text-xs text-fg-muted outline-none placeholder:text-edge w-24"
+                class="bg-transparent text-xs text-base-content/50 outline-none placeholder:text-base-content/20 w-24"
                 placeholder="Add tag…"
                 prop:value=move || tag_input.get()
                 on:input=move |ev| set_tag_input.set(event_target_value(&ev))

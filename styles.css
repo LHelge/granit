@@ -1,52 +1,147 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@plugin "./daisyui.mjs" {
+  themes: all;
+}
+
+/* ── Catppuccin Latte (light) ─────────────────────────────────────── */
+@plugin "./daisyui-theme.mjs" {
+  name: "catppuccin-latte";
+  color-scheme: light;
+
+  --color-base-100: #eff1f5;
+  --color-base-200: #e6e9ef;
+  --color-base-300: #dce0e8;
+  --color-base-content: #4c4f69;
+
+  --color-primary: #8839ef;
+  --color-primary-content: #eff1f5;
+  --color-secondary: #7287fd;
+  --color-secondary-content: #eff1f5;
+  --color-accent: #dc8a78;
+  --color-accent-content: #eff1f5;
+  --color-neutral: #ccd0da;
+  --color-neutral-content: #6c6f85;
+
+  --color-info: #1e66f5;
+  --color-info-content: #eff1f5;
+  --color-success: #40a02b;
+  --color-success-content: #eff1f5;
+  --color-warning: #df8e1d;
+  --color-warning-content: #eff1f5;
+  --color-error: #d20f39;
+  --color-error-content: #eff1f5;
+}
+
+/* ── Catppuccin Frappé (dark) ─────────────────────────────────────── */
+@plugin "./daisyui-theme.mjs" {
+  name: "catppuccin-frappe";
+  color-scheme: dark;
+
+  --color-base-100: #303446;
+  --color-base-200: #292c3c;
+  --color-base-300: #232634;
+  --color-base-content: #c6d0f5;
+
+  --color-primary: #ca9ee6;
+  --color-primary-content: #232634;
+  --color-secondary: #babbf1;
+  --color-secondary-content: #232634;
+  --color-accent: #f2d5cf;
+  --color-accent-content: #232634;
+  --color-neutral: #414559;
+  --color-neutral-content: #a5adce;
+
+  --color-info: #8caaee;
+  --color-info-content: #232634;
+  --color-success: #a6d189;
+  --color-success-content: #232634;
+  --color-warning: #e5c890;
+  --color-warning-content: #232634;
+  --color-error: #e78284;
+  --color-error-content: #232634;
+}
+
+/* ── Catppuccin Macchiato (dark) ──────────────────────────────────── */
+@plugin "./daisyui-theme.mjs" {
+  name: "catppuccin-macchiato";
+  color-scheme: dark;
+
+  --color-base-100: #24273a;
+  --color-base-200: #1e2030;
+  --color-base-300: #181926;
+  --color-base-content: #cad3f5;
+
+  --color-primary: #c6a0f6;
+  --color-primary-content: #181926;
+  --color-secondary: #b7bdf8;
+  --color-secondary-content: #181926;
+  --color-accent: #f4dbd6;
+  --color-accent-content: #181926;
+  --color-neutral: #363a4f;
+  --color-neutral-content: #a5adcb;
+
+  --color-info: #8aadf4;
+  --color-info-content: #181926;
+  --color-success: #a6da95;
+  --color-success-content: #181926;
+  --color-warning: #eed49f;
+  --color-warning-content: #181926;
+  --color-error: #ed8796;
+  --color-error-content: #181926;
+}
+
+/* ── Catppuccin Mocha (dark, system dark default) ─────────────────── */
+@plugin "./daisyui-theme.mjs" {
+  name: "catppuccin-mocha";
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #1e1e2e;
+  --color-base-200: #181825;
+  --color-base-300: #11111b;
+  --color-base-content: #cdd6f4;
+
+  --color-primary: #cba6f7;
+  --color-primary-content: #11111b;
+  --color-secondary: #b4befe;
+  --color-secondary-content: #11111b;
+  --color-accent: #f5e0dc;
+  --color-accent-content: #11111b;
+  --color-neutral: #313244;
+  --color-neutral-content: #a6adc8;
+
+  --color-info: #89b4fa;
+  --color-info-content: #11111b;
+  --color-success: #a6e3a1;
+  --color-success-content: #11111b;
+  --color-warning: #f9e2af;
+  --color-warning-content: #11111b;
+  --color-error: #f38ba8;
+  --color-error-content: #11111b;
+}
 
 @theme {
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
-
-  /* Semantic theme color tokens — backed by --theme-* CSS vars that the
-     frontend sets at runtime when a theme is loaded. Tailwind picks these
-     up so utilities like bg-window, text-fg, border-edge, etc. work. */
-  --color-window:       var(--theme-window);
-  --color-panel:        var(--theme-panel);
-  --color-card:         var(--theme-card);
-  --color-item-hover:   var(--theme-item-hover);
-  --color-item-active:  var(--theme-item-active);
-  --color-highlight:    var(--theme-highlight);
-  --color-fg:           var(--theme-fg);
-  --color-fg-secondary: var(--theme-fg-secondary);
-  --color-fg-muted:     var(--theme-fg-muted);
-  --color-fg-faint:     var(--theme-fg-faint);
-  --color-edge:         var(--theme-edge);
-  --color-edge-subtle:  var(--theme-edge-subtle);
-  --color-edge-hover:   var(--theme-edge-hover);
-  --color-edge-focus:   var(--theme-edge-focus);
-  --color-accent:       var(--theme-accent);
-  --color-error:        var(--theme-error);
-  --color-success:      var(--theme-success);
-  --color-warning:      var(--theme-warning);
 }
 
-/* Default theme (dark, stone-based) — applied until JS loads the active theme */
-:root {
-  --theme-window:       #1c1917;
-  --theme-panel:        #231f1e;
-  --theme-card:         #292524;
-  --theme-item-hover:   #44403c;
-  --theme-item-active:  #57534e;
-  --theme-highlight:    #78716c;
-  --theme-fg:           #e7e5e4;
-  --theme-fg-secondary: #d6d3d1;
-  --theme-fg-muted:     #a8a29e;
-  --theme-fg-faint:     #78716c;
-  --theme-edge:         #57534e;
-  --theme-edge-subtle:  #44403c;
-  --theme-edge-hover:   #78716c;
-  --theme-edge-focus:   #a8a29e;
-  --theme-accent:       #7098d8;
-  --theme-error:        #f87171;
-  --theme-success:      #7ab870;
-  --theme-warning:      #c8a048;
+/* Make prose respect DaisyUI theme colors instead of hardcoded gray palette */
+.prose {
+  --tw-prose-body: var(--color-base-content);
+  --tw-prose-headings: var(--color-base-content);
+  --tw-prose-lead: color-mix(in oklch, var(--color-base-content) 70%, transparent);
+  --tw-prose-bold: var(--color-base-content);
+  --tw-prose-counters: color-mix(in oklch, var(--color-base-content) 60%, transparent);
+  --tw-prose-bullets: color-mix(in oklch, var(--color-base-content) 40%, transparent);
+  --tw-prose-hr: color-mix(in oklch, var(--color-base-content) 20%, transparent);
+  --tw-prose-quotes: var(--color-base-content);
+  --tw-prose-quote-borders: color-mix(in oklch, var(--color-base-content) 20%, transparent);
+  --tw-prose-captions: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+  --tw-prose-code: var(--color-base-content);
+  --tw-prose-pre-code: var(--color-base-content);
+  --tw-prose-pre-bg: var(--color-base-300);
+  --tw-prose-th-borders: color-mix(in oklch, var(--color-base-content) 20%, transparent);
+  --tw-prose-td-borders: color-mix(in oklch, var(--color-base-content) 10%, transparent);
 }
 
 /* Tighten prose typography spacing */
@@ -99,13 +194,13 @@
 
 /* Prose link color — resolved wiki-links and regular anchors */
 .prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)) {
-  color: var(--theme-accent);
+  color: var(--color-primary);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--theme-accent) 40%, transparent);
+  text-decoration-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
 }
 
 .prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)):hover {
-  text-decoration-color: var(--theme-accent);
+  text-decoration-color: var(--color-primary);
 }
 
 /* Unresolved wiki-links: styled as muted links */
@@ -115,14 +210,14 @@
 }
 
 .broken-link {
-  color: var(--theme-fg-faint);
+  color: color-mix(in oklch, var(--color-base-content) 40%, transparent);
   text-decoration: underline;
   text-decoration-style: dashed;
   cursor: pointer;
 }
 
 .broken-link:hover {
-  color: var(--theme-fg-secondary);
+  color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
 }
 
 /* Toast slide-in animation */

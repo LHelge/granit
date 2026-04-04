@@ -59,7 +59,7 @@ pub struct AppConfig {
     pub agent_font: FontConfig,
     pub sidebar: SidebarConfig,
     pub agent_panel: SidebarConfig,
-    /// Active theme id (e.g. "default", "mocha").
+    /// Active theme id — any DaisyUI theme name or custom theme (e.g. "dark", "catppuccin-mocha").
     pub theme: String,
     /// Folder name/path (relative to cave root) where daily notes are stored.
     pub daily_note_folder: String,
@@ -231,7 +231,7 @@ impl AppConfig {
                 agent_font: FontConfig::agent_default(),
                 sidebar: SidebarConfig::sidebar_default(),
                 agent_panel: SidebarConfig::agent_default(),
-                theme: "default".to_string(),
+                theme: "dark".to_string(),
                 daily_note_folder: "Daily".to_string(),
                 active_cave: None,
             };

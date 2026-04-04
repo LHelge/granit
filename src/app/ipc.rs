@@ -1,6 +1,5 @@
 use granit_types::{
-    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, Theme, ThemeMeta,
-    ToolCallInfo,
+    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -295,14 +294,6 @@ pub async fn clear_chat() -> Result<(), String> {
 }
 
 // ── Themes ─────────────────────────────────────────────────────────
-
-pub async fn list_themes() -> Result<Vec<ThemeMeta>, String> {
-    invoke_no_args("list_themes").await
-}
-
-pub async fn get_active_theme() -> Result<Theme, String> {
-    invoke_no_args("get_active_theme").await
-}
 
 pub async fn set_active_theme(id: &str) -> Result<AppConfig, String> {
     invoke_cmd("set_active_theme", &HashMap::from([("id", id)])).await

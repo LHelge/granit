@@ -206,7 +206,7 @@ pub fn TreeView() -> impl IntoView {
                 let note_list = ctx.notes.get();
                 let folder_list = ctx.folders.get();
                 if note_list.is_empty() && folder_list.is_empty() {
-                    view! { <p class="p-2 text-sm text-fg-faint italic">"No notes yet"</p> }
+                    view! { <p class="p-2 text-sm text-base-content/35 italic">"No notes yet"</p> }
                         .into_any()
                 } else {
                     let tree = build_tree(note_list, folder_list);

@@ -305,7 +305,7 @@ pub fn Editor() -> impl IntoView {
 
     view! {
         <main
-            class="flex-1 flex flex-col overflow-hidden bg-window relative outline-none"
+            class="flex-1 flex flex-col overflow-hidden bg-base-100 relative outline-none"
             tabindex="-1"
             on:keydown=on_keydown
         >
@@ -317,7 +317,7 @@ pub fn Editor() -> impl IntoView {
                         fallback=move || view! {
                             // Preview mode: pencil icon → switch to edit
                             <button
-                                class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors"
+                                class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors"
                                 title="Edit"
                                 on:click=move |_| ctx.toggle_mode()
                             >
@@ -327,7 +327,7 @@ pub fn Editor() -> impl IntoView {
                     >
                         // Edit mode: floppy disk → save, X → cancel
                         <button
-                            class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors disabled:opacity-30"
+                            class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors disabled:opacity-30"
                             title="Save"
                             on:click=move |_| ctx.save()
                             disabled=move || ctx.saving.get()
@@ -335,7 +335,7 @@ pub fn Editor() -> impl IntoView {
                             <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
                         </button>
                         <button
-                            class="p-1.5 rounded text-fg-faint hover:text-fg hover:bg-item-hover transition-colors"
+                            class="p-1.5 rounded text-base-content/35 hover:text-base-content hover:bg-base-content/10 transition-colors"
                             title="Cancel editing"
                             on:click=move |_| ctx.toggle_mode()
                         >
@@ -363,10 +363,10 @@ pub fn Editor() -> impl IntoView {
                 <Show
                     when=has_note
                     fallback=|| view! {
-                        <p class="text-fg-faint italic">"Select or create a note to get started"</p>
+                        <p class="text-base-content/35 italic">"Select or create a note to get started"</p>
                     }
                 >
-                    <div class="prose prose-invert max-w-none flex-1 flex flex-col min-h-0">
+                    <div class="prose max-w-none flex-1 flex flex-col min-h-0">
                         <Show
                             when=move || ctx.editing.get()
                             fallback=move || view! { <Reader /> }

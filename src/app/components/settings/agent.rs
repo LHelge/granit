@@ -17,11 +17,11 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
     view! {
         <fieldset class="space-y-3">
-            <legend class="text-xs font-semibold uppercase tracking-wider text-fg-muted mb-2">"Agent"</legend>
+            <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">"Agent"</legend>
 
             // Font family
             <div class="space-y-1">
-                <label class="block text-xs text-fg-muted">"Font family"</label>
+                <label class="block text-xs text-base-content/50">"Font family"</label>
                 <FontPicker
                     fonts=fonts
                     value=font_family
@@ -32,13 +32,13 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
             // Font size
             <div class="space-y-1">
-                <label class="block text-xs text-fg-muted" for="ag-font-size">"Font size (px)"</label>
+                <label class="block text-xs text-base-content/50" for="ag-font-size">"Font size (px)"</label>
                 <input
                     id="ag-font-size"
                     type="number"
                     min="8"
                     max="48"
-                    class="w-full bg-window border border-edge rounded px-3 py-1.5 text-sm text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
+                    class="w-full bg-base-100 border border-base-content/20 rounded px-3 py-1.5 text-sm text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
                     prop:value=move || font_size.get().to_string()
                     on:input=move |ev| {
                         if let Ok(v) = event_target_value(&ev).parse::<u8>() {
@@ -48,14 +48,14 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 />
             </div>
 
-            <hr class="border-edge" />
+            <hr class="border-base-content/20" />
 
             // Provider list header
             <div class="flex items-center justify-between">
-                <span class="text-xs font-semibold uppercase tracking-wider text-fg-muted">"Providers"</span>
+                <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">"Providers"</span>
                 <button
                     type="button"
-                    class="flex items-center gap-1 text-xs text-fg-muted hover:text-fg transition-colors"
+                    class="flex items-center gap-1 text-xs text-base-content/50 hover:text-base-content transition-colors"
                     on:click=add_provider
                 >
                     <Icon icon=icondata_lu::LuPlus width="1rem" height="1rem"/>
@@ -72,7 +72,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             }}
 
             <Show when=move || form.get().providers.is_empty()>
-                <p class="text-xs text-fg-faint italic">"No providers configured. Click Add to create one."</p>
+                <p class="text-xs text-base-content/35 italic">"No providers configured. Click Add to create one."</p>
             </Show>
         </fieldset>
     }
@@ -169,26 +169,26 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
     };
 
     view! {
-        <div class="border border-edge-subtle rounded p-2.5 space-y-2 bg-card/40">
+        <div class="border border-base-content/10 rounded p-2.5 space-y-2 bg-base-300/40">
             // Top row: type selector + name + remove button
             <div class="flex items-center gap-2">
                 <div class="relative shrink-0">
                     <button
                         type="button"
-                        class="flex items-center gap-1.5 px-2 py-1 text-xs bg-window border border-edge rounded hover:border-edge-hover transition-colors text-fg cursor-pointer"
+                        class="flex items-center gap-1.5 px-2 py-1 text-xs bg-base-100 border border-base-content/20 rounded hover:border-base-content/30 transition-colors text-base-content cursor-pointer"
                         on:click=move |_| set_type_open.update(|v| *v = !*v)
                     >
                         <ProviderIcon provider_type=Signal::derive(provider_type) class="w-3.5 h-3.5 shrink-0" />
                         <span>{move || PROVIDER_TYPES.iter().find(|(k, _)| *k == provider_type()).map(|(_, l)| *l).unwrap_or("Select")}</span>
                         <span
-                            class="inline-flex w-3 h-3 shrink-0 text-fg-muted transition-transform"
+                            class="inline-flex w-3 h-3 shrink-0 text-base-content/50 transition-transform"
                             class:rotate-180=move || type_open.get()
                         >
                             <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
                         </span>
                     </button>
                     <Show when=move || type_open.get()>
-                        <div class="absolute top-full left-0 mt-1 bg-card border border-edge rounded shadow-lg z-50 min-w-[10rem]">
+                        <div class="absolute top-full left-0 mt-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 min-w-[10rem]">
                             {PROVIDER_TYPES.iter().map(|(ptype, label)| {
                                 let ptype_str = *ptype;
                                 let label_str = *label;
@@ -196,8 +196,8 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                                 view! {
                                     <button
                                         type="button"
-                                        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-fg-secondary hover:bg-item-hover transition-colors"
-                                        class=("bg-item-hover/50", move || provider_type() == ptype_str)
+                                        class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-content/10 transition-colors"
+                                        class=("bg-base-content/5", move || provider_type() == ptype_str)
                                         on:click=move |_| on_type_select(ptype_str)
                                     >
                                         <ProviderIcon provider_type=Signal::stored(ptype_owned.clone()) class="w-3.5 h-3.5 shrink-0" />
@@ -210,14 +210,14 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                 </div>
                 <input
                     type="text"
-                    class="flex-1 min-w-0 bg-window border border-edge rounded px-2 py-1 text-xs text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
+                    class="flex-1 min-w-0 bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
                     placeholder=move || format!("Name (default: {})", type_label())
                     prop:value=move || form.get().providers.get(index).map(|p| p.name.clone()).unwrap_or_default()
                     on:input=on_name_input
                 />
                 <button
                     type="button"
-                    class="shrink-0 p-1 rounded text-fg-faint hover:text-error hover:bg-item-hover transition-colors"
+                    class="shrink-0 p-1 rounded text-base-content/35 hover:text-error hover:bg-base-content/10 transition-colors"
                     title="Remove provider"
                     on:click=on_remove
                 >
@@ -229,7 +229,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
             <Show when=needs_base_url>
                 <input
                     type="text"
-                    class="w-full bg-window border border-edge rounded px-2 py-1 text-xs text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors"
+                    class="w-full bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors"
                     placeholder="Base URL (default: http://localhost:11434)"
                     prop:value=move || form.get().providers.get(index).map(|p| p.base_url.clone()).unwrap_or_default()
                     on:input=on_base_url_input
@@ -241,14 +241,14 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                 <div class="flex items-center gap-1">
                     <input
                         type=move || if show_key.get() { "text" } else { "password" }
-                        class="flex-1 min-w-0 bg-window border border-edge rounded px-2 py-1 text-xs text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors font-mono"
+                        class="flex-1 min-w-0 bg-base-100 border border-base-content/20 rounded px-2 py-1 text-xs text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors font-mono"
                         placeholder="API key"
                         prop:value=move || form.get().providers.get(index).map(|p| p.api_key.clone()).unwrap_or_default()
                         on:input=on_api_key_input
                     />
                     <button
                         type="button"
-                        class="shrink-0 p-1 rounded text-fg-faint hover:text-fg transition-colors"
+                        class="shrink-0 p-1 rounded text-base-content/35 hover:text-base-content transition-colors"
                         title=move || if show_key.get() { "Hide API key" } else { "Show API key" }
                         on:click=move |_| set_show_key.update(|v| *v = !*v)
                     >

@@ -50,17 +50,17 @@ pub fn ModelSelector(
         <div class="relative">
             <button
                 type="button"
-                class="flex items-center gap-1.5 px-2 py-1 text-xs bg-card border border-edge rounded hover:border-edge-hover transition-colors text-fg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+                class="flex items-center gap-1.5 px-2 py-1 text-xs bg-base-300 border border-base-content/20 rounded hover:border-base-content/30 transition-colors text-base-content/70 disabled:opacity-50 disabled:cursor-not-allowed"
                 prop:disabled=move || disabled.get() || models_loading.get()
                 on:click=move |_| set_dropdown_open.update(|v| *v = !*v)
             >
                 <span
                     class="truncate max-w-[16rem]"
                     class=("italic", move || !has_selection())
-                    class=("text-fg-faint", move || !has_selection())
+                    class=("text-base-content/35", move || !has_selection())
                 >{selected_label}</span>
                 <span
-                    class="inline-flex w-3 h-3 shrink-0 text-fg-muted transition-transform"
+                    class="inline-flex w-3 h-3 shrink-0 text-base-content/50 transition-transform"
                     class:rotate-180=move || dropdown_open.get()
                 >
                     <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
@@ -69,7 +69,7 @@ pub fn ModelSelector(
 
             <Show when=move || dropdown_open.get()>
                 // Opens upward since this sits at the bottom of the panel
-                <div class="absolute bottom-full left-0 mb-1 bg-card border border-edge rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[12rem]">
+                <div class="absolute bottom-full left-0 mb-1 bg-base-300 border border-base-content/20 rounded shadow-lg z-50 max-h-60 overflow-y-auto min-w-[12rem]">
                     {move || {
                         let cfg = config.get();
                         let selected = cfg.agent.selected_model.clone().unwrap_or_default();
@@ -80,8 +80,8 @@ pub fn ModelSelector(
                             view! {
                                 <button
                                     type="button"
-                                    class="w-full flex items-center px-3 py-1.5 text-xs text-fg-secondary hover:bg-item-hover transition-colors truncate"
-                                    class=("bg-item-hover/50", is_active)
+                                    class="w-full flex items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-content/10 transition-colors truncate"
+                                    class=("bg-base-content/5", is_active)
                                     on:click=move |_| on_select(id.clone())
                                 >
                                     {display}

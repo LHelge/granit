@@ -273,11 +273,11 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
 
     view! {
         <aside
-            class="shrink-0 bg-panel border-l border-edge-subtle flex flex-col overflow-hidden"
+            class="shrink-0 bg-base-200 border-l border-base-content/10 flex flex-col overflow-hidden"
             style:width=move || format!("{}px", width.get())
         >
             // Header — provider selector + clear chat
-            <div class="px-2 py-1.5 border-b border-edge-subtle flex items-center">
+            <div class="px-2 py-1.5 border-b border-base-content/10 flex items-center">
                 <ProviderSelector
                     providers=providers
                     disabled=Signal::derive(move || is_streaming.get())
@@ -286,7 +286,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 <div class="flex-1" />
                 <button
                     type="button"
-                    class="p-1 text-fg-faint hover:text-fg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="p-1 text-base-content/35 hover:text-base-content/70 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Clear chat"
                     prop:disabled=move || is_streaming.get()
                     on:click=move |_| {
@@ -311,7 +311,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             >
                 // Empty state
                 <Show when=move || messages.get().is_empty() && !is_streaming.get() && streaming_content.get().is_empty()>
-                    <p class="text-fg-faint italic text-center mt-8">"Ask me anything about your notes..."</p>
+                    <p class="text-base-content/35 italic text-center mt-8">"Ask me anything about your notes..."</p>
                 </Show>
 
                 // Committed messages and tool calls
@@ -321,11 +321,11 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                             let is_user = dm.message.role == ChatRole::User;
                             let has_html = dm.rendered_html.is_some();
                             let bubble_class = if is_user && has_html {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-item-active text-fg prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-content/20 text-base-content prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
                             } else if is_user {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-item-active text-fg whitespace-pre-wrap break-words"
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-content/20 text-base-content whitespace-pre-wrap break-words"
                             } else {
-                                "max-w-[85%] px-3 py-2 rounded-lg bg-card text-fg prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                                "max-w-[85%] px-3 py-2 rounded-lg bg-base-300 text-base-content prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
                             };
                             let bubble_style = if is_user && !has_html { "" } else { "font-size: inherit" };
                             let wrapper_class = if is_user { "flex justify-end" } else { "flex justify-start" };
@@ -352,11 +352,11 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         DisplayItem::ToolCall(info) => {
                             view! {
                                 <div class="flex justify-start">
-                                    <div class="px-3 py-1.5 rounded-lg bg-card/60 border border-edge-subtle text-fg-muted text-xs font-mono flex items-center gap-1.5">
-                                        <span class="inline-flex w-3 h-3 shrink-0 text-fg-faint">
+                                    <div class="px-3 py-1.5 rounded-lg bg-base-300/60 border border-base-content/10 text-base-content/50 text-xs font-mono flex items-center gap-1.5">
+                                        <span class="inline-flex w-3 h-3 shrink-0 text-base-content/35">
                                             <Icon icon=icondata_lu::LuWrench width="100%" height="100%"/>
                                         </span>
-                                        <span class="text-fg-secondary">{info.name}</span>
+                                        <span class="text-base-content/70">{info.name}</span>
                                     </div>
                                 </div>
                             }.into_any()
@@ -367,13 +367,13 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 // Streaming response in progress
                 <Show when=move || is_streaming.get() || !streaming_content.get().is_empty()>
                     <div class="flex justify-start">
-                        <div class="max-w-[85%] px-3 py-2 rounded-lg bg-item-hover text-fg whitespace-pre-wrap break-words">
+                        <div class="max-w-[85%] px-3 py-2 rounded-lg bg-base-content/10 text-base-content whitespace-pre-wrap break-words">
                             {move || {
                                 let content = streaming_content.get();
                                 if content.is_empty() {
-                                    view! { <span class="inline-block w-2 h-4 bg-accent animate-pulse rounded-sm" /> }.into_any()
+                                    view! { <span class="inline-block w-2 h-4 bg-primary animate-pulse rounded-sm" /> }.into_any()
                                 } else {
-                                    view! { <span>{content}<span class="inline-block ml-0.5 w-1.5 h-3.5 bg-accent animate-pulse rounded-sm align-middle" /></span> }.into_any()
+                                    view! { <span>{content}<span class="inline-block ml-0.5 w-1.5 h-3.5 bg-primary animate-pulse rounded-sm align-middle" /></span> }.into_any()
                                 }
                             }}
                         </div>
@@ -389,7 +389,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             </div>
 
             // Input area — textarea above, model selector + send below
-            <div class="border-t border-edge-subtle">
+            <div class="border-t border-base-content/10">
                 <form
                     class="p-2 flex flex-col gap-1.5"
                     on:submit=on_submit
@@ -398,7 +398,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     <textarea
                         style:font-family=move || config.get().agent_font.font_family
                         style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                        class="w-full bg-card border border-edge rounded px-3 py-2 text-fg placeholder-fg-faint outline-none focus:border-edge-focus transition-colors disabled:opacity-50 resize-none"
+                        class="w-full bg-base-300 border border-base-content/20 rounded px-3 py-2 text-base-content placeholder:text-base-content/35 outline-none focus:border-primary transition-colors disabled:opacity-50 resize-none"
                         rows="4"
                         placeholder="Message... (Enter to send, Shift+Enter for newline)"
                         prop:value=move || input.get()
@@ -428,7 +428,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         <div class="flex-1" />
                         <button
                             type="submit"
-                            class="shrink-0 px-3 py-1.5 bg-item-hover text-fg-secondary rounded text-sm hover:bg-item-active transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="shrink-0 px-3 py-1.5 bg-base-content/10 text-base-content/70 rounded text-sm hover:bg-base-content/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             prop:disabled=move || is_streaming.get() || !has_model.get()
                         >
                             {move || if is_streaming.get() { "..." } else { "Send" }}

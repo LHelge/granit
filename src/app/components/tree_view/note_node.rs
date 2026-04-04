@@ -72,9 +72,9 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                             class=move || {
                                 let base = "w-full text-left py-0.5 text-base truncate transition-colors flex items-center gap-1";
                                 if ctx.active_note.get().map(|n| n.meta.slug == slug).unwrap_or(false) {
-                                    format!("{base} bg-item-hover text-fg")
+                                    format!("{base} bg-base-content/10 text-base-content")
                                 } else {
-                                    format!("{base} text-fg-secondary hover:bg-item-hover/50")
+                                    format!("{base} text-base-content/70 hover:bg-base-content/5")
                                 }
                             }
                             style=indent_style.clone()
@@ -98,7 +98,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                             }
                         >
                             <span class="w-3 shrink-0" />
-                            <span class="inline-flex w-3.5 h-3.5 shrink-0 text-accent">
+                            <span class="inline-flex w-3.5 h-3.5 shrink-0 text-primary">
                                 <Icon icon=resolve_note_icon(meta.icon.as_deref().unwrap_or("")) width="100%" height="100%"/>
                             </span>
                             {slug_click.clone()}

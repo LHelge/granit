@@ -64,6 +64,17 @@ Built for personal use. No plugins, no sync, no bloat.
   chmod +x tailwindcss-linux-x64
   sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
   ```
+### Upgrading DaisyUI
+
+`daisyui.mjs` and `daisyui-theme.mjs` are vendored in the repo (v5.5.19). To upgrade:
+
+```sh
+DAISY_VERSION=v5.x.y
+curl -sLO https://github.com/saadeghi/daisyui/releases/download/${DAISY_VERSION}/daisyui.mjs
+curl -sLO https://github.com/saadeghi/daisyui/releases/download/${DAISY_VERSION}/daisyui-theme.mjs
+```
+
+Then commit both files.
 
 ### Build & Run
 
