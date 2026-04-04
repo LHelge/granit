@@ -37,25 +37,46 @@ pub(crate) enum ProviderAgent {
     Prisma(rig::agent::Agent<openai::completion::CompletionModel>),
 }
 
+/// Dispatch a single expression over all `ProviderAgent` variants.
+/// The body is identical for every arm; `$agent` is bound to the inner value.
+macro_rules! provider_dispatch {
+    ($self:expr, $agent:ident => $body:expr) => {
+        match $self {
+            ProviderAgent::Ollama($agent) => $body,
+            ProviderAgent::Anthropic($agent) => $body,
+            ProviderAgent::Mistral($agent) => $body,
+            ProviderAgent::Prisma($agent) => $body,
+        }
+    };
+}
+
+/// Map the inner value of a `ProviderAgent`, preserving the variant.
+macro_rules! provider_map {
+    ($self:expr, $agent:ident => $expr:expr) => {
+        match $self {
+            ProviderAgent::Ollama($agent) => ProviderAgent::Ollama($expr),
+            ProviderAgent::Anthropic($agent) => ProviderAgent::Anthropic($expr),
+            ProviderAgent::Mistral($agent) => ProviderAgent::Mistral($expr),
+            ProviderAgent::Prisma($agent) => ProviderAgent::Prisma($expr),
+        }
+    };
+}
+
 impl Clone for ProviderAgent {
     fn clone(&self) -> Self {
-        match self {
-            Self::Ollama(a) => Self::Ollama(a.clone()),
-            Self::Anthropic(a) => Self::Anthropic(a.clone()),
-            Self::Mistral(a) => Self::Mistral(a.clone()),
-            Self::Prisma(a) => Self::Prisma(a.clone()),
-        }
+        provider_map!(self, a => a.clone())
     }
 }
 
 impl std::fmt::Debug for ProviderAgent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ollama(_) => write!(f, "ProviderAgent::Ollama"),
-            Self::Anthropic(_) => write!(f, "ProviderAgent::Anthropic"),
-            Self::Mistral(_) => write!(f, "ProviderAgent::Mistral"),
-            Self::Prisma(_) => write!(f, "ProviderAgent::Prisma"),
-        }
+        let name = match self {
+            Self::Ollama(_) => "Ollama",
+            Self::Anthropic(_) => "Anthropic",
+            Self::Mistral(_) => "Mistral",
+            Self::Prisma(_) => "Prisma",
+        };
+        write!(f, "ProviderAgent::{name}")
     }
 }
 
@@ -235,60 +256,19 @@ impl Agent {
             }
         }
 
-        match &self.inner {
-            ProviderAgent::Ollama(agent) => {
-                let stream = agent
-                    .stream_prompt(prompt)
-                    .with_history(history)
-                    .multi_turn(max_turns)
-                    .await;
-                Ok(AgentStream {
-                    inner: Box::pin(stream.map(|item| {
-                        item.map(map_item)
-                            .map_err(|e| AgentError::Stream(e.to_string()))
-                    })),
-                })
-            }
-            ProviderAgent::Anthropic(agent) => {
-                let stream = agent
-                    .stream_prompt(prompt)
-                    .with_history(history)
-                    .multi_turn(max_turns)
-                    .await;
-                Ok(AgentStream {
-                    inner: Box::pin(stream.map(|item| {
-                        item.map(map_item)
-                            .map_err(|e| AgentError::Stream(e.to_string()))
-                    })),
-                })
-            }
-            ProviderAgent::Mistral(agent) => {
-                let stream = agent
-                    .stream_prompt(prompt)
-                    .with_history(history)
-                    .multi_turn(max_turns)
-                    .await;
-                Ok(AgentStream {
-                    inner: Box::pin(stream.map(|item| {
-                        item.map(map_item)
-                            .map_err(|e| AgentError::Stream(e.to_string()))
-                    })),
-                })
-            }
-            ProviderAgent::Prisma(agent) => {
-                let stream = agent
-                    .stream_prompt(prompt)
-                    .with_history(history)
-                    .multi_turn(max_turns)
-                    .await;
-                Ok(AgentStream {
-                    inner: Box::pin(stream.map(|item| {
-                        item.map(map_item)
-                            .map_err(|e| AgentError::Stream(e.to_string()))
-                    })),
-                })
-            }
-        }
+        provider_dispatch!(&self.inner, agent => {
+            let stream = agent
+                .stream_prompt(prompt)
+                .with_history(history)
+                .multi_turn(max_turns)
+                .await;
+            Ok(AgentStream {
+                inner: Box::pin(stream.map(|item| {
+                    item.map(map_item)
+                        .map_err(|e| AgentError::Stream(e.to_string()))
+                })),
+            })
+        })
     }
 }
 
