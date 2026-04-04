@@ -110,7 +110,7 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                 </div>
 
                 // Settings gear icon
-                <div class="tooltip tooltip-top" data-tip="Settings">
+                <div class="tooltip tooltip-top z-50" data-tip="Settings">
                     <button
                         class="btn btn-ghost btn-xs btn-square"
                         on:click=move |_| set_settings_open.set(true)

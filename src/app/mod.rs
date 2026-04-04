@@ -317,7 +317,7 @@ pub fn App() -> impl IntoView {
                     </Show>
                 </div>
                 <div class="flex items-center gap-1">
-                    <div class="tooltip tooltip-bottom" data-tip="Toggle sidebar">
+                    <div class="tooltip tooltip-left" data-tip="Toggle sidebar">
                         <button
                             class="btn btn-ghost btn-xs btn-square"
                             on:click=toggle_sidebar
@@ -325,7 +325,7 @@ pub fn App() -> impl IntoView {
                             <Icon icon=icondata_lu::LuPanelLeft width="1rem" height="1rem"/>
                         </button>
                     </div>
-                    <div class="tooltip tooltip-bottom" data-tip="Toggle agent">
+                    <div class="tooltip tooltip-left" data-tip="Toggle agent">
                         <button
                             class="btn btn-ghost btn-xs btn-square"
                             on:click=toggle_agent

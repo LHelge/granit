@@ -216,7 +216,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                     prop:value=move || form.get().providers.get(index).map(|p| p.name.clone()).unwrap_or_default()
                     on:input=on_name_input
                 />
-                <div class="tooltip" data-tip="Remove provider">
+                <div class="tooltip tooltip-left" data-tip="Remove provider">
                     <button
                         type="button"
                         class="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/35 hover:text-error!"
@@ -248,7 +248,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                         prop:value=move || form.get().providers.get(index).map(|p| p.api_key.clone()).unwrap_or_default()
                         on:input=on_api_key_input
                     />
-                    <div class="tooltip" data-tip=move || if show_key.get() { "Hide API key" } else { "Show API key" }>
+                    <div class="tooltip tooltip-left" data-tip=move || if show_key.get() { "Hide API key" } else { "Show API key" }>
                         <button
                             type="button"
                             class="btn btn-ghost btn-xs btn-square shrink-0"

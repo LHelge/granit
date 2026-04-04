@@ -9,7 +9,7 @@ pub fn Sidebar(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) -> 
 
     view! {
         <aside
-            class="shrink-0 bg-base-200 border-r border-base-content/10 flex flex-col overflow-hidden"
+            class="shrink-0 bg-base-200 border-r border-base-content/10 flex flex-col"
             style:width=move || format!("{}px", width.get())
         >
             // Note list

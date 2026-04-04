@@ -284,7 +284,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     on_changed=on_provider_changed
                 />
                 <div class="flex-1" />
-                <div class="tooltip tooltip-bottom" data-tip="Clear chat">
+                <div class="tooltip tooltip-left" data-tip="Clear chat">
                     <button
                         type="button"
                         class="btn btn-ghost btn-xs btn-square"
