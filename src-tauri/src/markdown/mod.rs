@@ -20,7 +20,7 @@ pub fn render_note<'lookup>(
     lookup: impl Fn(&str) -> Option<&'lookup str>,
 ) -> RenderedNote {
     let (frontmatter, body) = extract_frontmatter(raw);
-    let (html, outgoing_links) = render_with_wiki_links(body, lookup);
+    let (html, outgoing_links) = render_with_wiki_links(body, lookup, true);
     let fmt = |d: chrono::DateTime<Utc>| {
         d.with_timezone(&Local)
             .format("%Y-%m-%d %H:%M:%S")
@@ -52,6 +52,7 @@ pub fn render_note<'lookup>(
 fn render_with_wiki_links<'lookup>(
     markdown: &str,
     lookup: impl Fn(&str) -> Option<&'lookup str>,
+    interactive_checkboxes: bool,
 ) -> (String, Vec<String>) {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
@@ -62,6 +63,7 @@ fn render_with_wiki_links<'lookup>(
 
     let parser = Parser::new_ext(markdown, options);
     let mut outgoing_links = Vec::new();
+    let mut in_broken_link = false;
 
     let events = parser.flat_map(|event| match event {
         // Resolve wiki-links against the cave
@@ -80,13 +82,36 @@ fn render_with_wiki_links<'lookup>(
                     id,
                 })]
             } else {
-                vec![Event::Start(Tag::Link {
-                    link_type: LinkType::Inline,
-                    dest_url,
-                    title: "broken-link".into(),
-                    id,
-                })]
+                // Emit the opening <a> tag directly with class="broken-link",
+                // and track that we need to close it manually.
+                in_broken_link = true;
+                let escaped = dest_url.replace('&', "&amp;").replace('"', "&quot;");
+                vec![Event::InlineHtml(
+                    format!(r#"<a href="{escaped}" class="broken-link">"#).into(),
+                )]
             }
+        }
+        // Close the manually-opened broken-link <a> tag.
+        Event::End(TagEnd::Link) if in_broken_link => {
+            in_broken_link = false;
+            vec![Event::InlineHtml("</a>".into())]
+        }
+        // Emit styled checkboxes; interactive in the note reader, disabled in
+        // agent responses where toggling todos is not supported.
+        Event::TaskListMarker(checked) => {
+            vec![Event::InlineHtml(match (interactive_checkboxes, checked) {
+                (true, true) => {
+                    r#"<input type="checkbox" class="checkbox checkbox-sm" checked>"#.into()
+                }
+                (true, false) => r#"<input type="checkbox" class="checkbox checkbox-sm">"#.into(),
+                (false, true) => {
+                    r#"<input type="checkbox" class="checkbox checkbox-sm" checked disabled>"#
+                        .into()
+                }
+                (false, false) => {
+                    r#"<input type="checkbox" class="checkbox checkbox-sm" disabled>"#.into()
+                }
+            })]
         }
         // Sanitize: convert raw HTML events to escaped text so untrusted
         // content cannot inject scripts or arbitrary markup.
@@ -102,9 +127,6 @@ fn render_with_wiki_links<'lookup>(
 
     let mut html_output = String::new();
     html::push_html(&mut html_output, events);
-    // pulldown-cmark renders link titles as title="…" attributes; convert
-    // our broken-link marker to a class so the frontend can style and detect it.
-    let html_output = html_output.replace(" title=\"broken-link\"", " class=\"broken-link\"");
     (html_output, outgoing_links)
 }
 
@@ -222,7 +244,7 @@ pub(crate) fn render_markdown_with_links<'lookup>(
     markdown: &str,
     lookup: impl Fn(&str) -> Option<&'lookup str>,
 ) -> String {
-    let (html, _outgoing_links) = render_with_wiki_links(markdown, lookup);
+    let (html, _outgoing_links) = render_with_wiki_links(markdown, lookup, false);
     html
 }
 
@@ -326,8 +348,19 @@ mod tests {
 
     #[test]
     fn test_task_list() {
-        let html = render_html("- [x] done\n- [ ] todo");
-        assert!(html.contains(r#"type="checkbox""#));
+        // render_with_wiki_links applies the checkbox post-processing — use
+        // render_note so the full pipeline runs (including the replacements).
+        let note = render_note("- [x] done\n- [ ] todo", "test", |_| None);
+        // disabled must be removed so checkboxes are interactive
+        assert!(!note.html.contains("disabled"), "got: {}", note.html);
+        // DaisyUI classes must be applied
+        assert!(
+            note.html.contains(r#"class="checkbox checkbox-sm""#),
+            "got: {}",
+            note.html
+        );
+        // checked attribute preserved for ticked items
+        assert!(note.html.contains("checked"), "got: {}", note.html);
     }
 
     #[test]
@@ -426,19 +459,23 @@ mod tests {
 
     #[test]
     fn test_wiki_link_no_links() {
-        let (html, links) = render_with_wiki_links("Just plain text.", |_| None);
+        let (html, links) = render_with_wiki_links("Just plain text.", |_| None, true);
         assert!(html.contains("Just plain text."), "got: {html}");
         assert!(links.is_empty());
     }
 
     #[test]
     fn test_wiki_link_resolved() {
-        let (html, links) = render_with_wiki_links("See [[my-note]] for details.", |s| {
-            ["my-note"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            "See [[my-note]] for details.",
+            |s| {
+                ["my-note"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(
             html.contains("<a href=\"my-note\">my-note</a>"),
             "got: {html}"
@@ -448,12 +485,16 @@ mod tests {
 
     #[test]
     fn test_wiki_link_resolved_case_insensitive() {
-        let (html, links) = render_with_wiki_links("See [[My-Note]] for details.", |s| {
-            ["my-note"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            "See [[My-Note]] for details.",
+            |s| {
+                ["my-note"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(html.contains("href=\"my-note\""), "got: {html}");
         assert!(html.contains("My-Note"), "got: {html}");
         assert_eq!(links, ["my-note"]);
@@ -461,12 +502,16 @@ mod tests {
 
     #[test]
     fn test_wiki_link_unresolved() {
-        let (html, links) = render_with_wiki_links("See [[ghost]] here.", |s| {
-            ["real-note"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            "See [[ghost]] here.",
+            |s| {
+                ["real-note"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(html.contains("broken-link"), "got: {html}");
         assert!(html.contains("ghost"), "got: {html}");
         assert!(links.is_empty());
@@ -475,9 +520,11 @@ mod tests {
     #[test]
     fn test_wiki_link_multiple() {
         let notes = ["alpha", "gamma"];
-        let (html, links) = render_with_wiki_links("[[alpha]] and [[beta]] and [[gamma]].", |s| {
-            notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            "[[alpha]] and [[beta]] and [[gamma]].",
+            |s| notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s)),
+            true,
+        );
         assert!(html.contains("<a href=\"alpha\">alpha</a>"), "got: {html}");
         assert!(
             html.contains("broken-link") && html.contains("beta"),
@@ -499,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_wiki_link_empty_brackets_passthrough() {
-        let (html, links) = render_with_wiki_links("[[]] is not a link.", |_| None);
+        let (html, links) = render_with_wiki_links("[[]] is not a link.", |_| None, true);
         // pulldown-cmark treats [[]] as literal text
         assert!(html.contains("[[]]"), "got: {html}");
         assert!(links.is_empty());
@@ -508,12 +555,16 @@ mod tests {
     #[test]
     fn test_wiki_link_in_fenced_code_block() {
         let input = "before\n```\n[[not-a-link]]\n```\nafter [[real]]";
-        let (html, links) = render_with_wiki_links(input, |s| {
-            ["not-a-link", "real"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            input,
+            |s| {
+                ["not-a-link", "real"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         // The fenced block should not contain a resolved link
         assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
         // The normal link should be resolved
@@ -524,12 +575,16 @@ mod tests {
     #[test]
     fn test_wiki_link_in_tilde_code_block() {
         let input = "~~~\n[[not-a-link]]\n~~~\n[[yes]]";
-        let (html, links) = render_with_wiki_links(input, |s| {
-            ["not-a-link", "yes"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            input,
+            |s| {
+                ["not-a-link", "yes"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
         assert!(html.contains("<a href=\"yes\">"), "got: {html}");
         assert_eq!(links, ["yes"]);
@@ -538,12 +593,16 @@ mod tests {
     #[test]
     fn test_wiki_link_in_inline_code() {
         let input = "See `[[not-a-link]]` and [[real]]";
-        let (html, links) = render_with_wiki_links(input, |s| {
-            ["not-a-link", "real"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            input,
+            |s| {
+                ["not-a-link", "real"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
         assert!(html.contains("<a href=\"real\">"), "got: {html}");
         assert_eq!(links, ["real"]);
@@ -552,19 +611,23 @@ mod tests {
     #[test]
     fn test_wiki_link_in_double_backtick_inline_code() {
         let input = "See ``[[not-a-link]]`` here";
-        let (html, links) = render_with_wiki_links(input, |_| Some("not-a-link"));
+        let (html, links) = render_with_wiki_links(input, |_| Some("not-a-link"), true);
         assert!(!html.contains("<a href=\"not-a-link\">"), "got: {html}");
         assert!(links.is_empty());
     }
 
     #[test]
     fn test_wiki_link_piped() {
-        let (html, links) = render_with_wiki_links("See [[target|display text]] here.", |s| {
-            ["target"]
-                .iter()
-                .copied()
-                .find(|&k| k.eq_ignore_ascii_case(s))
-        });
+        let (html, links) = render_with_wiki_links(
+            "See [[target|display text]] here.",
+            |s| {
+                ["target"]
+                    .iter()
+                    .copied()
+                    .find(|&k| k.eq_ignore_ascii_case(s))
+            },
+            true,
+        );
         assert!(html.contains("href=\"target\""), "got: {html}");
         assert!(html.contains("display text"), "got: {html}");
         assert_eq!(links, ["target"]);

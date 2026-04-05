@@ -1,5 +1,5 @@
 use super::use_editor_ctx;
-use crate::app::{components::icons::Icon, ipc};
+use crate::app::{components::icons::Icon, ipc, AppCtx};
 use granit_types::resolve_note_icon;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -8,12 +8,71 @@ use wasm_bindgen::JsCast;
 #[component]
 pub(super) fn Reader() -> impl IntoView {
     let ctx = use_editor_ctx();
+    let app_ctx = expect_context::<AppCtx>();
 
-    // Intercept clicks on links in rendered markdown.
+    // Intercept clicks on links and checkboxes in rendered markdown.
+    // - Checkboxes toggle the underlying markdown via the backend.
     // - External links (http/https) open in the system browser.
     // - Wiki-links navigate within the app.
     let on_click = move |ev: leptos::ev::MouseEvent| {
         let Some(target) = ev.target() else { return };
+
+        // --- Checkbox click: toggle via backend ---
+        if let Some(checkbox) = target
+            .dyn_ref::<web_sys::Element>()
+            .and_then(|el| el.dyn_ref::<web_sys::HtmlInputElement>())
+            .filter(|inp| inp.type_() == "checkbox")
+        {
+            ev.prevent_default();
+
+            // ev.current_target() is the div with on:click — i.e. the rendered
+            // markdown container.  Count checkboxes within it to find the index.
+            let index = ev
+                .current_target()
+                .and_then(|ct| ct.dyn_into::<web_sys::Element>().ok())
+                .and_then(|container| {
+                    container
+                        .query_selector_all("input[type='checkbox']")
+                        .ok()
+                        .map(|list| {
+                            let cb_node: &web_sys::Node = checkbox.as_ref();
+                            let len = list.length();
+                            let mut found = None;
+                            for i in 0..len {
+                                if let Some(node) = list.item(i) {
+                                    if &node == cb_node {
+                                        found = Some(i as usize);
+                                        break;
+                                    }
+                                }
+                            }
+                            found
+                        })
+                        .flatten()
+                })
+                .unwrap_or(0);
+
+            if let Some(slug) = ctx.active_note.get_untracked().map(|n| n.meta.slug.clone()) {
+                let ctx_inner = ctx;
+                let app = app_ctx;
+                leptos::task::spawn_local(async move {
+                    if let Err(e) = ipc::toggle_todo_by_index(&slug, index).await {
+                        app.push_error("reader", format!("Failed to toggle todo: {e}"));
+                        return;
+                    }
+                    // Re-render the note so the checkbox state reflects what's on disk
+                    match ipc::render_note(&slug).await {
+                        Ok(rendered) => ctx_inner.rendered_note.set(Some(rendered)),
+                        Err(e) => {
+                            app.push_error("reader", format!("Failed to re-render note: {e}"));
+                        }
+                    }
+                });
+            }
+            return;
+        }
+
+        // --- Link click ---
         let anchor = target
             .dyn_ref::<web_sys::Element>()
             .and_then(|el| {

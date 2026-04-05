@@ -18,6 +18,9 @@ pub enum CaveError {
     #[error("Text to replace not found in note")]
     EditNotFound,
 
+    #[error("Line {0} is not a todo checkbox")]
+    InvalidTodoLine(usize),
+
     #[error("IO error: {0}")]
     Io(String),
 }

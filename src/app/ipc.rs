@@ -1,6 +1,6 @@
 use granit_types::{
-    AppConfig, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
-    ToolInfo,
+    AppConfig, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, TodoList,
+    ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -317,10 +317,32 @@ pub async fn list_tools() -> Result<Vec<ToolInfo>, String> {
     invoke_no_args("list_tools").await
 }
 
-
-
 pub async fn open_url(url: &str) -> Result<(), String> {
     invoke_unit("plugin:opener|open_url", &HashMap::from([("url", url)])).await
+}
+
+// ── Todos ──────────────────────────────────────────────────────────
+
+pub async fn list_todos() -> Result<TodoList, String> {
+    invoke_no_args("list_todos").await
+}
+
+pub async fn toggle_todo(slug: &str, line: usize) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: &'a str,
+        line: usize,
+    }
+    invoke_unit("toggle_todo", &Args { slug, line }).await
+}
+
+pub async fn toggle_todo_by_index(slug: &str, index: usize) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: &'a str,
+        index: usize,
+    }
+    invoke_unit("toggle_todo_by_index", &Args { slug, index }).await
 }
 
 // ── Folder picker ──────────────────────────────────────────────────

@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
-use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote};
+use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote, TodoList};
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -285,6 +285,37 @@ fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveEr
 }
 
 #[tauri::command]
+fn list_todos(state: tauri::State<AppState>) -> Result<TodoList, CaveError> {
+    with_cave(&state, |cave| cave.list_todos())
+}
+
+#[tauri::command]
+fn toggle_todo(
+    slug: String,
+    line: usize,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
+    use tauri::Emitter;
+    with_cave(&state, |cave| cave.toggle_todo(&slug, line))?;
+    let _ = app.emit("cave:notes-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+fn toggle_todo_by_index(
+    slug: String,
+    index: usize,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
+    use tauri::Emitter;
+    with_cave(&state, |cave| cave.toggle_todo_by_index(&slug, index))?;
+    let _ = app.emit("cave:notes-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
 fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
     with_cave(&state, |cave| {
         let raw = cave.read_note_raw(&name)?;
@@ -481,6 +512,9 @@ pub fn run() {
             render_note,
             render_markdown,
             set_active_note,
+            list_todos,
+            toggle_todo,
+            toggle_todo_by_index,
             list_providers,
             select_provider,
             list_models,

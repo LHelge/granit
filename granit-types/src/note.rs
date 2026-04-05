@@ -68,3 +68,25 @@ pub struct ContentMatch {
     pub slug: String,
     pub snippets: Vec<String>,
 }
+
+/// A todo item extracted from a markdown checkbox (`- [ ]` / `- [x]`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoItem {
+    /// Slug of the note this todo belongs to.
+    pub slug: String,
+    /// Relative path from cave root (e.g. "folder/note.md").
+    pub relative_path: String,
+    /// 1-based line number in the raw file (including frontmatter).
+    pub line: usize,
+    /// The todo text, without the checkbox marker.
+    pub text: String,
+}
+
+/// All todo items in a cave, pre-split into incomplete and completed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TodoList {
+    /// Todos where the checkbox is unchecked, sorted by slug then line.
+    pub incomplete: Vec<TodoItem>,
+    /// Todos where the checkbox is checked, sorted by slug then line.
+    pub completed: Vec<TodoItem>,
+}

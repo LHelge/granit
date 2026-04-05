@@ -9,4 +9,4 @@ pub use agent::{
 };
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use icons::{resolve_note_icon, NoteIconEntry, NOTE_ICONS};
-pub use note::{ContentMatch, Frontmatter, Note, NoteMeta, RenderedNote};
+pub use note::{ContentMatch, Frontmatter, Note, NoteMeta, RenderedNote, TodoItem, TodoList};

@@ -1,6 +1,7 @@
 mod navigation;
 mod organization;
 mod reading;
+mod todos;
 mod web;
 mod writing;
 
@@ -10,6 +11,7 @@ pub use organization::{
     RenameFolderTool, RenameNoteTool,
 };
 pub use reading::ReadNoteTool;
+pub use todos::{ListTodosTool, ToggleTodoTool};
 pub use web::{WebFetchTool, WebSearchTool};
 pub use writing::{CreateNoteTool, EditNoteTool, OpenDailyNoteTool, UpdateNoteTool};
 
@@ -96,6 +98,14 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
         description: "Search inside note bodies (full-text)",
     },
     ToolMeta {
+        name: "list_todos",
+        description: "List todo checkboxes from notes, with optional filtering",
+    },
+    ToolMeta {
+        name: "toggle_todo",
+        description: "Toggle the completion status of a todo checkbox in a note",
+    },
+    ToolMeta {
         name: "web_fetch",
         description: "Fetch a webpage and return its content as markdown",
     },
@@ -144,6 +154,8 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn Tool
         ("search_content", |c| {
             Box::new(SearchContentTool { cave: c })
         }),
+        ("list_todos", |c| Box::new(ListTodosTool { cave: c })),
+        ("toggle_todo", |c| Box::new(ToggleTodoTool { cave: c })),
     ];
 
     for (name, build) in cave_entries {
