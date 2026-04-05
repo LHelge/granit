@@ -280,7 +280,10 @@ mod tests {
     #[test]
     fn test_to_ipc_recent_caves_as_strings() {
         let config = AppConfig {
-            recent_caves: vec![PathBuf::from("/home/user/notes"), PathBuf::from("/tmp/cave")],
+            recent_caves: vec![
+                PathBuf::from("/home/user/notes"),
+                PathBuf::from("/tmp/cave"),
+            ],
             ..AppConfig::default()
         };
         let ipc = config.to_ipc();
