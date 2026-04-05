@@ -86,8 +86,6 @@ fn list_system_fonts() -> Vec<String> {
 
 #[tauri::command]
 /// Save settings to the global config file.
-/// Cave-level config overrides are loaded at cave-open time but are not
-/// currently editable through the UI.
 fn save_config(
     agent: AgentConfig,
     markdown_font: FontConfig,

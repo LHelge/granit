@@ -1,34 +1,47 @@
 # Granit
 
-A minimal, opinionated desktop note-taking app. Granit manages a **cave** — a directory of markdown files — with an integrated AI agent.
+Granit is a minimal, opinionated desktop note-taking app. It manages a local markdown "cave" with a rendered reader, an explorer sidebar, and an integrated AI agent.
 
 Built for personal use. No plugins, no sync, no bloat.
 
 ## Current Features
 
-- **Cave-based storage** — Any directory is a cave. Open, switch, and track recently opened caves.
-- **Note CRUD** — Create, read, rename, and delete markdown notes. Filenames are the source of truth for note identity.
-- **Nested folders** — Notes can live in any subdirectory of the cave. The sidebar shows the full folder hierarchy with collapsible folder nodes. See [Nested folder rules](#nested-folder-rules) below.
-- **Edit / Preview toggle** — Raw markdown editing with plaintext preview.
-- **Global settings** — Configurable AI agent provider and model saved to `~/.config/granit/config.yml`.
-- **Layered config** — Global config can be overridden per-cave via `<cave>/.granit/config.yml` (UI editing not yet exposed).
+- **Cave-based storage** — Any directory can be opened as a cave, and recently opened caves are tracked in global config.
+- **Nested folders** — Notes can live in subdirectories, with a tree view, drag-and-drop moves, inline rename, and context-menu actions for notes and folders.
+- **Rendered markdown reader** — Notes render to HTML via `pulldown-cmark`, with YAML frontmatter for tags, timestamps, and optional note icons.
+- **Wiki-links** — `[[note]]` and `[[note|label]]` links resolve by filename across the cave. Broken links are styled separately so the frontend can handle them distinctly.
+- **Explorer tabs** — The left pane has tree, full-text search, and todo views.
+- **Todo support** — Task list checkboxes are parsed from notes, grouped in the todo tab, and can be toggled from the UI.
+- **Daily notes** — Open or create today’s note in a configurable daily-note folder.
+- **AI agent** — Streaming chat UI backed by `rig-core`, with provider/model selection and tools for note, folder, todo, search, and web operations.
+- **Theme and font settings** — DaisyUI themes, Catppuccin variants, and per-surface font settings are configurable from the app.
+- **Global config** — Settings are stored in `~/.config/granit/config.yml`.
 
-## Nested Folder Rules
+## Cave Rules
 
-- **Filenames are globally unique across the entire cave.** Two notes in different subfolders cannot share the same filename (e.g., `projects/foo.md` and `archive/foo.md` cannot coexist). The cave will log a warning and skip duplicates on scan.
-- **The filename is the note's identity and title.** Frontmatter `title` fields and markdown headings do not override the displayed title. `projects/meeting.md` is always displayed as `meeting`.
-- **Slugs are filename stems** (no extension, no path). All lookups and IPC calls use the slug. The `relative_path` field is available for display and tree building only.
-- **Hidden directories and `.granit/`** are excluded from the scan.
-- **Cave operations accept an optional folder path.** `create_note(name, folder)` places the new note in the specified subfolder. `create_folder(path)` creates a (possibly nested) directory.
+- **Filenames are globally unique across the entire cave.** Two notes in different subfolders cannot share the same filename.
+- **The filename is the note's identity and title.** Frontmatter does not override the displayed title.
+- **Slugs are filename stems** with no extension or path. IPC calls and wiki-link resolution use slugs.
+- **Hidden directories and `.granit/`** are excluded from cave scans.
 
-## Planned / Not Yet Implemented
+## Current Config Model
 
-- **Rendered markdown preview** — Preview currently shows raw text. `pulldown-cmark` HTML rendering is planned.
-- **AI Agent** — Side panel UI is scaffolded but not yet connected. `rig-core` integration, cave CRUD tools, and RAG over notes are roadmap items.
-- **Create note in folder from UI** — The backend supports `create_note(name, folder)` but the UI always creates notes at the cave root for now.
-- **Wiki-links** — `[[note-name]]` link resolution is planned but not yet implemented.
-- **Full-text search** — Not yet implemented.
-- **Backlinks panel** — Not yet implemented.
+Configuration is currently **global-only**.
+
+```text
+~/.config/granit/
+  config.yml
+```
+
+- The app persists recent caves, sidebar widths/visibility, theme, font settings, daily-note folder, and agent/provider settings in `config.yml`.
+- `active_cave` is runtime-only state and is not persisted.
+
+## Deferred Features
+
+- **Backlinks panel**
+- **File watching / external change reload**
+- **Obsidian-style live preview editor**
+- **Sync**
 
 ## Tech Stack
 
@@ -37,36 +50,37 @@ Built for personal use. No plugins, no sync, no bloat.
 | Backend | Tauri 2 (Rust) |
 | Frontend | Leptos 0.8 (Rust → WASM, CSR) |
 | Build | Trunk |
-| Styling | Tailwind CSS |
+| Styling | Tailwind CSS 4 + DaisyUI 5 |
+| Markdown | `pulldown-cmark` |
+| AI | `rig-core` |
 | Errors | `thiserror` |
-| Config | `serde_yml`, `dirs`, `dotenvy` |
+| Config | `serde_yml`, `dirs` |
 
 ## Development
 
 ### Prerequisites
 
-- **Rust** (stable) with the WASM compile target:
+- **Rust** (stable) with the WASM target:
   ```sh
   rustup target add wasm32-unknown-unknown
   ```
-- **Tauri CLI** and system dependencies — follow the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/) for your platform (on Linux this includes `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, etc.):
+- **Tauri CLI** and native system dependencies:
   ```sh
   cargo install tauri-cli --locked
   ```
-- **[Trunk](https://trunkrs.dev/)** — WASM build tool for the Leptos frontend:
+- **[Trunk](https://trunkrs.dev/)**:
   ```sh
   cargo install trunk --locked
   ```
-- **[Tailwind CSS](https://tailwindcss.com/blog/standalone-cli)** standalone CLI — must be available as `tailwindcss` on your `PATH` (used by Trunk's pre-build hook):
+- **[wasm-pack](https://rustwasm.github.io/wasm-pack/)** for frontend tests:
   ```sh
-  # Example for Linux x64:
-  curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64
-  chmod +x tailwindcss-linux-x64
-  sudo mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+  cargo install wasm-pack --locked
   ```
+- **[Tailwind CSS](https://tailwindcss.com/blog/standalone-cli)** standalone CLI available as `tailwindcss` on your `PATH`.
+
 ### Upgrading DaisyUI
 
-`daisyui.mjs` and `daisyui-theme.mjs` are vendored in the repo (v5.5.19). To upgrade:
+`daisyui.mjs` and `daisyui-theme.mjs` are vendored in the repo. To upgrade:
 
 ```sh
 DAISY_VERSION=v5.x.y
@@ -76,12 +90,16 @@ curl -sLO https://github.com/saadeghi/daisyui/releases/download/${DAISY_VERSION}
 
 Then commit both files.
 
-### Build & Run
+### Build, Test, and Run
 
 ```sh
-cd src-tauri && cargo tauri dev    # Full app (launches Trunk + Tauri)
-trunk serve                        # Frontend only (port 1420)
-cargo test -p granit               # Backend unit tests
+cd src-tauri && cargo tauri dev     # Full app (launches Trunk + Tauri)
+trunk serve                         # Frontend only (port 1420)
+cargo test -p granit                # Backend tests
+cargo test -p granit-types          # Shared types tests
+wasm-pack test --headless --firefox # Frontend WASM tests
+cargo fmt --all
+cargo clippy --all-targets --all-features
 ```
 
 ### Recommended IDE Setup
@@ -90,11 +108,22 @@ cargo test -p granit               # Backend unit tests
 
 ## Architecture
 
-All state lives in the backend. The frontend is a thin view layer that calls Tauri commands via IPC.
+All persisted app state lives in the Tauri backend. The frontend is a thin Leptos view layer that talks to backend commands over IPC.
 
-```
-src/            — Leptos frontend (WASM)
-src-tauri/src/  — Tauri backend (native Rust)
+```text
+src/
+  app/
+    agent/      # chat UI, streaming, provider/model selectors
+    editor/     # writer, reader, frontmatter, smart text editing
+    explorer/   # cave selector, tree view, search, todo
+    settings/   # modal sections for agent/fonts/notes/theme
+    components/ # shared UI helpers and icons
+src-tauri/src/
+  agent/        # rig-core integration and tool definitions
+  cave/         # cave scanning and note/folder operations
+  config/       # global config load/save
+  markdown/     # frontmatter parsing and HTML rendering
+  lib.rs        # Tauri command wiring and app state
 ```
 
-See [.github/copilot-instructions.md](.github/copilot-instructions.md) for detailed architecture and conventions.
+See [.github/copilot-instructions.md](.github/copilot-instructions.md) for the internal architecture and coding conventions used in this repository.

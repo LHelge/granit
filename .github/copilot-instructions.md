@@ -8,7 +8,7 @@ Granit is a minimal, opinionated desktop note-taking app built for personal use.
 - **Frontend**: Leptos 0.8 (Rust → WASM, CSR mode) compiled with Trunk
 - **Styling**: Tailwind CSS + DaisyUI 5 (utility classes and DaisyUI component classes in `view!` macros; see `.github/instructions/daisyui.instructions.md`)
 - **Markdown**: `pulldown-cmark` in the backend — frontend receives rendered HTML
-- **AI Agent**: `rig-core` with configurable LLM provider (OpenAI, Anthropic, etc.)
+- **AI Agent**: `rig-core` with configurable LLM providers (Ollama, Anthropic, Mistral, Prisma)
 - **Error handling**: `thiserror` for typed error enums
 - **Serialization**: `serde` + `serde_json` (backend), `serde-wasm-bindgen` (frontend IPC)
 
@@ -16,11 +16,23 @@ Granit is a minimal, opinionated desktop note-taking app built for personal use.
 
 ```
 src/            — Leptos frontend (WASM)
-  app.rs        — Root component and UI
   main.rs       — WASM entry point
+  app/
+    mod.rs      — Root component and layout wiring
+    context.rs  — App-wide reactive state and error helpers
+    ipc.rs       — Tauri IPC wrapper layer
+    agent/       — Agent panel UI, streaming, provider/model selectors
+    editor/      — Writer, reader, frontmatter, smart text editing
+    explorer/    — Cave selector, tree view, search, todo tabs
+    settings/    — Settings modal and sections
+    components/  — Shared UI helpers and icon wrappers
 src-tauri/src/  — Tauri backend (native Rust)
   lib.rs        — Tauri commands, app builder, plugin registration
   main.rs       — Desktop entry point
+  agent/        — rig-core agent and tools
+  cave/         — Cave operations
+  config/       — Global config load/save
+  markdown/     — Frontmatter parsing + HTML rendering
 ```
 
 ### Data Flow
@@ -38,35 +50,33 @@ Never duplicate logic between frontend and backend. If the frontend needs derive
 
 A **cave** is any directory on disk selected via the native folder picker. It contains:
 - Nested subdirectories (folders as organizational hierarchy)
-- `.md` files with optional YAML frontmatter (title, tags, date)
+- `.md` files with optional YAML frontmatter (`tags`, timestamps, optional `icon`)
 - Wiki-style `[[links]]` resolved by **filename** (not path) across the entire cave
 
 One cave is open at a time. The user can switch between recently opened caves.
 
+The filename stem is the note identity and displayed title. Do not assume a frontmatter `title` field exists.
+
 ### Configuration
 
-Layered config with precedence: **defaults ← global ← cave**.
+The current implementation uses a **single global config file**.
 
 ```
 ~/.config/granit/          (or platform equivalent via dirs::config_dir())
-  config.yml               — Global settings (recent caves, default agent provider/model)
-  secrets.env              — Global API keys (AGENT_API_KEY, etc.)
-
-<cave>/.granit/
-  config.yml               — Per-cave overrides (e.g., different model)
-  secrets.env              — Per-cave API keys (overrides global)
+  config.yml               — App settings, recent caves, theme, fonts, agent/provider config
 ```
 
-- Config structs use `Option<T>` fields for the cave layer — unset fields fall through to global.
-- `secrets.env` files are loaded with `dotenvy`, never committed to git.
-- When opening a cave, ensure its `.gitignore` includes `.granit/secrets.env`.
-- `serde_yml` for YAML (de)serialization. `dirs` crate for platform-correct config paths.
+- Provider API keys currently live inside the serialized global `config.yml` via `AgentConfig`.
+- `active_cave` is runtime-only and must not be persisted.
+- `serde_yml` is used for YAML (de)serialization and `dirs` for platform-correct config paths.
 
 ### Markdown Processing
 
 - `pulldown-cmark` parses markdown on the backend
 - YAML frontmatter is stripped before rendering and parsed separately for metadata
 - Wiki-links (`[[note-name]]`) are resolved to the matching `.md` file by filename
+- Raw HTML is sanitized before it reaches the frontend webview
+- Task list checkboxes are rendered as checkbox inputs; interactive in the reader and disabled in agent-rendered markdown
 - Backend returns rendered HTML to the frontend for display
 
 ### Editor
@@ -75,15 +85,18 @@ Two modes toggled by the user:
 - **Edit mode**: Raw markdown in a `<textarea>` (no styling)
 - **Read mode**: Rendered HTML preview (read-only)
 
+The current editor also includes smart text-editing helpers for bracket pairing, formatting characters, list continuation, indentation, and URL-to-link pasting.
+
 The long-term goal is an Obsidian-style live preview (WYSIWYM), but the architecture should support swapping the editor component later.
 
 ### AI Agent
 
 Built with `rig-core` in the backend. Features:
 - Side panel chat UI (similar to Copilot in VS Code)
-- CRUD tools for cave operations (create, read, update, delete notes)
-- In-memory vector database for RAG over cave contents
-- Configurable LLM provider
+- Streaming responses over Tauri events
+- Configurable providers and models (Ollama, Anthropic, Mistral, Prisma)
+- Tooling for notes, folders, daily notes, todo checkboxes, note search, content search, web fetch, and web search
+- Tool enable/disable controls and configurable system prompt / history limits
 
 Agent logic lives entirely in the backend. The frontend only renders the chat UI and streams responses via IPC.
 
@@ -171,7 +184,7 @@ use icondata_lu;
 | `serde-wasm-bindgen` | Frontend ↔ JS value conversion |
 | `serde_yml` | YAML config (de)serialization |
 | `dirs` | Platform-correct config/data directories |
-| `dotenvy` | Load `secrets.env` files |
+| `reqwest` | Web fetch / search tool HTTP client |
 
 ### Release Process
 
@@ -211,7 +224,6 @@ Pushing the tag triggers `.github/workflows/release.yml`:
 
 ### Deferred Features (Not Yet — Don't Build)
 
-- Full-text search (currently filename/title only)
 - File watching / live reload on external changes
 - Obsidian-style live preview editor
 - Backlinks panel

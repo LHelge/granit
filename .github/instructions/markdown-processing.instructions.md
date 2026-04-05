@@ -21,6 +21,7 @@ struct Frontmatter {
     tags: Vec<String>,
     created_at: Option<DateTime<Utc>>,
     modified_at: Option<DateTime<Utc>>,
+    icon: Option<String>,
 }
 ```
 
@@ -40,8 +41,16 @@ The `render_with_wiki_links` function intercepts `Event::Start(Tag::Link { link_
 
 Options enabled: tables, strikethrough, task lists, footnotes, **wikilinks**.
 
-For plain markdown without wiki-link resolution (e.g., agent chat messages), use
-`render_html()` which does not enable `ENABLE_WIKILINKS`.
+For agent chat messages, use `render_markdown_with_links()` so `[[wiki-links]]`
+remain clickable against the current cave. For plain markdown without cave link
+resolution, use `render_html()`.
+
+Task list markers are emitted as checkbox inputs:
+
+- Interactive in the note reader
+- Disabled in agent-rendered markdown where toggling is not supported
+
+Raw HTML from markdown input is sanitized before it reaches the frontend.
 
 ## Return Type
 
@@ -53,5 +62,7 @@ struct RenderedNote {
     html: String,
     frontmatter: Option<Frontmatter>,
     outgoing_links: Vec<String>,  // resolved [[links]]
+    created_display: Option<String>,
+    modified_display: Option<String>,
 }
 ```

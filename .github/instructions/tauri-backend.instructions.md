@@ -54,6 +54,15 @@ struct AppState {
 }
 ```
 
+Current Granit backend state uses `Mutex<AppConfig>`, a shared `Arc<Mutex<Option<Cave>>>`, and `Mutex<Option<Agent>>`.
+
+## Config Reality
+
+The current config implementation is global-only:
+
+- `~/.config/granit/config.yml` is the source of truth
+- `AppConfig::ensure_cave()` only ensures the cave has a `.granit/` directory for app metadata
+
 ## Testing
 
 Every new module should include a `#[cfg(test)]` block. Test the module functions directly — not through the Tauri command layer:
