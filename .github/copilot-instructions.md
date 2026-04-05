@@ -117,7 +117,7 @@ wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing
 - **Branches**: Work on feature branches. Never commit directly to `main`.
 - **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
 - **Pull requests**: Use `gh pr create` (GitHub CLI) to open PRs.
-- **After changes**: Always run `cargo fmt`, `cargo clippy`, and `cargo test` before committing.
+- **Before committing anything**: Ensure formatting, linting, and all tests pass. Run `cargo fmt --all`, `cargo clippy --workspace --all-targets --all-features`, `cargo test -p granit`, `cargo test -p granit-types`, and `wasm-pack test --headless --firefox` before creating a commit.
 - **Dependencies**: Use `cargo add <crate>` to add new dependencies (ensures latest version). Never hand-edit `Cargo.toml` dependency lines.
 - **Planning**: Use the Bears task tracker skill for breaking down features into epics and sub-tasks.
 
