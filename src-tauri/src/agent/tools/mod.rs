@@ -1,22 +1,17 @@
-mod create_note;
-mod delete_note;
-mod edit_note;
-mod list_notes;
-mod read_note;
-mod search_notes;
-mod update_note;
-mod web_fetch;
-mod web_search;
+mod navigation;
+mod organization;
+mod reading;
+mod web;
+mod writing;
 
-pub use create_note::CreateNoteTool;
-pub use delete_note::DeleteNoteTool;
-pub use edit_note::EditNoteTool;
-pub use list_notes::ListNotesTool;
-pub use read_note::ReadNoteTool;
-pub use search_notes::SearchNotesTool;
-pub use update_note::UpdateNoteTool;
-pub use web_fetch::WebFetchTool;
-pub use web_search::WebSearchTool;
+pub use navigation::{ListFoldersTool, ListNotesTool, SearchContentTool, SearchNotesTool};
+pub use organization::{
+    CreateFolderTool, DeleteFolderTool, DeleteNoteTool, MoveFolderTool, MoveNoteTool,
+    RenameFolderTool, RenameNoteTool,
+};
+pub use reading::ReadNoteTool;
+pub use web::{WebFetchTool, WebSearchTool};
+pub use writing::{CreateNoteTool, EditNoteTool, OpenDailyNoteTool, UpdateNoteTool};
 
 use std::sync::{Arc, Mutex};
 
@@ -61,8 +56,44 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
         description: "Delete a note from the cave",
     },
     ToolMeta {
+        name: "move_note",
+        description: "Move a note to a different folder",
+    },
+    ToolMeta {
+        name: "rename_note",
+        description: "Rename a note in-place",
+    },
+    ToolMeta {
+        name: "create_folder",
+        description: "Create a new folder in the cave",
+    },
+    ToolMeta {
+        name: "rename_folder",
+        description: "Rename a folder in-place",
+    },
+    ToolMeta {
+        name: "move_folder",
+        description: "Move a folder under a new parent",
+    },
+    ToolMeta {
+        name: "delete_folder",
+        description: "Delete a folder and all its notes",
+    },
+    ToolMeta {
+        name: "open_daily_note",
+        description: "Open or create today's daily note",
+    },
+    ToolMeta {
+        name: "list_folders",
+        description: "List all folders in the cave",
+    },
+    ToolMeta {
         name: "search_notes",
         description: "Search notes by slug (case-insensitive)",
+    },
+    ToolMeta {
+        name: "search_content",
+        description: "Search inside note bodies (full-text)",
     },
     ToolMeta {
         name: "web_fetch",
@@ -99,7 +130,16 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn Tool
         ("update_note", |c| Box::new(UpdateNoteTool { cave: c })),
         ("edit_note", |c| Box::new(EditNoteTool { cave: c })),
         ("delete_note", |c| Box::new(DeleteNoteTool { cave: c })),
+        ("move_note", |c| Box::new(MoveNoteTool { cave: c })),
+        ("rename_note", |c| Box::new(RenameNoteTool { cave: c })),
+        ("create_folder", |c| Box::new(CreateFolderTool { cave: c })),
+        ("rename_folder", |c| Box::new(RenameFolderTool { cave: c })),
+        ("move_folder", |c| Box::new(MoveFolderTool { cave: c })),
+        ("delete_folder", |c| Box::new(DeleteFolderTool { cave: c })),
+        ("open_daily_note", |c| Box::new(OpenDailyNoteTool { cave: c })),
+        ("list_folders", |c| Box::new(ListFoldersTool { cave: c })),
         ("search_notes", |c| Box::new(SearchNotesTool { cave: c })),
+        ("search_content", |c| Box::new(SearchContentTool { cave: c })),
     ];
 
     for (name, build) in cave_entries {

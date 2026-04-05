@@ -353,7 +353,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                                         <span class="inline-flex w-3 h-3 shrink-0 text-base-content/35">
                                             <Icon icon=icondata_lu::LuWrench width="100%" height="100%"/>
                                         </span>
-                                        <span class="text-base-content/70">{info.name}</span>
+                                        <span class="text-base-content/70">{info.name}"("{info.param.as_deref().unwrap_or_default().to_string()}")"</span>
                                     </div>
                                 </div>
                             }.into_any()

@@ -12,6 +12,13 @@ use note::{
     validate_name,
 };
 
+/// A match from a full-text content search.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ContentMatch {
+    pub slug: String,
+    pub snippet: String,
+}
+
 /// A cave — an open directory of markdown notes.
 #[derive(Debug)]
 pub struct Cave {
@@ -333,6 +340,46 @@ impl Cave {
             Self::collect_folders(cave_root, &p, out)?;
         }
         Ok(())
+    }
+
+    /// Search note bodies for a query string (case-insensitive substring match).
+    ///
+    /// Returns up to `max_results` matches, each with the note's slug, relative
+    /// path, and a context snippet (the first matching line).
+    pub fn search_content(
+        &self,
+        query: &str,
+        max_results: Option<usize>,
+    ) -> Result<Vec<ContentMatch>, CaveError> {
+        let limit = max_results.unwrap_or(20);
+        let query_lower = query.to_lowercase();
+        let mut results = Vec::new();
+
+        for (slug, abs_path) in &self.notes {
+            if results.len() >= limit {
+                break;
+            }
+            let raw = std::fs::read_to_string(abs_path)?;
+            let body = crate::markdown::strip_frontmatter(&raw);
+            let body_lower = body.to_lowercase();
+            if let Some(pos) = body_lower.find(&query_lower) {
+                let line = body[..pos]
+                    .rfind('\n')
+                    .map(|lf| &body[lf + 1..])
+                    .unwrap_or(body)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                results.push(ContentMatch {
+                    slug: slug.clone(),
+                    snippet: line,
+                });
+            }
+        }
+
+        results.sort_by_key(|m| m.slug.to_lowercase());
+        Ok(results)
     }
 
     /// Read a note by slug.
@@ -1499,5 +1546,62 @@ mod tests {
         assert_eq!(cave.lookup_slug("project-alpha"), Some("Project-Alpha"));
         assert_eq!(cave.lookup_slug("PROJECT-ALPHA"), Some("Project-Alpha"));
         assert!(cave.lookup_slug("project-beta").is_none());
+    }
+
+    #[test]
+    fn test_search_content_finds_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("hello.md"),
+            "---\ntitle: Hello\n---\nHello world, this is a test note.",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("other.md"),
+            "Nothing relevant here.",
+        )
+        .unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let results = cave.search_content("test note", None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].slug, "hello");
+        assert!(results[0].snippet.contains("test note"));
+    }
+
+    #[test]
+    fn test_search_content_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "Rust is Great").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let results = cave.search_content("rust is great", None).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_search_content_no_match() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "Hello world").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let results = cave.search_content("nonexistent", None).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_content_respects_max_results() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..5 {
+            std::fs::write(
+                dir.path().join(format!("note-{i}.md")),
+                "common keyword here",
+            )
+            .unwrap();
+        }
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let results = cave.search_content("common keyword", Some(2)).unwrap();
+        assert_eq!(results.len(), 2);
     }
 }

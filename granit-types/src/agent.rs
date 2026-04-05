@@ -6,7 +6,8 @@ const SYSTEM_PROMPT_BASE: &str = r#"<|think|> You are a helpful assistant integr
 The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
 You can link the user to existing notes by using wiki-style links like [[slug]]. 
 You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
-Be mindful that edits should only replace text in the body of the note, not the frontmatter."#;
+Be mindful that edits should only replace text in the body of the note, not the frontmatter.
+Daily notes use the YYYY-MM-DD date format as their slug (e.g. 2026-04-05) and are stored in a configurable folder (default: "Daily"). Use the open_daily_note tool to create or open them."#;
 
 /// Build the default system prompt including available note icon IDs.
 pub fn default_system_prompt() -> String {
@@ -226,6 +227,7 @@ pub enum ChatRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallInfo {
     pub name: String,
+    pub param: Option<String>,
 }
 
 /// Metadata about an available agent tool, for the settings UI.

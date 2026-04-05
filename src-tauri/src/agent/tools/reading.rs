@@ -5,6 +5,8 @@ use serde_json::json;
 
 use super::{with_cave, SharedCave, ToolError};
 
+// ── read_note ──────────────────────────────────────────────────────
+
 #[derive(Deserialize)]
 pub struct ReadNoteArgs {
     /// The slug (filename without .md extension) of the note to read.

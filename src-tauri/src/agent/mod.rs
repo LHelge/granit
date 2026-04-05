@@ -2,6 +2,7 @@ mod error;
 pub(crate) mod tools;
 
 pub use error::AgentError;
+use rig::message::ToolCall;
 pub use tools::SharedCave;
 
 use std::collections::VecDeque;
@@ -95,6 +96,10 @@ impl Agent {
             Some(custom) if !custom.trim().is_empty() => custom.clone(),
             _ => default_system_prompt(),
         };
+        let system_prompt = format!(
+            "{system_prompt}\n\nToday's date is {}.",
+            chrono::Local::now().format("%Y-%m-%d")
+        );
         let inner = match &entry.provider {
             ProviderConfig::Ollama { base_url } => {
                 Self::build_ollama(base_url.as_deref(), model, cave_tools, &system_prompt)?
@@ -236,9 +241,7 @@ impl Agent {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::ToolCall {
                     tool_call,
                     ..
-                }) => AgentStreamItem::ToolCall(ToolCallInfo {
-                    name: tool_call.function.name.clone(),
-                }),
+                }) => AgentStreamItem::ToolCall(build_tool_call_info(tool_call)),
                 MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult { .. }) => {
                     AgentStreamItem::ToolResult
                 }
@@ -302,6 +305,26 @@ pub(crate) async fn list_models(
             name: m.name,
         })
         .collect())
+}
+
+fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
+    let name = call.function.name.clone();
+    let args = &call.function.arguments;
+
+    let key = match name.as_str() {
+        "read_note" | "update_note" | "delete_note" | "edit_note" | "move_note"
+        | "rename_note" => Some("slug"),
+        "search_notes" | "search_content" | "web_search" => Some("query"),
+        "web_fetch" => Some("url"),
+        "create_note" => Some("name"),
+        "create_folder" | "rename_folder" | "move_folder" | "delete_folder" => Some("path"),
+        "open_daily_note" => Some("folder"),
+        _ => None,
+    };
+
+    let param = key.and_then(|k| args.get(k)?.as_str().map(String::from));
+
+    ToolCallInfo { name, param }
 }
 
 /// A type-erased stream item from the agent, independent of provider.
