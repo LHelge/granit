@@ -136,10 +136,14 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn Tool
         ("rename_folder", |c| Box::new(RenameFolderTool { cave: c })),
         ("move_folder", |c| Box::new(MoveFolderTool { cave: c })),
         ("delete_folder", |c| Box::new(DeleteFolderTool { cave: c })),
-        ("open_daily_note", |c| Box::new(OpenDailyNoteTool { cave: c })),
+        ("open_daily_note", |c| {
+            Box::new(OpenDailyNoteTool { cave: c })
+        }),
         ("list_folders", |c| Box::new(ListFoldersTool { cave: c })),
         ("search_notes", |c| Box::new(SearchNotesTool { cave: c })),
-        ("search_content", |c| Box::new(SearchContentTool { cave: c })),
+        ("search_content", |c| {
+            Box::new(SearchContentTool { cave: c })
+        }),
     ];
 
     for (name, build) in cave_entries {

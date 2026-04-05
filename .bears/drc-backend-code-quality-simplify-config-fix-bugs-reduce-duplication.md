@@ -2,10 +2,10 @@
 id: drc
 title: 'Backend code quality: simplify config, fix bugs, reduce duplication'
 type: epic
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:39:37.165606817Z
-updated: 2026-04-04T21:39:37.165606817Z
+updated: 2026-04-05T12:43:00.877768606Z
 tags:
 - backend
 - refactor

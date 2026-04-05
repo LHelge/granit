@@ -321,9 +321,8 @@ fn list_providers(
 fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config();
     if index >= config.agent.providers.len() {
-        return Err(ConfigError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Provider index {index} out of range"),
+        return Err(ConfigError::Validation(format!(
+            "Provider index {index} out of range"
         )));
     }
     config.agent.selected_provider = index;

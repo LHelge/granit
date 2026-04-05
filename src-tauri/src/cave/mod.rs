@@ -1556,11 +1556,7 @@ mod tests {
             "---\ntitle: Hello\n---\nHello world, this is a test note.",
         )
         .unwrap();
-        std::fs::write(
-            dir.path().join("other.md"),
-            "Nothing relevant here.",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("other.md"), "Nothing relevant here.").unwrap();
         let cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let results = cave.search_content("test note", None).unwrap();

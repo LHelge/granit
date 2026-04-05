@@ -8,6 +8,9 @@ pub enum ConfigError {
 
     #[error("YAML parse error: {0}")]
     Yaml(#[from] serde_yml::Error),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 // Allow returning ConfigError from Tauri commands

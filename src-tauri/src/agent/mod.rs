@@ -312,8 +312,9 @@ fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
     let args = &call.function.arguments;
 
     let key = match name.as_str() {
-        "read_note" | "update_note" | "delete_note" | "edit_note" | "move_note"
-        | "rename_note" => Some("slug"),
+        "read_note" | "update_note" | "delete_note" | "edit_note" | "move_note" | "rename_note" => {
+            Some("slug")
+        }
         "search_notes" | "search_content" | "web_search" => Some("query"),
         "web_fetch" => Some("url"),
         "create_note" => Some("name"),

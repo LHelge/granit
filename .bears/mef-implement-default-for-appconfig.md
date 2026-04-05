@@ -1,10 +1,10 @@
 ---
 id: mef
 title: Implement Default for AppConfig
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:40:04.590475131Z
-updated: 2026-04-04T21:40:04.590475131Z
+updated: 2026-04-05T12:37:41.603162245Z
 tags:
 - config
 - backend

@@ -1,10 +1,10 @@
 ---
 id: eup
 title: Fix wrong error types in AppState helpers
-status: open
+status: done
 priority: P1
 created: 2026-04-04T21:40:23.639903961Z
-updated: 2026-04-04T21:40:23.639903961Z
+updated: 2026-04-05T12:42:52.198937833Z
 tags:
 - errors
 - backend
