@@ -1,4 +1,5 @@
-use crate::app::{ipc, AppCtx};
+use super::SettingsForm;
+use crate::app::AppCtx;
 use leptos::prelude::*;
 
 /// A DaisyUI theme entry: (data-theme value, display label, is_dark).
@@ -210,20 +211,14 @@ const CATPPUCCIN_THEMES: &[ThemeEntry] = &[
 ];
 
 #[component]
-pub fn ThemeSettings() -> impl IntoView {
+pub fn ThemeSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
-    let active_id = move || ctx.config.get().theme;
+    let active_id = move || form.get().theme;
 
     let apply = move |id: &'static str| {
+        // Visual preview only — persisted when the user clicks Save.
         ctx.set_theme(id);
-        leptos::task::spawn_local(async move {
-            match ipc::set_active_theme(id).await {
-                Ok(new_cfg) => ctx.config.set(new_cfg),
-                Err(e) => {
-                    ctx.push_error("theme", format!("Failed to set theme: {e}"));
-                }
-            }
-        });
+        form.update(|f| f.theme = id.to_string());
     };
 
     view! {

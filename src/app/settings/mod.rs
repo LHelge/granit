@@ -127,6 +127,8 @@ pub(super) struct SettingsForm {
     pub system_prompt: String,
     pub disabled_tools: Vec<String>,
     pub brave_api_key: String,
+    // Theme
+    pub theme: String,
     // Available tools (loaded async, read-only after init)
     pub available_tools: Vec<ToolInfo>,
     // System fonts (loaded async, read-only after init)
@@ -156,6 +158,7 @@ impl SettingsForm {
                 .unwrap_or_else(granit_types::default_system_prompt),
             disabled_tools: config.agent.disabled_tools.clone(),
             brave_api_key: config.agent.brave_api_key.clone().unwrap_or_default(),
+            theme: config.theme.clone(),
             available_tools: Vec::new(),
             system_fonts: Vec::new(),
         }
@@ -194,7 +197,8 @@ impl SettingsSection {
 
 #[component]
 pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
-    let config = expect_context::<AppCtx>().config;
+    let ctx = expect_context::<AppCtx>();
+    let config = ctx.config;
     // Active section in the sidebar
     let (active_section, set_active_section) = signal(SettingsSection::Agent);
 
@@ -202,6 +206,18 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
     let form = RwSignal::new(SettingsForm::from_config(&config.get_untracked()));
     let (saving, set_saving) = signal(false);
     let (save_error, set_save_error) = signal(None::<String>);
+
+    // Remember the original theme so we can revert on cancel.
+    let original_theme = config.get_untracked().theme.clone();
+
+    // Close without saving: revert theme preview and dismiss modal.
+    let cancel = {
+        let original_theme = original_theme.clone();
+        move || {
+            ctx.set_theme(&original_theme);
+            set_open.set(false);
+        }
+    };
 
     // Load system fonts and available tools on modal open
     leptos::task::spawn_local(async move {
@@ -252,10 +268,12 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 f.reading_font,
                 f.agent_font,
                 f.daily_note_folder,
+                f.theme,
             )
             .await
             {
                 Ok(new_config) => {
+                    ctx.set_theme(&new_config.theme);
                     config.set(new_config);
                     set_open.set(false);
                 }
@@ -277,7 +295,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                     </div>
                     <button
                         class="btn btn-ghost btn-xs btn-square"
-                        on:click=move |_| set_open.set(false)
+                        on:click={
+                            let cancel = cancel.clone();
+                            move |_| cancel()
+                        }
                     >
                         <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
                     </button>
@@ -332,7 +353,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                             </Show>
 
                             <Show when=move || active_section.get() == SettingsSection::Theme>
-                                <ThemeSettings />
+                                <ThemeSettings form=form />
                             </Show>
                         </div>
 
@@ -341,7 +362,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                             <button
                                 type="button"
                                 class="btn btn-sm btn-ghost"
-                                on:click=move |_| set_open.set(false)
+                                on:click={
+                                    let cancel = cancel.clone();
+                                    move |_| cancel()
+                                }
                             >
                                 "Cancel"
                             </button>
@@ -358,7 +382,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             </div>
             // Backdrop — click to close
             <form method="dialog" class="modal-backdrop">
-                <button on:click=move |_| set_open.set(false)>"close"</button>
+                <button on:click={
+                    let cancel = cancel.clone();
+                    move |_| cancel()
+                }>"close"</button>
             </form>
         </dialog>
     }

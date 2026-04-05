@@ -94,6 +94,7 @@ fn save_config(
     reading_font: FontConfig,
     agent_font: FontConfig,
     daily_note_folder: String,
+    theme: String,
     state: tauri::State<AppState>,
 ) -> Result<IpcConfig, ConfigError> {
     let mut config = state.lock_config();
@@ -102,6 +103,7 @@ fn save_config(
     config.reading_font = reading_font;
     config.agent_font = agent_font;
     config.daily_note_folder = daily_note_folder;
+    config.theme = theme;
     config.save()?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent();
@@ -434,17 +436,6 @@ fn list_tools() -> Vec<granit_types::ToolInfo> {
     agent::tools::tool_info_list()
 }
 
-#[tauri::command]
-fn set_active_theme(
-    id: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<IpcConfig, ConfigError> {
-    let mut config = state.lock_config();
-    config.theme = id;
-    config.save()?;
-    Ok(state.ipc_response(&config))
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = AppConfig::ensure().expect("failed to initialize config");
@@ -487,7 +478,6 @@ pub fn run() {
             send_message,
             clear_chat,
             list_tools,
-            set_active_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -67,6 +67,7 @@ pub async fn save_config(
     reading_font: FontConfig,
     agent_font: FontConfig,
     daily_note_folder: String,
+    theme: String,
 ) -> Result<AppConfig, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -76,6 +77,7 @@ pub async fn save_config(
         reading_font: FontConfig,
         agent_font: FontConfig,
         daily_note_folder: String,
+        theme: String,
     }
     invoke_cmd(
         "save_config",
@@ -85,6 +87,7 @@ pub async fn save_config(
             reading_font,
             agent_font,
             daily_note_folder,
+            theme,
         },
     )
     .await
@@ -297,11 +300,7 @@ pub async fn list_tools() -> Result<Vec<ToolInfo>, String> {
     invoke_no_args("list_tools").await
 }
 
-// ── Themes ─────────────────────────────────────────────────────────
 
-pub async fn set_active_theme(id: &str) -> Result<AppConfig, String> {
-    invoke_cmd("set_active_theme", &HashMap::from([("id", id)])).await
-}
 
 pub async fn open_url(url: &str) -> Result<(), String> {
     invoke_unit("plugin:opener|open_url", &HashMap::from([("url", url)])).await
