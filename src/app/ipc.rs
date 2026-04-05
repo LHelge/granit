@@ -1,5 +1,6 @@
 use granit_types::{
-    AppConfig, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo, ToolInfo,
+    AppConfig, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, ToolCallInfo,
+    ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -144,6 +145,22 @@ pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
 
 pub async fn fetch_notes() -> Result<Vec<NoteMeta>, String> {
     invoke_no_args("list_notes").await
+}
+
+pub async fn search_content(query: &str) -> Result<Vec<ContentMatch>, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        query: &'a str,
+        max_results: Option<usize>,
+    }
+    invoke_cmd(
+        "search_content",
+        &Args {
+            query,
+            max_results: Some(40),
+        },
+    )
+    .await
 }
 
 pub async fn fetch_folders() -> Result<Vec<String>, String> {

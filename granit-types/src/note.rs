@@ -61,3 +61,10 @@ pub struct Note {
     pub meta: NoteMeta,
     pub content: String,
 }
+
+/// A match from a full-text content search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentMatch {
+    pub slug: String,
+    pub snippets: Vec<String>,
+}

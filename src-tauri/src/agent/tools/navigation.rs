@@ -179,7 +179,7 @@ pub struct SearchContentOutput {
 #[derive(Serialize)]
 struct ContentHit {
     slug: String,
-    snippet: String,
+    snippets: Vec<String>,
 }
 
 pub struct SearchContentTool {
@@ -213,12 +213,12 @@ impl Tool for SearchContentTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave(&self.cave, |cave| {
-            let hits = cave.search_content(&args.query, None)?;
+            let hits = cave.search_content(&args.query, Some(20))?;
             let matches = hits
                 .into_iter()
                 .map(|h| ContentHit {
                     slug: h.slug,
-                    snippet: h.snippet,
+                    snippets: h.snippets,
                 })
                 .collect();
             Ok(SearchContentOutput { matches })

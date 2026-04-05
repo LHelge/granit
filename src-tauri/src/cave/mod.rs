@@ -12,12 +12,7 @@ use note::{
     validate_name,
 };
 
-/// A match from a full-text content search.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ContentMatch {
-    pub slug: String,
-    pub snippet: String,
-}
+pub use granit_types::ContentMatch;
 
 /// A cave — an open directory of markdown notes.
 #[derive(Debug)]
@@ -344,36 +339,33 @@ impl Cave {
 
     /// Search note bodies for a query string (case-insensitive substring match).
     ///
-    /// Returns up to `max_results` matches, each with the note's slug, relative
-    /// path, and a context snippet (the first matching line).
+    /// Returns up to `max_results` matches, each with the note's slug and
+    /// context snippets (all matching lines).
     pub fn search_content(
         &self,
         query: &str,
         max_results: Option<usize>,
     ) -> Result<Vec<ContentMatch>, CaveError> {
-        let limit = max_results.unwrap_or(20);
         let query_lower = query.to_lowercase();
         let mut results = Vec::new();
 
         for (slug, abs_path) in &self.notes {
-            if results.len() >= limit {
-                break;
+            if let Some(limit) = max_results {
+                if results.len() >= limit {
+                    break;
+                }
             }
             let raw = std::fs::read_to_string(abs_path)?;
             let body = crate::markdown::strip_frontmatter(&raw);
-            let body_lower = body.to_lowercase();
-            if let Some(pos) = body_lower.find(&query_lower) {
-                let line = body[..pos]
-                    .rfind('\n')
-                    .map(|lf| &body[lf + 1..])
-                    .unwrap_or(body)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+            let snippets: Vec<String> = body
+                .lines()
+                .filter(|line| line.to_lowercase().contains(&query_lower))
+                .map(|line| line.to_string())
+                .collect();
+            if !snippets.is_empty() {
                 results.push(ContentMatch {
                     slug: slug.clone(),
-                    snippet: line,
+                    snippets,
                 });
             }
         }
@@ -1562,7 +1554,7 @@ mod tests {
         let results = cave.search_content("test note", None).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].slug, "hello");
-        assert!(results[0].snippet.contains("test note"));
+        assert!(results[0].snippets.iter().any(|s| s.contains("test note")));
     }
 
     #[test]

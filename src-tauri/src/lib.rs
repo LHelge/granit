@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
-use cave::{Cave, CaveError, Note, NoteMeta};
+use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
 use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote};
 
@@ -209,6 +209,15 @@ fn move_folder(
 #[tauri::command]
 fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError> {
     with_cave(&state, |cave| cave.list_notes())
+}
+
+#[tauri::command]
+fn search_content(
+    query: String,
+    max_results: Option<usize>,
+    state: tauri::State<AppState>,
+) -> Result<Vec<ContentMatch>, CaveError> {
+    with_cave(&state, |cave| cave.search_content(&query, max_results))
 }
 
 #[tauri::command]
@@ -460,6 +469,7 @@ pub fn run() {
             move_note,
             move_folder,
             list_notes,
+            search_content,
             list_folders,
             read_note,
             open_daily_note,
