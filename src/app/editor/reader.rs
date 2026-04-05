@@ -34,21 +34,18 @@ pub(super) fn Reader() -> impl IntoView {
                     container
                         .query_selector_all("input[type='checkbox']")
                         .ok()
-                        .map(|list| {
+                        .and_then(|list| {
                             let cb_node: &web_sys::Node = checkbox.as_ref();
                             let len = list.length();
-                            let mut found = None;
                             for i in 0..len {
                                 if let Some(node) = list.item(i) {
                                     if &node == cb_node {
-                                        found = Some(i as usize);
-                                        break;
+                                        return Some(i as usize);
                                     }
                                 }
                             }
-                            found
+                            None
                         })
-                        .flatten()
                 })
                 .unwrap_or(0);
 

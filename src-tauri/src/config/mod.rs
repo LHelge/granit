@@ -202,10 +202,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.yml");
 
-        let mut config = AppConfig::default();
-        config.theme = "light".to_string();
-        config.recent_caves = vec![PathBuf::from("/my/notes")];
-        config.active_cave = Some(PathBuf::from("/should/not/persist"));
+        let config = AppConfig {
+            theme: "light".to_string(),
+            recent_caves: vec![PathBuf::from("/my/notes")],
+            active_cave: Some(PathBuf::from("/should/not/persist")),
+            ..AppConfig::default()
+        };
 
         let yaml = serde_yml::to_string(&config).unwrap();
         fs::write(&path, &yaml).unwrap();
@@ -219,8 +221,10 @@ mod tests {
 
     #[test]
     fn test_active_cave_not_serialized() {
-        let mut config = AppConfig::default();
-        config.active_cave = Some(PathBuf::from("/secret/cave"));
+        let config = AppConfig {
+            active_cave: Some(PathBuf::from("/secret/cave")),
+            ..AppConfig::default()
+        };
         let yaml = serde_yml::to_string(&config).unwrap();
         assert!(
             !yaml.contains("active_cave"),
@@ -275,11 +279,10 @@ mod tests {
 
     #[test]
     fn test_to_ipc_recent_caves_as_strings() {
-        let mut config = AppConfig::default();
-        config.recent_caves = vec![
-            PathBuf::from("/home/user/notes"),
-            PathBuf::from("/tmp/cave"),
-        ];
+        let config = AppConfig {
+            recent_caves: vec![PathBuf::from("/home/user/notes"), PathBuf::from("/tmp/cave")],
+            ..AppConfig::default()
+        };
         let ipc = config.to_ipc();
         assert_eq!(
             ipc.recent_caves,
@@ -289,8 +292,10 @@ mod tests {
 
     #[test]
     fn test_to_ipc_active_cave_propagated() {
-        let mut config = AppConfig::default();
-        config.active_cave = Some(PathBuf::from("/active/cave"));
+        let config = AppConfig {
+            active_cave: Some(PathBuf::from("/active/cave")),
+            ..AppConfig::default()
+        };
         let ipc = config.to_ipc();
         assert_eq!(ipc.active_cave, Some("/active/cave".to_string()));
     }
@@ -305,8 +310,10 @@ mod tests {
 
     #[test]
     fn test_to_ipc_preserves_theme_and_fonts() {
-        let mut config = AppConfig::default();
-        config.theme = "cupcake".to_string();
+        let config = AppConfig {
+            theme: "cupcake".to_string(),
+            ..AppConfig::default()
+        };
         let ipc = config.to_ipc();
         assert_eq!(ipc.theme, "cupcake");
         assert_eq!(ipc.markdown_font, FontConfig::markdown_default());

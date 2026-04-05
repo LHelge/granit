@@ -65,7 +65,7 @@ impl Tool for ListTodosTool {
                 text: t.text,
             };
             let filter =
-                |t: &granit_types::TodoItem| args.slug.as_ref().map_or(true, |s| &t.slug == s);
+                |t: &granit_types::TodoItem| args.slug.as_ref().is_none_or(|s| &t.slug == s);
             Ok(ListTodosOutput {
                 incomplete: list
                     .incomplete
