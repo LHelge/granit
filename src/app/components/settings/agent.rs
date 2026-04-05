@@ -156,6 +156,23 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 }}
             </div>
 
+            // Brave API key (for web search tool)
+            <div class="space-y-1">
+                <label class="label text-xs text-base-content/50" for="ag-brave-key">"Brave Search API key"</label>
+                <input
+                    id="ag-brave-key"
+                    type="password"
+                    class="input input-bordered input-sm w-full font-mono text-xs"
+                    placeholder="BSA-…"
+                    prop:value=move || form.get().brave_api_key.clone()
+                    on:input=move |ev| {
+                        let val = event_target_value(&ev);
+                        form.update(|f| f.brave_api_key = val);
+                    }
+                />
+                <p class="text-xs text-base-content/35">"Required for the web_search tool."</p>
+            </div>
+
             <div class="divider my-1" />
 
             // Provider list header

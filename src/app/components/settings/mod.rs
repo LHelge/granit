@@ -128,6 +128,7 @@ pub(super) struct SettingsForm {
     pub max_turns: usize,
     pub system_prompt: String,
     pub disabled_tools: Vec<String>,
+    pub brave_api_key: String,
     // Available tools (loaded async, read-only after init)
     pub available_tools: Vec<ToolInfo>,
     // System fonts (loaded async, read-only after init)
@@ -156,6 +157,7 @@ impl SettingsForm {
                 .clone()
                 .unwrap_or_else(granit_types::default_system_prompt),
             disabled_tools: config.agent.disabled_tools.clone(),
+            brave_api_key: config.agent.brave_api_key.clone().unwrap_or_default(),
             available_tools: Vec::new(),
             system_fonts: Vec::new(),
         }
@@ -231,6 +233,11 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             } else {
                 Some(f.system_prompt)
             };
+            let brave_api_key = if f.brave_api_key.trim().is_empty() {
+                None
+            } else {
+                Some(f.brave_api_key)
+            };
             let agent = AgentConfig {
                 providers,
                 selected_provider,
@@ -239,6 +246,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 max_turns: f.max_turns,
                 system_prompt,
                 disabled_tools: f.disabled_tools,
+                brave_api_key,
             };
             match ipc::save_config(
                 agent,

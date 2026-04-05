@@ -86,7 +86,7 @@ impl Agent {
             AgentError::ProviderIndexOutOfRange(config.selected_provider),
         )?;
 
-        let cave_tools = tools::cave_toolset(cave, &config.disabled_tools);
+        let cave_tools = tools::build_toolset(cave, config);
         let model = config
             .selected_model
             .as_deref()
@@ -385,6 +385,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
+            brave_api_key: None,
         }
     }
 
@@ -397,6 +398,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
+            brave_api_key: None,
         }
     }
 
@@ -424,6 +426,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
+            brave_api_key: None,
         };
         let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_err());

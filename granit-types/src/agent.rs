@@ -132,6 +132,9 @@ pub struct AgentConfig {
     /// Tool names that should NOT be registered with the agent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_tools: Vec<String>,
+    /// Brave Search API key for the web_search tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brave_api_key: Option<String>,
 }
 
 fn default_max_history() -> usize {
@@ -161,6 +164,7 @@ impl Default for AgentConfig {
             max_turns: default_max_turns(),
             system_prompt: None,
             disabled_tools: Vec::new(),
+            brave_api_key: None,
         }
     }
 }
@@ -369,6 +373,7 @@ mod tests {
             max_turns: 5,
             system_prompt: Some("You are helpful.".into()),
             disabled_tools: vec!["delete_note".into()],
+            brave_api_key: Some("BSA-test-key".into()),
         };
 
         let yaml = serde_yml::to_string(&config).unwrap();

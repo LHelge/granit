@@ -33,6 +33,8 @@ tokio = { version = "1.50.0", features = ["rt-multi-thread", "macros"] }
 rig-core = { version = "0.34.0", path = "../../rig/rig/rig-core" }
 futures = "0.3.32"
 font-kit = "0.14.3"
+reqwest = { version = "0.13.2", features = ["json", "query"] }
+html-to-markdown-rs = "3.1.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"
