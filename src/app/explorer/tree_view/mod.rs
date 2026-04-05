@@ -5,7 +5,7 @@ mod rename_input;
 mod tree_model;
 
 use crate::app::{
-    components::editor::{EditOpen, OpenInEdit},
+    editor::{EditOpen, OpenInEdit},
     ipc,
 };
 use context_menu::TreeContextMenu;

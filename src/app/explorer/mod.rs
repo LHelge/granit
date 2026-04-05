@@ -1,9 +1,13 @@
-use super::{cave_selector::CaveSelector, tree_view::TreeView};
+mod cave_selector;
+pub(crate) mod tree_view;
+
 use crate::app::AppCtx;
+use cave_selector::CaveSelector;
 use leptos::prelude::*;
+use tree_view::TreeView;
 
 #[component]
-pub fn Sidebar(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) -> impl IntoView {
+pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
     let has_cave = move || ctx.config.get().active_cave.is_some();
 

@@ -1,11 +1,9 @@
 mod frontmatter;
-mod icon_picker;
 mod reader;
 pub(crate) mod text_editing;
 mod writer;
 
-use super::icons::Icon;
-use crate::app::ipc;
+use crate::app::{components::icons::Icon, ipc};
 use granit_types::{AppConfig, Note, NoteMeta, RenderedNote};
 use leptos::prelude::*;
 use reader::Reader;

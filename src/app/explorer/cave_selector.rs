@@ -1,5 +1,4 @@
-use super::icons::Icon;
-use crate::app::{ipc, AppCtx};
+use crate::app::{components::icons::Icon, ipc, AppCtx};
 use leptos::prelude::*;
 
 #[component]

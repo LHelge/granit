@@ -1,5 +1,5 @@
 use super::{use_tree_ctx, ContextTarget, RenameTarget};
-use crate::app::ipc;
+use crate::app::{editor::EditOpen, ipc};
 use leptos::prelude::*;
 use web_sys::MouseEvent;
 
@@ -92,7 +92,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                                 ctx.refresh_async().await;
                                 match ipc::read_note(&meta.slug).await {
                                     Ok(note) => {
-                                        ctx.open_in_edit.set(crate::app::components::editor::EditOpen::EditFocusTitle);
+                                        ctx.open_in_edit.set(EditOpen::EditFocusTitle);
                                         ctx.active_note.set(Some(note));
                                     }
                                     Err(e) => ctx.push_error(format!("Failed to open note: {e}")),

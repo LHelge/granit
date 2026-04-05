@@ -1,97 +1,31 @@
+mod agent;
 mod components;
+pub(crate) mod context;
+mod editor;
+mod explorer;
+pub(crate) mod ipc;
+mod settings;
 
+pub(crate) use context::AppCtx;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-pub(crate) mod ipc;
-use components::{
-    editor::EditOpen, icons::Icon, AgentPanel, Editor, OpenInEdit, SettingsModal, Sidebar,
-};
-use granit_types::{AppConfig, Note, NoteMeta, SidebarConfig};
+
+use agent::AgentPanel;
+use components::icons::Icon;
+use editor::{EditOpen, Editor, OpenInEdit};
+use explorer::Explorer;
+use granit_types::SidebarConfig;
+use settings::SettingsModal;
 
 // ── Sidebar resize constants ───────────────────────────────────────
 
 const MIN_SIDEBAR_W: u16 = 180;
 const MAX_SIDEBAR_W: u16 = 600;
 
-/// Set the active DaisyUI theme by writing `data-theme` on the `<html>` element.
-pub fn set_daisy_theme(name: &str) {
-    let Some(root) = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.document_element())
-    else {
-        return;
-    };
-    let _ = root.set_attribute("data-theme", name);
-}
-
 #[derive(Clone, Copy)]
 enum ResizeTarget {
     Sidebar,
     Agent,
-}
-
-// ── App-wide shared state via context ──────────────────────────────
-
-/// A single error entry in the unified error channel.
-#[derive(Clone, PartialEq)]
-pub struct AppError {
-    id: u32,
-    pub source: &'static str,
-    pub message: String,
-}
-
-/// Shared reactive state provided via Leptos context so child components can
-/// `expect_context::<AppCtx>()` instead of receiving these signals as props.
-#[derive(Clone, Copy)]
-pub struct AppCtx {
-    pub config: RwSignal<AppConfig>,
-    pub notes: RwSignal<Vec<NoteMeta>>,
-    pub folders: RwSignal<Vec<String>>,
-    pub active_note: RwSignal<Option<Note>>,
-    pub is_mac: bool,
-    errors: RwSignal<Vec<AppError>>,
-    next_id: RwSignal<u32>,
-}
-
-impl AppCtx {
-    /// Push an error and return its id (for later dismissal).
-    pub fn push_error(&self, source: &'static str, message: impl Into<String>) -> u32 {
-        let id = self.next_id.get_untracked();
-        self.next_id.set(id + 1);
-        self.errors.update(|v| {
-            v.push(AppError {
-                id,
-                source,
-                message: message.into(),
-            })
-        });
-        // Auto-dismiss after 8 seconds
-        let ctx = *self;
-        leptos::task::spawn_local(async move {
-            gloo_timers::future::sleep(std::time::Duration::from_secs(8)).await;
-            ctx.dismiss(id);
-        });
-        id
-    }
-
-    /// Dismiss a single error by id.
-    pub fn dismiss(&self, id: u32) {
-        self.errors.update(|v| v.retain(|e| e.id != id));
-    }
-
-    /// Remove all errors from a given source.
-    pub fn clear_source(&self, source: &'static str) {
-        self.errors.update(|v| v.retain(|e| e.source != source));
-    }
-
-    /// Get the first error for a source (for inline display).
-    pub fn first_error_for(&self, source: &'static str) -> Option<String> {
-        self.errors
-            .get()
-            .iter()
-            .find(|e| e.source == source)
-            .map(|e| e.message.clone())
-    }
 }
 
 #[component]
@@ -107,15 +41,7 @@ pub fn App() -> impl IntoView {
         .map(|p: String| p.contains("Mac"))
         .unwrap_or(false);
 
-    let ctx = AppCtx {
-        config: RwSignal::new(AppConfig::default()),
-        notes: RwSignal::new(Vec::<NoteMeta>::new()),
-        folders: RwSignal::new(Vec::<String>::new()),
-        active_note: RwSignal::new(None::<Note>),
-        is_mac,
-        errors: RwSignal::new(Vec::new()),
-        next_id: RwSignal::new(0),
-    };
+    let ctx = AppCtx::new(is_mac);
     provide_context(ctx);
     provide_context(OpenInEdit(RwSignal::new(EditOpen::Preview)));
 
@@ -175,7 +101,7 @@ pub fn App() -> impl IntoView {
         ctx.config.set(cfg);
 
         // Apply the persisted theme immediately to avoid a flash of the default theme
-        set_daisy_theme(&theme_name);
+        ctx.set_theme(&theme_name);
 
         // Re-open the last cave so the backend has a cave_path set
         if let Some(path) = recent {
@@ -338,9 +264,9 @@ pub fn App() -> impl IntoView {
 
             // Main content area
             <div class="flex flex-1 overflow-hidden">
-                // Sidebar (file tree)
+                // Explorer (file tree)
                 <Show when=move || sidebar_visible.get()>
-                    <Sidebar
+                    <Explorer
                         set_settings_open=set_settings_open
                         width=sidebar_width
                     />
@@ -373,7 +299,7 @@ pub fn App() -> impl IntoView {
             // Toast notifications (bottom-right)
             <div class="toast toast-end toast-bottom z-50">
                 <For
-                    each=move || ctx.errors.get()
+                    each=move || ctx.errors().get()
                     key=|e| e.id
                     let:err
                 >

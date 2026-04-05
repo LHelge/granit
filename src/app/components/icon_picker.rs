@@ -8,7 +8,7 @@ use leptos::prelude::*;
 /// button, and a backdrop-assisted dropdown with a search field and 5-column
 /// icon grid.
 #[component]
-pub(super) fn IconPicker(
+pub fn IconPicker(
     /// Currently selected icon ID (PascalCase, e.g. `"Star"`), or `None`.
     #[prop(into)]
     value: Signal<Option<String>>,

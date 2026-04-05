@@ -1,14 +1,3 @@
-mod agent_panel;
-mod cave_selector;
-pub(crate) mod editor;
+pub(crate) mod font_picker;
+pub(crate) mod icon_picker;
 pub mod icons;
-mod model_selector;
-mod provider_selector;
-mod settings;
-mod sidebar;
-mod tree_view;
-
-pub use agent_panel::AgentPanel;
-pub use editor::{Editor, OpenInEdit};
-pub use settings::SettingsModal;
-pub use sidebar::Sidebar;

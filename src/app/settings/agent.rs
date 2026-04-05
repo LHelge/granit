@@ -1,5 +1,8 @@
-use super::{font_picker::FontPicker, ProviderFormEntry, SettingsForm};
-use crate::app::components::icons::{Icon, ProviderIcon};
+use super::{ProviderFormEntry, SettingsForm};
+use crate::app::components::{
+    font_picker::FontPicker,
+    icons::{Icon, ProviderIcon},
+};
 use granit_types::default_system_prompt;
 use leptos::prelude::*;
 

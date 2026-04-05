@@ -1,12 +1,10 @@
 mod agent;
-mod font_picker;
 mod markdown;
 mod notes;
 mod reading;
 mod theme;
 
-use super::icons::Icon;
-use crate::app::{ipc, AppCtx};
+use crate::app::{components::icons::Icon, ipc, AppCtx};
 use agent::AgentSettings;
 use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo};
 use leptos::prelude::*;

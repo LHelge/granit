@@ -1,4 +1,4 @@
-use crate::app::{ipc, set_daisy_theme, AppCtx};
+use crate::app::{ipc, AppCtx};
 use leptos::prelude::*;
 
 /// A DaisyUI theme entry: (data-theme value, display label, is_dark).
@@ -215,7 +215,7 @@ pub fn ThemeSettings() -> impl IntoView {
     let active_id = move || ctx.config.get().theme;
 
     let apply = move |id: &'static str| {
-        set_daisy_theme(id);
+        ctx.set_theme(id);
         leptos::task::spawn_local(async move {
             match ipc::set_active_theme(id).await {
                 Ok(new_cfg) => ctx.config.set(new_cfg),

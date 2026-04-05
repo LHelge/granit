@@ -1,9 +1,9 @@
 use super::{
     frontmatter::FrontmatterEditor,
-    icon_picker::IconPicker,
     text_editing::{self, EditResult, TextareaState},
     use_editor_ctx, EditorCtx,
 };
+use crate::app::components::icon_picker::IconPicker;
 use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
