@@ -31,10 +31,7 @@ pub fn Modal(
                     </div>
                     <button
                         class="btn btn-ghost btn-xs btn-square"
-                        on:click={
-                            let on_close = on_close;
-                            move |_| on_close.run(())
-                        }
+                        on:click={move |_| on_close.run(())}
                     >
                         <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
                     </button>

@@ -220,6 +220,29 @@
   color: color-mix(in oklch, var(--color-base-content) 70%, transparent);
 }
 
+/* Soften DaisyUI field chrome across inputs, selects, and textareas */
+.input,
+.textarea,
+.select,
+.file-input {
+  --input-color: color-mix(in oklab, var(--color-base-content) 14%, #0000);
+  box-shadow: none;
+}
+
+.input:focus,
+.input:focus-within,
+.textarea:focus,
+.textarea:focus-within,
+.select:focus,
+.select:focus-within,
+.file-input:focus,
+.file-input:focus-within {
+  --input-color: color-mix(in oklab, var(--color-base-content) 28%, #0000);
+  box-shadow: none;
+  outline: 1px solid color-mix(in oklab, var(--color-primary) 18%, transparent);
+  outline-offset: 0;
+}
+
 /* Toast slide-in animation */
 @keyframes toast-in {
   from {

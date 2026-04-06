@@ -164,49 +164,61 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             />
 
             // Input area — textarea above, model selector + send below
-            <div class="border-t border-base-content/10">
+            <div>
                 <form
-                    class="p-2 flex flex-col gap-1.5"
+                    class="p-2"
                     on:submit=on_submit
                 >
-                    // Multi-line message input
-                    <textarea
-                        style:font-family=move || config.get().agent_font.font_family
-                        style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                        class="textarea textarea-bordered w-full resize-none disabled:opacity-50"
-                        rows="4"
-                        placeholder="Message... (Enter to send, Shift+Enter for newline)"
-                        prop:value=move || input.get()
-                        prop:disabled=move || is_streaming.get()
-                        on:input=move |ev| set_input.set(event_target_value(&ev))
-                        on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                            if ev.key() == "Enter" && !ev.shift_key() && has_model.get() {
-                                ev.prevent_default();
-                                if let Some(form) = ev.target()
-                                    .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
-                                    .and_then(|el| el.closest("form").ok().flatten())
-                                    .and_then(|f| f.dyn_into::<web_sys::HtmlFormElement>().ok())
-                                {
-                                    let _ = form.request_submit();
+                    <div class="rounded-box border border-neutral/60 bg-neutral text-neutral-content overflow-hidden">
+                        // Multi-line message input
+                        <textarea
+                            style:font-family=move || config.get().agent_font.font_family
+                            style:font-size=move || format!("{}px", config.get().agent_font.font_size)
+                            class="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-neutral-content outline-none disabled:opacity-50 placeholder:text-neutral-content/35"
+                            rows="4"
+                            placeholder="Message..."
+                            prop:value=move || input.get()
+                            prop:disabled=move || is_streaming.get()
+                            on:input=move |ev| set_input.set(event_target_value(&ev))
+                            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                                if ev.key() == "Enter" && !ev.shift_key() && has_model.get() {
+                                    ev.prevent_default();
+                                    if let Some(form) = ev.target()
+                                        .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+                                        .and_then(|el| el.closest("form").ok().flatten())
+                                        .and_then(|f| f.dyn_into::<web_sys::HtmlFormElement>().ok())
+                                    {
+                                        let _ = form.request_submit();
+                                    }
                                 }
                             }
-                        }
-                    />
-                    // Model selector + send button row
-                    <div class="flex items-center gap-2">
-                        <ModelSelector
-                            models=models
-                            models_loading=models_loading
-                            disabled=Signal::derive(move || is_streaming.get())
                         />
-                        <div class="flex-1" />
-                        <button
-                            type="submit"
-                            class="btn btn-sm btn-primary"
-                            prop:disabled=move || is_streaming.get() || !has_model.get()
-                        >
-                            {move || if is_streaming.get() { "..." } else { "Send" }}
-                        </button>
+
+                        // Footer row inside the same frame
+                        <div class="flex items-center gap-1.5 px-2.5 py-2 text-neutral-content">
+                            <ModelSelector
+                                models=models
+                                models_loading=models_loading
+                                disabled=Signal::derive(move || is_streaming.get())
+                            />
+                            <div class="flex-1" />
+                            <button
+                                type="submit"
+                                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-content/60 transition-colors hover:bg-neutral-content/10 hover:text-neutral-content disabled:cursor-not-allowed disabled:opacity-35"
+                                title="Send message"
+                                prop:disabled=move || is_streaming.get() || !has_model.get()
+                            >
+                                {move || if is_streaming.get() {
+                                    view! { <span class="loading loading-spinner loading-xs" /> }.into_any()
+                                } else {
+                                    view! {
+                                        <span class="inline-flex w-3.5 h-3.5 shrink-0">
+                                            <Icon icon=icondata_lu::LuSend width="100%" height="100%"/>
+                                        </span>
+                                    }.into_any()
+                                }}
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
