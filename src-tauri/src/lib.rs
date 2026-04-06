@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
 use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
-use granit_types::{AppConfig as IpcConfig, FontConfig, ModelInfo, RenderedNote, TodoList};
+use granit_types::{
+    AppConfig as IpcConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, TodoList,
+};
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -73,6 +75,27 @@ impl AppState {
 fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
     let config = state.lock_config();
     Ok(state.ipc_response(&config))
+}
+
+#[tauri::command]
+fn get_app_metadata() -> AppMetadata {
+    let git_commit_hash = option_env!("GRANIT_GIT_HASH").unwrap_or("unknown");
+
+    AppMetadata {
+        app_name: "Granit".to_string(),
+        repo_url: "https://github.com/LHelge/granit".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        git_commit_hash: shorten_git_hash(git_commit_hash),
+        git_dirty: option_env!("GRANIT_GIT_DIRTY").unwrap_or("false") == "true",
+    }
+}
+
+fn shorten_git_hash(hash: &str) -> String {
+    if hash == "unknown" {
+        return hash.to_string();
+    }
+
+    hash.chars().take(8).collect()
 }
 
 #[tauri::command]
@@ -488,6 +511,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_app_metadata,
             save_config,
             save_sidebar_state,
             list_system_fonts,

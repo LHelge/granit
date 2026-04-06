@@ -3,6 +3,7 @@ mod components;
 pub(crate) mod context;
 mod editor;
 mod explorer;
+mod info;
 pub(crate) mod ipc;
 mod settings;
 
@@ -15,6 +16,7 @@ use components::icons::Icon;
 use editor::{EditOpen, Editor, OpenInEdit};
 use explorer::Explorer;
 use granit_types::SidebarConfig;
+use info::InfoModal;
 use settings::SettingsModal;
 
 // ── Sidebar resize constants ───────────────────────────────────────
@@ -34,6 +36,7 @@ pub fn App() -> impl IntoView {
     let (sidebar_width, set_sidebar_width) = signal(256u16);
     let (agent_visible, set_agent_visible) = signal(false);
     let (agent_width, set_agent_width) = signal(320u16);
+    let (info_open, set_info_open) = signal(false);
     let (settings_open, set_settings_open) = signal(false);
 
     let is_mac = web_sys::window()
@@ -241,6 +244,15 @@ pub fn App() -> impl IntoView {
                             <Icon icon=icondata_lu::LuCalendar width="1rem" height="1rem"/>
                         </button>
                     </Show>
+                    <div class="tooltip tooltip-bottom" data-tip="About Granit">
+                        <button
+                            class="btn btn-ghost btn-xs btn-square"
+                            on:click=move |_| set_info_open.set(true)
+                            title="About Granit"
+                        >
+                            <Icon icon=icondata_lu::LuInfo width="1rem" height="1rem"/>
+                        </button>
+                    </div>
                 </div>
                 <div class="flex items-center gap-1">
                     <div class="tooltip tooltip-left" data-tip="Toggle sidebar">
@@ -294,6 +306,10 @@ pub fn App() -> impl IntoView {
             // Settings modal
             <Show when=move || settings_open.get()>
                 <SettingsModal set_open=set_settings_open />
+            </Show>
+
+            <Show when=move || info_open.get()>
+                <InfoModal set_open=set_info_open />
             </Show>
 
             // Toast notifications (bottom-right)

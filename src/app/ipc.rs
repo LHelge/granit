@@ -1,6 +1,6 @@
 use granit_types::{
-    AppConfig, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig, TodoList,
-    ToolCallInfo, ToolInfo,
+    AppConfig, AppMetadata, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig,
+    TodoList, ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -56,6 +56,10 @@ async fn invoke_unit<A: Serialize>(cmd: &str, args: &A) -> Result<(), String> {
 
 pub async fn fetch_config() -> Result<AppConfig, String> {
     invoke_no_args("get_config").await
+}
+
+pub async fn fetch_app_metadata() -> Result<AppMetadata, String> {
+    invoke_no_args("get_app_metadata").await
 }
 
 pub async fn list_system_fonts() -> Result<Vec<String>, String> {
