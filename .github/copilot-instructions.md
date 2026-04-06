@@ -31,7 +31,6 @@ src-tauri/src/  — Tauri backend (native Rust)
   main.rs       — Desktop entry point
   agent/        — rig-core agent and tools
   cave/         — Cave operations
-  config/       — Global config load/save
   markdown/     — Frontmatter parsing + HTML rendering
 ```
 
@@ -53,22 +52,23 @@ A **cave** is any directory on disk selected via the native folder picker. It co
 - `.md` files with optional YAML frontmatter (`tags`, timestamps, optional `icon`)
 - Wiki-style `[[links]]` resolved by **filename** (not path) across the entire cave
 
-One cave is open at a time. The user can switch between recently opened caves.
+One cave is open at a time. The user can switch caves explicitly, and Granit only remembers the currently active cave between launches.
 
 The filename stem is the note identity and displayed title. Do not assume a frontmatter `title` field exists.
 
 ### Configuration
 
-The current implementation uses a **single global config file**.
+The current implementation uses **per-cave config files** plus a small store-backed runtime key.
 
 ```
-~/.config/granit/          (or platform equivalent via dirs::config_dir())
-  config.yml               — App settings, recent caves, theme, fonts, agent/provider config
+<cave>/
+  .granit/
+    config.yml             — Cave-scoped settings, theme, fonts, and agent/provider config
 ```
 
-- Provider API keys currently live inside the serialized global `config.yml` via `AgentConfig`.
-- `active_cave` is runtime-only and must not be persisted.
-- `serde_yml` is used for YAML (de)serialization and `dirs` for platform-correct config paths.
+- Provider API keys currently live inside the serialized cave-local `.granit/config.yml` via `AgentConfig`.
+- `active_cave` must not be serialized into cave YAML; it is restored separately from Tauri store plugin key-value storage.
+- `serde_yml` is used for YAML (de)serialization and `tauri-plugin-store` is used for persisted active-cave state.
 
 ### Markdown Processing
 
@@ -183,7 +183,7 @@ use icondata_lu;
 | `serde` / `serde_json` | Serialization |
 | `serde-wasm-bindgen` | Frontend ↔ JS value conversion |
 | `serde_yml` | YAML config (de)serialization |
-| `dirs` | Platform-correct config/data directories |
+| `tauri-plugin-store` | Persisted active-cave key-value storage |
 | `reqwest` | Web fetch / search tool HTTP client |
 
 ### Release Process

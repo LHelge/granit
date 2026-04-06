@@ -1940,7 +1940,6 @@ name = "granit"
 version = "0.1.2"
 dependencies = [
  "chrono",
- "dirs",
  "font-kit",
  "futures",
  "git2",
