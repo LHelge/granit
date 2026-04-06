@@ -54,7 +54,7 @@ impl TreeCtx {
                         .unwrap_or(false)
                     {
                         if let Ok(note) = ipc::read_note(&slug).await {
-                            self.active_note.set(Some(note));
+                            self.app.set_active_note_document(note);
                         }
                     }
                     self.refresh_async().await;

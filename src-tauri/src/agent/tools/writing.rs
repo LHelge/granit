@@ -260,8 +260,12 @@ impl Tool for OpenDailyNoteTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave_mut(&self.cave, |cave| {
-            let folder = args.folder.as_deref().unwrap_or("Daily");
-            let note = cave.open_daily_note(folder)?;
+            let config = cave.load_config()?;
+            let folder = args
+                .folder
+                .as_deref()
+                .unwrap_or(config.daily_note_folder.as_str());
+            let note = cave.open_daily_note(folder, config.daily_note_template_slug.as_deref())?;
             Ok(OpenDailyNoteOutput {
                 slug: note.meta.slug,
                 relative_path: note.meta.relative_path,

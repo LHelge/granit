@@ -1,8 +1,11 @@
 use super::SettingsForm;
+use crate::app::AppCtx;
 use leptos::prelude::*;
 
 #[component]
 pub fn NotesSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
+    let app = expect_context::<AppCtx>();
+
     view! {
         <fieldset class="fieldset space-y-3">
             <legend class="fieldset-legend">"Notes"</legend>
@@ -25,6 +28,37 @@ pub fn NotesSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         form.update(|f| f.daily_note_folder = folder);
                     }
                 />
+            </div>
+            <div class="space-y-1">
+                <label class="label text-xs text-base-content/50" for="daily-note-template">"Daily note template"</label>
+                <p class="label text-xs text-base-content/35">"Optional template from .granit/templates used when a new daily note is created"</p>
+                <select
+                    id="daily-note-template"
+                    class="select select-bordered select-sm w-full"
+                    prop:value=move || form.get().daily_note_template_slug.unwrap_or_default()
+                    on:change=move |ev| {
+                        let value = event_target_value(&ev);
+                        form.update(|f| {
+                            f.daily_note_template_slug = if value.trim().is_empty() {
+                                None
+                            } else {
+                                Some(value)
+                            };
+                        });
+                    }
+                >
+                    <option value="">"No template"</option>
+                    {move || app.templates.get().into_iter().map(|template| {
+                        let slug = template.slug;
+                        let value = slug.clone();
+                        view! {
+                            <option value=value>{slug}</option>
+                        }
+                    }).collect_view()}
+                </select>
+                <Show when=move || app.templates.get().is_empty()>
+                    <p class="label text-xs text-base-content/35">"Create a template from the Templates tab to make it selectable here."</p>
+                </Show>
             </div>
         </fieldset>
     }

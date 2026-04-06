@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
-use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
+use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta, Template, TemplateMeta};
 use granit_types::{
     AgentConfig, AppConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, SidebarConfig,
     TodoList,
@@ -251,6 +251,7 @@ fn save_config(
     reading_font: FontConfig,
     agent_font: FontConfig,
     daily_note_folder: String,
+    daily_note_template_slug: Option<String>,
     theme: String,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, ConfigError> {
@@ -263,6 +264,7 @@ fn save_config(
         config.reading_font = reading_font;
         config.agent_font = agent_font;
         config.daily_note_folder = daily_note_folder;
+        config.daily_note_template_slug = daily_note_template_slug;
         config.theme = theme;
         config.clone()
     };
@@ -338,6 +340,11 @@ fn create_note(
 }
 
 #[tauri::command]
+fn create_template(name: String, state: tauri::State<AppState>) -> Result<TemplateMeta, CaveError> {
+    with_cave_mut(&state, |cave| cave.create_template(&name))
+}
+
+#[tauri::command]
 fn create_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
     with_cave_mut(&state, |cave| {
         cave.create_folder(std::path::Path::new(&path))
@@ -382,6 +389,11 @@ fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError>
 }
 
 #[tauri::command]
+fn list_templates(state: tauri::State<AppState>) -> Result<Vec<TemplateMeta>, CaveError> {
+    with_cave(&state, |cave| cave.list_templates())
+}
+
+#[tauri::command]
 fn search_content(
     query: String,
     max_results: Option<usize>,
@@ -401,9 +413,19 @@ fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveEr
 }
 
 #[tauri::command]
+fn read_template(name: String, state: tauri::State<AppState>) -> Result<Template, CaveError> {
+    with_cave(&state, |cave| cave.read_template(&name))
+}
+
+#[tauri::command]
 fn open_daily_note(state: tauri::State<AppState>) -> Result<Note, CaveError> {
-    let folder = state.lock_config().daily_note_folder.clone();
-    with_cave_mut(&state, |cave| cave.open_daily_note(&folder))
+    let config = state.lock_config().clone();
+    with_cave_mut(&state, |cave| {
+        cave.open_daily_note(
+            &config.daily_note_folder,
+            config.daily_note_template_slug.as_deref(),
+        )
+    })
 }
 
 #[tauri::command]
@@ -416,12 +438,30 @@ fn save_note(
 }
 
 #[tauri::command]
+fn save_template(
+    name: String,
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<TemplateMeta, CaveError> {
+    with_cave(&state, |cave| cave.save_template(&name, &content))
+}
+
+#[tauri::command]
 fn rename_note(
     old_name: String,
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
     with_cave_mut(&state, |cave| cave.rename_note(&old_name, &new_name))
+}
+
+#[tauri::command]
+fn rename_template(
+    old_name: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<TemplateMeta, CaveError> {
+    with_cave_mut(&state, |cave| cave.rename_template(&old_name, &new_name))
 }
 
 #[tauri::command]
@@ -439,6 +479,20 @@ fn update_note(
 }
 
 #[tauri::command]
+fn update_template(
+    old_name: String,
+    new_name: String,
+    content: String,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<TemplateMeta, CaveError> {
+    with_cave_mut(&state, |cave| {
+        cave.update_template(&old_name, &new_name, &content, tags, icon)
+    })
+}
+
+#[tauri::command]
 fn rename_folder(
     source: String,
     new_name: String,
@@ -452,6 +506,11 @@ fn rename_folder(
 #[tauri::command]
 fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
     with_cave_mut(&state, |cave| cave.delete_note(&name))
+}
+
+#[tauri::command]
+fn delete_template(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    with_cave_mut(&state, |cave| cave.delete_template(&name))
 }
 
 #[tauri::command]
@@ -489,6 +548,14 @@ fn toggle_todo_by_index(
 fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
     with_cave(&state, |cave| {
         let raw = cave.read_note_raw(&name)?;
+        Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
+    })
+}
+
+#[tauri::command]
+fn render_template(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
+    with_cave(&state, |cave| {
+        let raw = cave.read_template_raw(&name)?;
         Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
     })
 }
@@ -683,21 +750,29 @@ pub fn run() {
             list_system_fonts,
             open_cave,
             create_note,
+            create_template,
             create_folder,
             delete_folder,
             move_note,
             move_folder,
             list_notes,
+            list_templates,
             search_content,
             list_folders,
             read_note,
+            read_template,
             open_daily_note,
             save_note,
+            save_template,
             delete_note,
+            delete_template,
             rename_note,
+            rename_template,
             rename_folder,
             update_note,
+            update_template,
             render_note,
+            render_template,
             render_markdown,
             set_active_note,
             list_todos,

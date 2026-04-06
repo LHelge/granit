@@ -1,13 +1,14 @@
 mod error;
 mod note;
 
+use chrono::Datelike;
 pub use error::CaveError;
 use granit_types::{AppConfig, TodoItem, TodoList};
 use note::{
-    ensure_md_extension, note_meta_from_relative_path, note_meta_with_icon, validate_folder_path,
-    validate_name,
+    ensure_md_extension, note_meta_from_relative_path, note_meta_with_icon,
+    template_meta_from_path, template_meta_with_icon, validate_folder_path, validate_name,
 };
-pub use note::{Note, NoteMeta};
+pub use note::{Note, NoteMeta, Template, TemplateMeta};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -21,6 +22,8 @@ pub struct Cave {
     /// sync by create / delete / rename / update operations.
     /// Slug uniqueness is enforced globally across all subdirectories.
     notes: HashMap<String, PathBuf>,
+    /// In-memory index: template slug → absolute path inside `.granit/templates`.
+    templates: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
     active_slug: Option<String>,
 }
@@ -32,15 +35,21 @@ impl Cave {
     /// Returns an error if two files share the same slug (filename without `.md`).
     pub fn open(path: PathBuf) -> Result<Self, CaveError> {
         let notes = Self::scan_recursive(&path, &path)?;
+        let templates = Self::scan_templates(&path.join(".granit").join("templates"))?;
         Ok(Self {
             path,
             notes,
+            templates,
             active_slug: None,
         })
     }
 
     pub fn config_path(&self) -> PathBuf {
         self.path.join(".granit").join("config.yml")
+    }
+
+    pub fn templates_dir(&self) -> PathBuf {
+        self.path.join(".granit").join("templates")
     }
 
     pub fn ensure_config(&self) -> Result<(), CaveError> {
@@ -73,6 +82,12 @@ impl Cave {
         let yaml = serde_yml::to_string(&stored)?;
         std::fs::write(self.config_path(), yaml)?;
         Ok(())
+    }
+
+    fn ensure_templates_dir(&self) -> Result<PathBuf, CaveError> {
+        let path = self.templates_dir();
+        std::fs::create_dir_all(&path)?;
+        Ok(path)
     }
 
     /// Recursively scan `dir` for `.md` files and return a slug → absolute-path map.
@@ -151,6 +166,65 @@ impl Cave {
             }
         }
         Ok(notes)
+    }
+
+    /// Scan the flat `.granit/templates` directory for markdown template files.
+    fn scan_templates(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+        if !dir.is_dir() {
+            return Ok(HashMap::new());
+        }
+
+        let mut templates: HashMap<String, PathBuf> = HashMap::new();
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().is_none_or(|ext| ext != "md") {
+                continue;
+            }
+
+            let slug = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            match templates.entry(slug) {
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    let existing_rel = e.get().to_string_lossy().into_owned();
+                    let new_rel = path.to_string_lossy().into_owned();
+                    return Err(CaveError::DuplicateTemplateSlug {
+                        slug: e.key().clone(),
+                        paths: vec![existing_rel, new_rel],
+                    });
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(path);
+                }
+            }
+        }
+
+        Ok(templates)
+    }
+
+    fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {
+        let raw = self.read_template_raw(slug)?;
+        Ok(crate::markdown::strip_frontmatter(&raw).to_string())
+    }
+
+    fn render_daily_note_template(
+        &self,
+        template_slug: &str,
+        note_slug: &str,
+    ) -> Result<String, CaveError> {
+        let template_body = self.read_template_body(template_slug)?;
+        let now = chrono::Local::now();
+        let mut context = tera::Context::new();
+        context.insert("slug", note_slug);
+        context.insert("date", &now.format("%Y-%m-%d").to_string());
+        context.insert("year", &now.year());
+        context.insert("month", &now.month());
+        context.insert("day", &now.day());
+        context.insert("weekday", &now.format("%A").to_string());
+        context.insert("weekday_short", &now.format("%a").to_string());
+        Ok(tera::Tera::one_off(&template_body, &context, false)?)
     }
 
     /// Return the relative path from `self.path` to `abs_path` as a `PathBuf`.
@@ -252,13 +326,48 @@ impl Cave {
         Ok(note_meta_from_relative_path(&rel))
     }
 
+    /// Create a new template in `.granit/templates`.
+    pub fn create_template(&mut self, name: &str) -> Result<TemplateMeta, CaveError> {
+        validate_name(name)?;
+
+        let templates_dir = self.ensure_templates_dir()?;
+        let base_filename = ensure_md_extension(name);
+
+        let (filename, slug) = if name == "untitled" && self.templates.contains_key("untitled") {
+            let mut n = 2u32;
+            loop {
+                let candidate_slug = format!("untitled-{n}");
+                let candidate_file = format!("{candidate_slug}.md");
+                if !self.templates.contains_key(&candidate_slug) {
+                    break (candidate_file, candidate_slug);
+                }
+                n += 1;
+            }
+        } else if self.templates.contains_key(name) {
+            return Err(CaveError::TemplateAlreadyExists(base_filename));
+        } else {
+            (base_filename, name.to_string())
+        };
+
+        let final_path = templates_dir.join(&filename);
+        let initial_content = crate::markdown::initial_content(&slug);
+        std::fs::write(&final_path, &initial_content)?;
+        self.templates.insert(slug, final_path.clone());
+
+        Ok(template_meta_from_path(&final_path))
+    }
+
     /// Open or create today's daily note in the given folder.
     ///
     /// `folder` is a relative path from the cave root (e.g. `"Daily"` or `"Notes/Daily"`).
     /// The folder is created if it does not yet exist.
     /// If the note for today already exists it is read and returned without modification.
     /// The note slug is today's date in `YYYY-MM-DD` format.
-    pub fn open_daily_note(&mut self, folder: &str) -> Result<Note, CaveError> {
+    pub fn open_daily_note(
+        &mut self,
+        folder: &str,
+        template_slug: Option<&str>,
+    ) -> Result<Note, CaveError> {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let folder_path = Path::new(folder);
 
@@ -269,10 +378,16 @@ impl Cave {
             std::fs::create_dir_all(&abs_folder)?;
         }
 
-        // Create the note if it doesn't exist yet, setting the calendar icon.
+        // Create the note if it doesn't exist yet, rendering the configured template if possible.
         if !self.notes.contains_key(today.as_str()) {
-            self.create_note(&today, Some(folder_path))?;
-            self.set_note_icon(&today, Some("Calendar".to_string()))?;
+            let body = template_slug
+                .and_then(|slug| self.render_daily_note_template(slug, &today).ok())
+                .unwrap_or_default();
+            let final_path = abs_folder.join(format!("{today}.md"));
+            let initial_content =
+                crate::markdown::initial_content_with_body(&body, Some("Calendar".to_string()));
+            std::fs::write(&final_path, initial_content)?;
+            self.notes.insert(today.clone(), final_path);
         }
 
         self.read_note(&today)
@@ -323,6 +438,17 @@ impl Cave {
             .collect();
         notes.sort_by_key(|n| n.slug.to_lowercase());
         Ok(notes)
+    }
+
+    /// List all templates in `.granit/templates`, sorted by slug.
+    pub fn list_templates(&self) -> Result<Vec<TemplateMeta>, CaveError> {
+        let mut templates: Vec<TemplateMeta> = self
+            .templates
+            .values()
+            .map(|abs| template_meta_with_icon(abs))
+            .collect();
+        templates.sort_by_key(|t| t.slug.to_lowercase());
+        Ok(templates)
     }
 
     /// List all subdirectory relative paths in this cave (recursively), sorted.
@@ -585,6 +711,24 @@ impl Cave {
         })
     }
 
+    /// Read a template by slug.
+    pub fn read_template(&self, slug: &str) -> Result<Template, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .templates
+            .get(slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
+
+        let raw = std::fs::read_to_string(abs_path)?;
+        let body = crate::markdown::strip_frontmatter(&raw).to_string();
+        let mut meta = template_meta_from_path(abs_path);
+        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
+        Ok(Template {
+            meta,
+            content: body,
+        })
+    }
+
     /// Read the raw file content of a note (including frontmatter).
     pub fn read_note_raw(&self, slug: &str) -> Result<String, CaveError> {
         validate_name(slug)?;
@@ -592,6 +736,16 @@ impl Cave {
             .notes
             .get(slug)
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+        Ok(std::fs::read_to_string(abs_path)?)
+    }
+
+    /// Read the raw file content of a template (including frontmatter).
+    pub fn read_template_raw(&self, slug: &str) -> Result<String, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .templates
+            .get(slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
         Ok(std::fs::read_to_string(abs_path)?)
     }
 
@@ -608,6 +762,22 @@ impl Cave {
         std::fs::write(abs_path, updated.as_str())?;
         let rel = self.relative_path(abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        Ok(meta)
+    }
+
+    /// Save new content to an existing template (looked up by slug).
+    pub fn save_template(&self, slug: &str, content: &str) -> Result<TemplateMeta, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .templates
+            .get(slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
+
+        let existing_raw = std::fs::read_to_string(abs_path)?;
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None, None);
+        std::fs::write(abs_path, updated.as_str())?;
+        let mut meta = template_meta_from_path(abs_path);
         meta.icon = crate::markdown::read_frontmatter_icon(&updated);
         Ok(meta)
     }
@@ -672,6 +842,20 @@ impl Cave {
 
         std::fs::remove_file(&abs_path)?;
         self.notes.remove(slug);
+        Ok(())
+    }
+
+    /// Delete a template by slug.
+    pub fn delete_template(&mut self, slug: &str) -> Result<(), CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .templates
+            .get(slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?
+            .clone();
+
+        std::fs::remove_file(&abs_path)?;
+        self.templates.remove(slug);
         Ok(())
     }
 
@@ -826,6 +1010,42 @@ impl Cave {
         Ok(note_meta_with_icon(&rel, &new_abs))
     }
 
+    /// Rename an existing template in-place within `.granit/templates`.
+    pub fn rename_template(
+        &mut self,
+        old_slug: &str,
+        new_name: &str,
+    ) -> Result<TemplateMeta, CaveError> {
+        validate_name(old_slug)?;
+        validate_name(new_name)?;
+
+        if old_slug == new_name {
+            return self.read_template(old_slug).map(|template| template.meta);
+        }
+
+        let old_abs = self
+            .templates
+            .get(old_slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(old_slug.to_string()))?
+            .clone();
+
+        let new_filename = ensure_md_extension(new_name);
+        let new_abs = old_abs
+            .parent()
+            .unwrap_or(Path::new(""))
+            .join(&new_filename);
+
+        if self.templates.contains_key(new_name) {
+            return Err(CaveError::TemplateAlreadyExists(new_filename));
+        }
+
+        std::fs::rename(&old_abs, &new_abs)?;
+        self.templates.remove(old_slug);
+        self.templates.insert(new_name.to_string(), new_abs.clone());
+
+        Ok(template_meta_with_icon(&new_abs))
+    }
+
     /// Update a note's filename, content, and optionally tags and icon in one operation.
     ///
     /// If `old_slug` and `new_name` differ the file is renamed first (same directory),
@@ -887,6 +1107,65 @@ impl Cave {
 
         let rel = self.relative_path(&final_abs);
         let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        Ok(meta)
+    }
+
+    /// Update a template's filename, content, and optionally tags and icon in one operation.
+    pub fn update_template(
+        &mut self,
+        old_slug: &str,
+        new_name: &str,
+        content: &str,
+        tags: Option<Vec<String>>,
+        icon: Option<String>,
+    ) -> Result<TemplateMeta, CaveError> {
+        validate_name(old_slug)?;
+        validate_name(new_name)?;
+
+        let old_abs = self
+            .templates
+            .get(old_slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(old_slug.to_string()))?
+            .clone();
+
+        let (final_abs, renamed) = if old_slug != new_name {
+            let new_filename = ensure_md_extension(new_name);
+            let new_abs = old_abs
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(&new_filename);
+
+            if self.templates.contains_key(new_name) {
+                return Err(CaveError::TemplateAlreadyExists(new_filename));
+            }
+
+            std::fs::rename(&old_abs, &new_abs)?;
+            (new_abs, true)
+        } else {
+            (old_abs.clone(), false)
+        };
+
+        let existing_raw = std::fs::read_to_string(&final_abs)?;
+        let updated = crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags, icon);
+        if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
+            if renamed {
+                if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
+                    return Err(CaveError::Io(format!(
+                        "failed to write updated template after rename: {e}; rollback also failed: {rollback_err}"
+                    )));
+                }
+            }
+            return Err(e.into());
+        }
+
+        if renamed {
+            self.templates.remove(old_slug);
+            self.templates
+                .insert(new_name.to_string(), final_abs.clone());
+        }
+
+        let mut meta = template_meta_from_path(&final_abs);
         meta.icon = crate::markdown::read_frontmatter_icon(&updated);
         Ok(meta)
     }
@@ -1746,12 +2025,67 @@ mod tests {
     }
 
     #[test]
+    fn test_templates_are_listed_separately_from_notes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_template("daily-template").unwrap();
+        cave.create_note("note", None).unwrap();
+
+        let notes = cave.list_notes().unwrap();
+        let templates = cave.list_templates().unwrap();
+
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].slug, "note");
+        assert_eq!(templates.len(), 1);
+        assert_eq!(templates[0].slug, "daily-template");
+        assert!(!dir.path().join("daily-template.md").exists());
+        assert!(dir
+            .path()
+            .join(".granit/templates/daily-template.md")
+            .exists());
+    }
+
+    #[test]
+    fn test_update_template_renames_and_preserves_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_template("daily-template").unwrap();
+        let meta = cave
+            .update_template(
+                "daily-template",
+                "renamed-template",
+                "# Body\n",
+                Some(vec!["journal".to_string()]),
+                Some("Star".to_string()),
+            )
+            .unwrap();
+        let template = cave.read_template("renamed-template").unwrap();
+        let raw = cave.read_template_raw("renamed-template").unwrap();
+
+        assert_eq!(meta.slug, "renamed-template");
+        assert_eq!(template.content, "# Body\n");
+        assert_eq!(template.meta.icon.as_deref(), Some("Star"));
+        assert!(raw.contains("journal"));
+        assert!(raw.contains("icon: Star"));
+        assert!(!dir
+            .path()
+            .join(".granit/templates/daily-template.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".granit/templates/renamed-template.md")
+            .exists());
+    }
+
+    #[test]
     fn test_open_daily_note_creates_folder_and_note() {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let note = cave.open_daily_note("Daily").unwrap();
+        let note = cave.open_daily_note("Daily", None).unwrap();
 
         assert_eq!(note.meta.slug, today);
         assert_eq!(note.meta.relative_path, format!("Daily/{today}.md"));
@@ -1759,6 +2093,32 @@ mod tests {
         assert!(dir.path().join(format!("Daily/{today}.md")).exists());
         assert_eq!(note.meta.icon.as_deref(), Some("Calendar"));
         assert!(note.content.is_empty(), "daily note body should stay empty");
+    }
+
+    #[test]
+    fn test_open_daily_note_uses_template_body_with_fresh_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/daily-template.md"),
+            "---\ntags: [template]\nicon: Star\n---\n# {{ date }}\nHello {{ weekday_short }}\n",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let note = cave
+            .open_daily_note("Daily", Some("daily-template"))
+            .unwrap();
+        let raw = cave.read_note_raw(&today).unwrap();
+
+        assert!(note.content.contains(&format!("# {today}")));
+        assert!(note.content.contains("Hello "));
+        assert!(raw.contains("icon: Calendar"));
+        assert!(!raw.contains("icon: Star"));
+        assert!(!raw.contains("template"));
     }
 
     #[test]
@@ -1783,8 +2143,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let note1 = cave.open_daily_note("Daily").unwrap();
-        let note2 = cave.open_daily_note("Daily").unwrap();
+        let note1 = cave.open_daily_note("Daily", None).unwrap();
+        let note2 = cave.open_daily_note("Daily", None).unwrap();
 
         // Second call must not create a duplicate or modify the slug
         assert_eq!(note1.meta.slug, note2.meta.slug);
@@ -1801,9 +2161,34 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let note = cave.open_daily_note("Journal").unwrap();
+        let note = cave.open_daily_note("Journal", None).unwrap();
         assert_eq!(note.meta.slug, today);
         assert!(dir.path().join(format!("Journal/{today}.md")).exists());
+    }
+
+    #[test]
+    fn test_open_daily_note_falls_back_when_template_missing_or_invalid() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let note_missing = cave
+            .open_daily_note("Daily", Some("missing-template"))
+            .unwrap();
+        assert!(note_missing.content.is_empty());
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        cave.delete_note(&today).unwrap();
+
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/bad-template.md"),
+            "{{ if broken }}",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+
+        let note_invalid = cave.open_daily_note("Daily", Some("bad-template")).unwrap();
+        assert!(note_invalid.content.is_empty());
     }
 
     // ── resolve_slug / lookup_slug ─────────────────────────────────────────

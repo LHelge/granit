@@ -122,6 +122,7 @@ pub(super) struct SettingsForm {
     pub agent_font: FontConfig,
     // Notes
     pub daily_note_folder: String,
+    pub daily_note_template_slug: Option<String>,
     // Agent behaviour
     pub max_history: usize,
     pub max_turns: usize,
@@ -150,6 +151,7 @@ impl SettingsForm {
             reading_font: config.reading_font.clone(),
             agent_font: config.agent_font.clone(),
             daily_note_folder: config.daily_note_folder.clone(),
+            daily_note_template_slug: config.daily_note_template_slug.clone(),
             max_history: config.agent.max_history,
             max_turns: config.agent.max_turns,
             system_prompt: config
@@ -285,6 +287,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 f.reading_font,
                 f.agent_font,
                 f.daily_note_folder,
+                f.daily_note_template_slug,
                 f.theme,
             )
             .await

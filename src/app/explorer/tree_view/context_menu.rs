@@ -63,7 +63,7 @@ fn render_note_menu(ctx: super::TreeCtx, slug: String) -> impl IntoView {
                             return;
                         }
                         if ctx.active_note.get().map(|n| n.meta.slug == s).unwrap_or(false) {
-                            ctx.active_note.set(None);
+                            ctx.app.clear_active_document();
                         }
                         ctx.refresh_async().await;
                     });
@@ -93,7 +93,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                                 match ipc::read_note(&meta.slug).await {
                                     Ok(note) => {
                                         ctx.open_in_edit.set(EditOpen::EditFocusTitle);
-                                        ctx.active_note.set(Some(note));
+                                        ctx.app.set_active_note_document(note);
                                     }
                                     Err(e) => ctx.push_error(format!("Failed to open note: {e}")),
                                 }
@@ -157,7 +157,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                             .map(|n| n.meta.relative_path.starts_with(&format!("{p}/")))
                             .unwrap_or(false)
                         {
-                            ctx.active_note.set(None);
+                            ctx.app.clear_active_document();
                         }
                         ctx.refresh_async().await;
                     });

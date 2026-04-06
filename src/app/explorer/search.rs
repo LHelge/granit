@@ -72,7 +72,7 @@ pub fn Search() -> impl IntoView {
                                         let s = slug_click.clone();
                                         leptos::task::spawn_local(async move {
                                             match ipc::read_note(&s).await {
-                                                Ok(note) => ctx.active_note.set(Some(note)),
+                                                Ok(note) => ctx.set_active_note_document(note),
                                                 Err(e) => { ctx.push_error("search", format!("Failed to open note: {e}")); }
                                             }
                                         });

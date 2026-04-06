@@ -28,7 +28,7 @@ pub fn TodoGroups(todos: Signal<Vec<TodoItem>>, completed: bool) -> impl IntoVie
                             let s = slug_open.clone();
                             leptos::task::spawn_local(async move {
                                 match ipc::read_note(&s).await {
-                                    Ok(note) => ctx.active_note.set(Some(note)),
+                                    Ok(note) => ctx.set_active_note_document(note),
                                     Err(e) => {
                                         ctx.push_error("todo", format!("Failed to open note: {e}"));
                                     }
@@ -84,7 +84,7 @@ pub fn TodoGroups(todos: Signal<Vec<TodoItem>>, completed: bool) -> impl IntoVie
                                                             let s = item_slug_open.clone();
                                                             leptos::task::spawn_local(async move {
                                                                 match ipc::read_note(&s).await {
-                                                                    Ok(note) => ctx.active_note.set(Some(note)),
+                                                                    Ok(note) => ctx.set_active_note_document(note),
                                                                     Err(e) => {
                                                                         ctx.push_error(
                                                                             "todo",

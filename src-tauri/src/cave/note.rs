@@ -2,7 +2,7 @@ use std::path::{Component, Path};
 
 use super::CaveError;
 
-pub use granit_types::{Note, NoteMeta};
+pub use granit_types::{Note, NoteMeta, Template, TemplateMeta};
 
 /// Build note metadata including the icon from a file on disk.
 ///
@@ -37,6 +37,32 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> NoteMeta {
     NoteMeta {
         slug,
         relative_path: path_str,
+        icon: None,
+    }
+}
+
+/// Build template metadata including the icon from a file on disk.
+pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> TemplateMeta {
+    let mut meta = template_meta_from_path(abs_path);
+    if let Ok(raw) = std::fs::read_to_string(abs_path) {
+        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
+    }
+    meta
+}
+
+/// Build template metadata from a template file path.
+pub(crate) fn template_meta_from_path(path: &Path) -> TemplateMeta {
+    let slug = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let relative_path = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    TemplateMeta {
+        slug,
+        relative_path,
         icon: None,
     }
 }

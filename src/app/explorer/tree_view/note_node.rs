@@ -50,7 +50,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                                         Ok(new_meta) => {
                                             if ctx.active_note.get().map(|n| n.meta.slug == old).unwrap_or(false) {
                                                 if let Ok(note) = ipc::read_note(&new_meta.slug).await {
-                                                    ctx.active_note.set(Some(note));
+                                                    ctx.app.set_active_note_document(note);
                                                 }
                                             }
                                             ctx.refresh_async().await;
@@ -82,7 +82,7 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                                 let s = slug_click.clone();
                                 leptos::task::spawn_local(async move {
                                     match ipc::read_note(&s).await {
-                                        Ok(note) => ctx.active_note.set(Some(note)),
+                                        Ok(note) => ctx.app.set_active_note_document(note),
                                         Err(e) => ctx.push_error(format!("Failed to load note: {e}")),
                                     }
                                 });

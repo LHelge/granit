@@ -83,6 +83,9 @@ pub struct AppConfig {
     /// Folder name/path (relative to cave root) where daily notes are stored.
     #[serde(default = "default_daily_note_folder")]
     pub daily_note_folder: String,
+    /// Optional template slug used when creating a new daily note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_note_template_slug: Option<String>,
     /// The currently open cave path, if any. Runtime-only in backend persistence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_cave: Option<String>,
@@ -99,6 +102,7 @@ impl Default for AppConfig {
             agent_panel: SidebarConfig::agent_default(),
             theme: "dark".to_string(),
             daily_note_folder: "Daily".to_string(),
+            daily_note_template_slug: None,
             active_cave: None,
         }
     }
@@ -119,6 +123,7 @@ mod tests {
         ));
         assert_eq!(config.theme, "dark");
         assert_eq!(config.daily_note_folder, "Daily");
+        assert!(config.daily_note_template_slug.is_none());
     }
 
     #[test]
@@ -127,6 +132,7 @@ mod tests {
         assert_eq!(config.theme, "dark");
         assert_eq!(config.daily_note_folder, "Daily");
         assert_eq!(config.markdown_font, FontConfig::markdown_default());
+        assert!(config.daily_note_template_slug.is_none());
         assert!(config.active_cave.is_none());
     }
 
@@ -136,6 +142,7 @@ mod tests {
         let config: AppConfig = serde_yml::from_str(yaml).unwrap();
         assert_eq!(config.theme, "catppuccin-mocha");
         assert_eq!(config.daily_note_folder, "Daily");
+        assert!(config.daily_note_template_slug.is_none());
         assert_eq!(config.agent.max_history, 100);
     }
 
@@ -145,6 +152,7 @@ mod tests {
         let config: AppConfig = serde_yml::from_str(yaml).unwrap();
         assert_eq!(config.theme, "latte");
         assert_eq!(config.daily_note_folder, "Daily");
+        assert!(config.daily_note_template_slug.is_none());
         assert!(config.active_cave.is_none());
     }
 
@@ -172,5 +180,18 @@ mod tests {
     fn test_active_cave_none_is_not_serialized() {
         let yaml = serde_yml::to_string(&AppConfig::default()).unwrap();
         assert!(!yaml.contains("active_cave"));
+    }
+
+    #[test]
+    fn test_daily_note_template_slug_round_trips() {
+        let yaml = "daily_note_template_slug: daily-template\n";
+        let config: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(
+            config.daily_note_template_slug.as_deref(),
+            Some("daily-template")
+        );
+
+        let serialized = serde_yml::to_string(&config).unwrap();
+        assert!(serialized.contains("daily_note_template_slug: daily-template"));
     }
 }
