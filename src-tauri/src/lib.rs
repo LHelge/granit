@@ -17,6 +17,13 @@ use tauri_plugin_store::StoreExt;
 const APP_STATE_STORE_PATH: &str = "app-state.json";
 const ACTIVE_CAVE_STORE_KEY: &str = "active_cave";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RestoreActiveCaveOutcome {
+    NoStoredPath,
+    Restored,
+    ClearStoredKey,
+}
+
 #[derive(Debug, thiserror::Error)]
 enum ConfigError {
     #[error("IO error: {0}")]
@@ -79,30 +86,40 @@ fn clear_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
     store.save().map_err(|err| err.to_string())
 }
 
-fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(manager: &M) -> Result<(), String> {
-    let Some(path) = load_persisted_active_cave(manager)? else {
-        return Ok(());
+fn restore_active_cave_from_path(
+    path: Option<PathBuf>,
+    state: &AppState,
+) -> Result<RestoreActiveCaveOutcome, String> {
+    let Some(path) = path else {
+        return Ok(RestoreActiveCaveOutcome::NoStoredPath);
     };
 
     if !path.is_dir() {
-        clear_persisted_active_cave(manager)?;
-        return Ok(());
+        return Ok(RestoreActiveCaveOutcome::ClearStoredKey);
     }
 
     match Cave::open(path) {
         Ok(cave) => {
             cave.ensure_config().map_err(|err| err.to_string())?;
             let config = cave.load_config().map_err(|err| err.to_string())?;
-            let state = manager.state::<AppState>();
             *state.lock_config() = config;
             state.set_cave(Some(cave));
-            Ok(())
+            Ok(RestoreActiveCaveOutcome::Restored)
         }
-        Err(_) => {
-            clear_persisted_active_cave(manager)?;
-            Ok(())
-        }
+        Err(_) => Ok(RestoreActiveCaveOutcome::ClearStoredKey),
     }
+}
+
+fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(manager: &M) -> Result<(), String> {
+    let path = load_persisted_active_cave(manager)?;
+    let state = manager.state::<AppState>();
+    let outcome = restore_active_cave_from_path(path, state.inner())?;
+
+    if outcome == RestoreActiveCaveOutcome::ClearStoredKey {
+        clear_persisted_active_cave(manager)?;
+    }
+
+    Ok(())
 }
 
 struct AppState {
@@ -169,6 +186,27 @@ impl AppState {
     }
 }
 
+fn save_config_to_active_cave(state: &AppState, config: &AppConfig) -> Result<(), ConfigError> {
+    let cave = state.lock_cave();
+    let cave = cave
+        .as_ref()
+        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
+    cave.save_config(config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))
+}
+
+fn save_config_to_active_cave_if_open(
+    state: &AppState,
+    config: &AppConfig,
+) -> Result<(), ConfigError> {
+    let cave = state.lock_cave();
+    let Some(cave) = cave.as_ref() else {
+        return Ok(());
+    };
+    cave.save_config(config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))
+}
+
 #[tauri::command]
 fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let config = state.lock_config();
@@ -218,22 +256,21 @@ fn save_config(
 ) -> Result<AppConfig, ConfigError> {
     agent.validate().map_err(ConfigError::Validation)?;
 
-    let mut config = state.lock_config();
-    let cave = state.lock_cave();
-    let cave = cave
-        .as_ref()
-        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
-    config.agent = agent;
-    config.markdown_font = markdown_font;
-    config.reading_font = reading_font;
-    config.agent_font = agent_font;
-    config.daily_note_folder = daily_note_folder;
-    config.theme = theme;
-    cave.save_config(&config)
-        .map_err(|err| ConfigError::Validation(err.to_string()))?;
+    let response = {
+        let mut config = state.lock_config();
+        config.agent = agent;
+        config.markdown_font = markdown_font;
+        config.reading_font = reading_font;
+        config.agent_font = agent_font;
+        config.daily_note_folder = daily_note_folder;
+        config.theme = theme;
+        config.clone()
+    };
+
+    save_config_to_active_cave(state.inner(), &response)?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent();
-    Ok(state.ipc_response(&config))
+    Ok(state.ipc_response(&response))
 }
 
 #[tauri::command]
@@ -242,15 +279,13 @@ fn save_sidebar_state(
     agent_panel: SidebarConfig,
     state: tauri::State<AppState>,
 ) -> Result<(), ConfigError> {
-    let mut config = state.lock_config();
-    config.sidebar = sidebar;
-    config.agent_panel = agent_panel;
-    let cave = state.lock_cave();
-    let Some(cave) = cave.as_ref() else {
-        return Ok(());
+    let response = {
+        let mut config = state.lock_config();
+        config.sidebar = sidebar;
+        config.agent_panel = agent_panel;
+        config.clone()
     };
-    cave.save_config(&config)
-        .map_err(|err| ConfigError::Validation(err.to_string()))?;
+    save_config_to_active_cave_if_open(state.inner(), &response)?;
     Ok(())
 }
 
@@ -496,22 +531,21 @@ fn list_providers(
 
 #[tauri::command]
 fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
-    let mut config = state.lock_config();
-    let cave = state.lock_cave();
-    let cave = cave
-        .as_ref()
-        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
-    if index >= config.agent.providers.len() {
-        return Err(ConfigError::Validation(format!(
-            "Provider index {index} out of range"
-        )));
-    }
-    config.agent.selected_provider = index;
-    config.agent.selected_model = None;
-    cave.save_config(&config)
-        .map_err(|err| ConfigError::Validation(err.to_string()))?;
+    let response = {
+        let mut config = state.lock_config();
+        if index >= config.agent.providers.len() {
+            return Err(ConfigError::Validation(format!(
+                "Provider index {index} out of range"
+            )));
+        }
+        config.agent.selected_provider = index;
+        config.agent.selected_model = None;
+        config.clone()
+    };
+
+    save_config_to_active_cave(state.inner(), &response)?;
     state.reset_agent();
-    Ok(state.ipc_response(&config))
+    Ok(state.ipc_response(&response))
 }
 
 #[tauri::command]
@@ -535,16 +569,15 @@ async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>
 
 #[tauri::command]
 fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
-    let mut config = state.lock_config();
-    let cave = state.lock_cave();
-    let cave = cave
-        .as_ref()
-        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
-    config.agent.selected_model = Some(model_id);
-    cave.save_config(&config)
-        .map_err(|err| ConfigError::Validation(err.to_string()))?;
+    let response = {
+        let mut config = state.lock_config();
+        config.agent.selected_model = Some(model_id);
+        config.clone()
+    };
+
+    save_config_to_active_cave(state.inner(), &response)?;
     state.reset_agent();
-    Ok(state.ipc_response(&config))
+    Ok(state.ipc_response(&response))
 }
 
 #[tauri::command]
@@ -680,4 +713,59 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_app_state() -> AppState {
+        AppState {
+            config: Mutex::new(AppConfig::default()),
+            cave: Arc::new(Mutex::new(None)),
+            agent: Mutex::new(None),
+            agent_generation: AtomicU64::new(0),
+        }
+    }
+
+    #[test]
+    fn test_restore_active_cave_from_path_restores_cave_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+
+        let config = AppConfig {
+            theme: "latte".to_string(),
+            ..AppConfig::default()
+        };
+        cave.save_config(&config).unwrap();
+
+        let state = test_app_state();
+        let outcome =
+            restore_active_cave_from_path(Some(dir.path().to_path_buf()), &state).unwrap();
+
+        assert_eq!(outcome, RestoreActiveCaveOutcome::Restored);
+        assert_eq!(state.active_cave_path(), Some(dir.path().to_path_buf()));
+        assert_eq!(state.lock_config().theme, "latte");
+    }
+
+    #[test]
+    fn test_restore_active_cave_from_path_requests_clear_for_missing_cave() {
+        let state = test_app_state();
+        let missing_path = std::env::temp_dir().join("granit-missing-cave-test-path");
+        let outcome = restore_active_cave_from_path(Some(missing_path), &state).unwrap();
+
+        assert_eq!(outcome, RestoreActiveCaveOutcome::ClearStoredKey);
+        assert!(state.active_cave_path().is_none());
+        assert_eq!(state.lock_config().theme, AppConfig::default().theme);
+    }
+
+    #[test]
+    fn test_restore_active_cave_from_path_with_no_stored_path_is_noop() {
+        let state = test_app_state();
+        let outcome = restore_active_cave_from_path(None, &state).unwrap();
+
+        assert_eq!(outcome, RestoreActiveCaveOutcome::NoStoredPath);
+        assert!(state.active_cave_path().is_none());
+    }
 }
