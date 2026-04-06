@@ -1,6 +1,14 @@
 use crate::AgentConfig;
 use serde::{Deserialize, Serialize};
 
+fn default_theme() -> String {
+    "dark".to_string()
+}
+
+fn default_daily_note_folder() -> String {
+    "Daily".to_string()
+}
+
 /// Sidebar panel state (visibility + width).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SidebarConfig {
@@ -54,30 +62,35 @@ impl FontConfig {
     }
 }
 
-/// Application configuration as returned over IPC.
-///
-/// Paths are represented as strings for cross-platform serialization.
+/// Application configuration shared between backend persistence and frontend IPC.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    pub recent_caves: Vec<String>,
+    #[serde(default)]
     pub agent: AgentConfig,
+    #[serde(default = "FontConfig::markdown_default")]
     pub markdown_font: FontConfig,
+    #[serde(default = "FontConfig::reading_default")]
     pub reading_font: FontConfig,
+    #[serde(default = "FontConfig::agent_default")]
     pub agent_font: FontConfig,
+    #[serde(default = "SidebarConfig::sidebar_default")]
     pub sidebar: SidebarConfig,
+    #[serde(default = "SidebarConfig::agent_default")]
     pub agent_panel: SidebarConfig,
     /// Active theme id (e.g. "default", "mocha").
+    #[serde(default = "default_theme")]
     pub theme: String,
     /// Folder name/path (relative to cave root) where daily notes are stored.
+    #[serde(default = "default_daily_note_folder")]
     pub daily_note_folder: String,
-    /// The currently open cave path, if any. Runtime-only — not persisted.
+    /// The currently open cave path, if any. Runtime-only in backend persistence.
+    #[serde(default)]
     pub active_cave: Option<String>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            recent_caves: Vec::new(),
             agent: AgentConfig::default(),
             markdown_font: FontConfig::markdown_default(),
             reading_font: FontConfig::reading_default(),
@@ -88,5 +101,70 @@ impl Default for AppConfig {
             daily_note_folder: "Daily".to_string(),
             active_cave: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ProviderConfig;
+
+    #[test]
+    fn test_default_has_ollama_provider() {
+        let config = AppConfig::default();
+        assert_eq!(config.agent.providers.len(), 1);
+        assert!(matches!(
+            config.agent.providers[0].provider,
+            ProviderConfig::Ollama { .. }
+        ));
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.daily_note_folder, "Daily");
+    }
+
+    #[test]
+    fn test_empty_yaml_uses_all_defaults() {
+        let config: AppConfig = serde_yml::from_str("").unwrap();
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.daily_note_folder, "Daily");
+        assert_eq!(config.markdown_font, FontConfig::markdown_default());
+        assert!(config.active_cave.is_none());
+    }
+
+    #[test]
+    fn test_partial_yaml_overrides_only_specified_fields() {
+        let yaml = "theme: catppuccin-mocha\n";
+        let config: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(config.theme, "catppuccin-mocha");
+        assert_eq!(config.daily_note_folder, "Daily");
+        assert_eq!(config.agent.max_history, 100);
+    }
+
+    #[test]
+    fn test_legacy_recent_caves_field_is_ignored() {
+        let yaml = "recent_caves:\n  - /old/cave\ntheme: latte\n";
+        let config: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(config.theme, "latte");
+        assert_eq!(config.daily_note_folder, "Daily");
+        assert!(config.active_cave.is_none());
+    }
+
+    #[test]
+    fn test_yaml_with_provider_deserializes() {
+        let yaml = "agent:\n  providers:\n    - provider: anthropic\n      api_key: sk-test\n";
+        let config: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert!(matches!(
+            config.agent.providers[0].provider,
+            ProviderConfig::Anthropic { .. }
+        ));
+        assert_eq!(config.agent.max_history, 100);
+    }
+
+    #[test]
+    fn test_yaml_without_font_keys_uses_defaults() {
+        let yaml = "agent:\n  selected_provider: 0\n";
+        let config: AppConfig = serde_yml::from_str(yaml).unwrap();
+        assert_eq!(config.markdown_font, FontConfig::markdown_default());
+        assert_eq!(config.reading_font, FontConfig::reading_default());
+        assert_eq!(config.agent_font, FontConfig::agent_default());
     }
 }

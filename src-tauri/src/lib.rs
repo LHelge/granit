@@ -9,9 +9,10 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
-use config::{AgentConfig, AppConfig, ConfigError, SidebarConfig};
+use config::ConfigError;
 use granit_types::{
-    AppConfig as IpcConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, TodoList,
+    AgentConfig, AppConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, SidebarConfig,
+    TodoList,
 };
 
 struct AppState {
@@ -69,8 +70,8 @@ impl AppState {
     }
 
     /// Build the IPC response for commands that return the current config state.
-    fn ipc_response(&self, config: &AppConfig) -> IpcConfig {
-        let mut ipc = config.to_ipc();
+    fn ipc_response(&self, config: &AppConfig) -> AppConfig {
+        let mut ipc = config.clone();
         ipc.active_cave = self
             .active_cave_path()
             .map(|p| p.to_string_lossy().into_owned());
@@ -79,7 +80,7 @@ impl AppState {
 }
 
 #[tauri::command]
-fn get_config(state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let config = state.lock_config();
     Ok(state.ipc_response(&config))
 }
@@ -115,7 +116,7 @@ fn list_system_fonts() -> Vec<String> {
 }
 
 #[tauri::command]
-/// Save settings to the global config file.
+/// Save settings to the current config storage.
 fn save_config(
     agent: AgentConfig,
     markdown_font: FontConfig,
@@ -124,7 +125,7 @@ fn save_config(
     daily_note_folder: String,
     theme: String,
     state: tauri::State<AppState>,
-) -> Result<IpcConfig, ConfigError> {
+) -> Result<AppConfig, ConfigError> {
     agent.validate().map_err(ConfigError::Validation)?;
 
     let mut config = state.lock_config();
@@ -134,7 +135,7 @@ fn save_config(
     config.agent_font = agent_font;
     config.daily_note_folder = daily_note_folder;
     config.theme = theme;
-    config.save()?;
+    config::save(&config)?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent();
     Ok(state.ipc_response(&config))
@@ -149,22 +150,18 @@ fn save_sidebar_state(
     let mut config = state.lock_config();
     config.sidebar = sidebar;
     config.agent_panel = agent_panel;
-    config.save()?;
+    config::save(&config)?;
     Ok(())
 }
 
 #[tauri::command]
-fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<IpcConfig, CaveError> {
-    AppConfig::ensure_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
-    AppConfig::save_recent_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
+fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, CaveError> {
+    config::ensure_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
 
     state.set_cave(Some(Cave::open(path.clone())?));
     state.reset_agent();
 
-    // Reload config from disk (now includes the updated recent_caves)
-    let mut config = state.lock_config();
-    *config = AppConfig::load().map_err(|e| CaveError::Io(e.to_string()))?;
-
+    let config = state.lock_config();
     Ok(state.ipc_response(&config))
 }
 
@@ -390,7 +387,7 @@ fn list_providers(
 }
 
 #[tauri::command]
-fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let mut config = state.lock_config();
     if index >= config.agent.providers.len() {
         return Err(ConfigError::Validation(format!(
@@ -399,7 +396,7 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<IpcCon
     }
     config.agent.selected_provider = index;
     config.agent.selected_model = None;
-    config.save()?;
+    config::save(&config)?;
     state.reset_agent();
     Ok(state.ipc_response(&config))
 }
@@ -424,10 +421,10 @@ async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>
 }
 
 #[tauri::command]
-fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<IpcConfig, ConfigError> {
+fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let mut config = state.lock_config();
     config.agent.selected_model = Some(model_id);
-    config.save()?;
+    config::save(&config)?;
     state.reset_agent();
     Ok(state.ipc_response(&config))
 }
@@ -511,7 +508,7 @@ fn list_tools() -> Vec<granit_types::ToolInfo> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let config = AppConfig::ensure().expect("failed to initialize config");
+    let config = config::ensure().expect("failed to initialize config");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
