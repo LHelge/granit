@@ -55,6 +55,8 @@ pub(super) struct EditorCtx {
     pub tags: RwSignal<Vec<String>>,
     /// Frontmatter icon ID for the current note, e.g. `"Star"`.
     pub icon: RwSignal<Option<String>>,
+    /// Monotonic counter used to ignore stale async render results.
+    render_request_id: RwSignal<u64>,
 }
 
 impl EditorCtx {
@@ -74,12 +76,36 @@ impl EditorCtx {
         Ok(meta)
     }
 
-    /// Render a note by slug and update the rendered_note signal.
-    async fn render(self, slug: &str) {
-        match ipc::render_note(slug).await {
-            Ok(rendered) => self.rendered_note.set(Some(rendered)),
-            Err(_) => self.rendered_note.set(None),
-        }
+    fn invalidate_renders(self) {
+        let next = self.render_request_id.get_untracked().wrapping_add(1);
+        self.render_request_id.set(next);
+    }
+
+    /// Render a note by slug and update the rendered note only if this is
+    /// still the latest request for the currently active note.
+    fn request_render(self, slug: String) {
+        let request_id = self.render_request_id.get_untracked().wrapping_add(1);
+        self.render_request_id.set(request_id);
+
+        leptos::task::spawn_local(async move {
+            let rendered = ipc::render_note(&slug).await;
+            let still_latest = self.render_request_id.get_untracked() == request_id;
+            let still_active = self
+                .active_note
+                .get_untracked()
+                .as_ref()
+                .map(|note| note.meta.slug.as_str() == slug.as_str())
+                .unwrap_or(false);
+
+            if !still_latest || !still_active {
+                return;
+            }
+
+            match rendered {
+                Ok(rendered) => self.rendered_note.set(Some(rendered)),
+                Err(_) => self.rendered_note.set(None),
+            }
+        });
     }
 
     /// Auto-save the current edits when switching away from a note.
@@ -125,10 +151,8 @@ impl EditorCtx {
             {
                 Ok(meta) => {
                     self.prev_slug.set(Some(meta.slug.clone()));
-                    let slug = meta.slug.clone();
                     self.active_note.set(Some(Note { meta, content }));
                     self.editing.set(false);
-                    self.render(&slug).await;
                 }
                 Err(e) => self.error.set(Some(e)),
             }
@@ -143,10 +167,7 @@ impl EditorCtx {
         // Re-render when switching back to preview (content may have been edited)
         if was_editing {
             if let Some(note) = self.active_note.get_untracked() {
-                let slug = note.meta.slug.clone();
-                leptos::task::spawn_local(async move {
-                    self.render(&slug).await;
-                });
+                self.request_render(note.meta.slug.clone());
             }
         }
     }
@@ -198,6 +219,7 @@ pub fn Editor() -> impl IntoView {
         prev_slug: RwSignal::new(None),
         tags: RwSignal::new(Vec::new()),
         icon: RwSignal::new(None),
+        render_request_id: RwSignal::new(0),
     };
     provide_context(ctx);
 
@@ -232,13 +254,11 @@ pub fn Editor() -> impl IntoView {
 
         // Re-render whenever the note changes (switch or same-slug update)
         match &new_note {
-            Some(note) => {
-                let slug = note.meta.slug.clone();
-                leptos::task::spawn_local(async move {
-                    ctx.render(&slug).await;
-                });
+            Some(note) => ctx.request_render(note.meta.slug.clone()),
+            None => {
+                ctx.invalidate_renders();
+                ctx.rendered_note.set(None);
             }
-            None => ctx.rendered_note.set(None),
         }
 
         // Sync local editor state with the new active note

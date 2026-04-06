@@ -8,24 +8,8 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
 
     let open_and_refresh = move |path: String| {
         leptos::task::spawn_local(async move {
-            match ipc::open_cave(&path).await {
-                Ok(new_config) => {
-                    ctx.config.set(new_config);
-                    match ipc::fetch_notes().await {
-                        Ok(n) => {
-                            ctx.clear_source("notes");
-                            ctx.notes.set(n);
-                        }
-                        Err(e) => {
-                            ctx.clear_source("notes");
-                            ctx.push_error("notes", e);
-                        }
-                    }
-                    if let Ok(f) = ipc::fetch_folders().await {
-                        ctx.folders.set(f);
-                    }
-                    ctx.active_note.set(None);
-                }
+            match ctx.open_cave_and_refresh(&path).await {
+                Ok(()) => {}
                 Err(e) => {
                     ctx.push_error("cave", format!("Failed to open cave: {e}"));
                 }

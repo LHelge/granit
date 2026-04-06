@@ -5,7 +5,7 @@ pub use error::AgentError;
 use rig::message::ToolCall;
 pub use tools::SharedCave;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use granit_types::{AgentConfig, ProviderConfig, ToolCallInfo};
 use rig::client::{CompletionClient, Nothing};
@@ -86,6 +86,22 @@ impl Agent {
         let entry = config.providers.get(config.selected_provider).ok_or(
             AgentError::ProviderIndexOutOfRange(config.selected_provider),
         )?;
+
+        if config.max_history == 0 {
+            return Err(AgentError::Build(
+                "Max history must be greater than 0".to_string(),
+            ));
+        }
+
+        if config.max_turns == 0 {
+            return Err(AgentError::Build(
+                "Max turns must be greater than 0".to_string(),
+            ));
+        }
+
+        for provider in &config.providers {
+            provider.validate().map_err(AgentError::Build)?;
+        }
 
         let cave_tools = tools::build_toolset(cave, config);
         let model = config
@@ -298,13 +314,24 @@ pub(crate) async fn list_models(
         }
     };
 
-    Ok(models
+    let models = dedup_model_infos(models.into_iter().map(|m| granit_types::ModelInfo {
+        id: m.id,
+        name: m.name,
+    }));
+
+    Ok(models)
+}
+
+fn dedup_model_infos(
+    models: impl IntoIterator<Item = granit_types::ModelInfo>,
+) -> Vec<granit_types::ModelInfo> {
+    let mut seen_ids = HashSet::new();
+
+    models
         .into_iter()
-        .map(|m| granit_types::ModelInfo {
-            id: m.id,
-            name: m.name,
-        })
-        .collect())
+        // Keep the first occurrence of each id across the full unsorted list.
+        .filter(|model| seen_ids.insert(model.id.clone()))
+        .collect()
 }
 
 fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
@@ -389,7 +416,7 @@ impl futures::Stream for AgentStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::{ProviderConfig, ProviderEntry};
+    use granit_types::{ModelInfo, ProviderConfig, ProviderEntry};
 
     fn empty_cave() -> SharedCave {
         std::sync::Arc::new(std::sync::Mutex::new(None))
@@ -508,5 +535,39 @@ mod tests {
         });
         let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_ok(), "Agent should build with Prisma API key");
+    }
+
+    #[test]
+    fn dedup_model_infos_keeps_first_model_per_id() {
+        let models = vec![
+            ModelInfo {
+                id: "alpha".to_string(),
+                name: Some("Alpha".to_string()),
+            },
+            ModelInfo {
+                id: "beta".to_string(),
+                name: Some("Beta".to_string()),
+            },
+            ModelInfo {
+                id: "alpha".to_string(),
+                name: Some("Alpha Duplicate".to_string()),
+            },
+        ];
+
+        let deduped = dedup_model_infos(models);
+
+        assert_eq!(
+            deduped,
+            vec![
+                ModelInfo {
+                    id: "alpha".to_string(),
+                    name: Some("Alpha".to_string()),
+                },
+                ModelInfo {
+                    id: "beta".to_string(),
+                    name: Some("Beta".to_string()),
+                },
+            ]
+        );
     }
 }

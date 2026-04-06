@@ -4,6 +4,7 @@ mod config;
 mod markdown;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
@@ -17,6 +18,7 @@ struct AppState {
     config: Mutex<AppConfig>,
     cave: SharedCave,
     agent: Mutex<Option<Agent>>,
+    agent_generation: AtomicU64,
 }
 
 impl AppState {
@@ -44,7 +46,12 @@ impl AppState {
 
     /// Reset the agent so it rebuilds with new config on next use.
     fn reset_agent(&self) {
+        self.agent_generation.fetch_add(1, Ordering::Relaxed);
         *self.lock_agent() = None;
+    }
+
+    fn agent_generation(&self) -> u64 {
+        self.agent_generation.load(Ordering::Relaxed)
     }
 
     /// Ensure the agent is initialized from current config.
@@ -118,6 +125,8 @@ fn save_config(
     theme: String,
     state: tauri::State<AppState>,
 ) -> Result<IpcConfig, ConfigError> {
+    agent.validate().map_err(ConfigError::Validation)?;
+
     let mut config = state.lock_config();
     config.agent = agent;
     config.markdown_font = markdown_font;
@@ -433,6 +442,7 @@ async fn send_message(
     use tauri::Emitter;
 
     state.ensure_agent()?;
+    let generation = state.agent_generation();
 
     // Snapshot the agent's inner + history so no lock is held across await.
     let (agent_clone, history) = {
@@ -469,10 +479,12 @@ async fn send_message(
     // Persist history (skip empty responses to avoid API rejection).
     {
         let mut guard = state.lock_agent();
-        if let Some(a) = guard.as_mut() {
-            if !response.is_empty() {
-                a.push_history(Message::user(&msg));
-                a.push_history(Message::assistant(&response));
+        if state.agent_generation() == generation {
+            if let Some(a) = guard.as_mut() {
+                if !response.is_empty() {
+                    a.push_history(Message::user(&msg));
+                    a.push_history(Message::assistant(&response));
+                }
             }
         }
     }
@@ -508,6 +520,7 @@ pub fn run() {
             config: Mutex::new(config),
             cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
+            agent_generation: AtomicU64::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             get_config,

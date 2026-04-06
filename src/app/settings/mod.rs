@@ -243,6 +243,13 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             let selected_provider = existing
                 .selected_provider
                 .min(providers.len().saturating_sub(1));
+            let selected_model = if providers == existing.providers
+                && selected_provider == existing.selected_provider
+            {
+                existing.selected_model
+            } else {
+                None
+            };
             let system_prompt = if f.system_prompt.trim().is_empty() {
                 None
             } else {
@@ -256,7 +263,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             let agent = AgentConfig {
                 providers,
                 selected_provider,
-                selected_model: existing.selected_model,
+                selected_model,
                 max_history: f.max_history,
                 max_turns: f.max_turns,
                 system_prompt,

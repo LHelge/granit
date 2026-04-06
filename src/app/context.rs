@@ -1,3 +1,4 @@
+use crate::app::ipc;
 use leptos::prelude::*;
 
 // ── App-wide shared state via context ──────────────────────────────
@@ -90,5 +91,29 @@ impl AppCtx {
             return;
         };
         let _ = root.set_attribute("data-theme", name);
+    }
+
+    /// Open a cave through IPC and refresh all frontend state that depends on it.
+    pub async fn open_cave_and_refresh(self, path: &str) -> Result<(), String> {
+        let new_config = ipc::open_cave(path).await?;
+        self.config.set(new_config);
+
+        match ipc::fetch_notes().await {
+            Ok(notes) => {
+                self.clear_source("notes");
+                self.notes.set(notes);
+            }
+            Err(err) => {
+                self.clear_source("notes");
+                self.push_error("notes", err);
+            }
+        }
+
+        if let Ok(folders) = ipc::fetch_folders().await {
+            self.folders.set(folders);
+        }
+
+        self.active_note.set(None);
+        Ok(())
     }
 }

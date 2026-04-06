@@ -84,7 +84,7 @@ impl Default for AppConfig {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
-            theme: "default".to_string(),
+            theme: "dark".to_string(),
             daily_note_folder: "Daily".to_string(),
             active_cave: None,
         }

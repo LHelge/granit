@@ -30,6 +30,9 @@ pub(super) fn setup_stream_listeners(
 
             // chunk → append to streaming_content
             if let Some(h) = ipc::listen_stream_chunk(move |text| {
+                if !is_streaming.get_untracked() {
+                    return;
+                }
                 streaming_content.update(|s| s.push_str(&text));
             })
             .await
@@ -39,6 +42,10 @@ pub(super) fn setup_stream_listeners(
 
             // done → render markdown, then move into messages
             if let Some(h) = ipc::listen_stream_done(move || {
+                if !is_streaming.get_untracked() {
+                    streaming_content.set(String::new());
+                    return;
+                }
                 let content = streaming_content.get_untracked();
                 if !content.is_empty() {
                     spawn_local(async move {
@@ -60,6 +67,9 @@ pub(super) fn setup_stream_listeners(
 
             // error
             if let Some(h) = ipc::listen_stream_error(move |err| {
+                if !is_streaming.get_untracked() {
+                    return;
+                }
                 stream_error.set(Some(err));
                 streaming_content.set(String::new());
                 is_streaming.set(false);

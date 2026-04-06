@@ -1,5 +1,10 @@
 use super::use_editor_ctx;
-use crate::app::{components::icons::Icon, ipc, AppCtx};
+use crate::app::{
+    components::icons::Icon,
+    ipc,
+    markdown_links::{classify_markdown_link_target, MarkdownLinkTarget},
+    AppCtx,
+};
 use granit_types::resolve_note_icon;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -70,42 +75,19 @@ pub(super) fn Reader() -> impl IntoView {
         }
 
         // --- Link click ---
-        let anchor = target
-            .dyn_ref::<web_sys::Element>()
-            .and_then(|el| {
-                if el.tag_name().eq_ignore_ascii_case("a") {
-                    Some(el.clone())
-                } else {
-                    el.closest("a").ok().flatten()
-                }
-            })
-            .and_then(|el| el.dyn_into::<web_sys::HtmlAnchorElement>().ok());
-
-        let Some(anchor) = anchor else { return };
-        let href = anchor.get_attribute("href").unwrap_or_default();
-
-        if href.is_empty() || href.starts_with('#') || href.starts_with('/') {
+        let Some(link) = classify_markdown_link_target(Some(target)) else {
             return;
-        }
-
-        // External links → open in system browser
-        if href.starts_with("http://") || href.starts_with("https://") {
-            ev.prevent_default();
-            let url = href.clone();
-            leptos::task::spawn_local(async move {
-                let _ = ipc::open_url(&url).await;
-            });
-            return;
-        }
+        };
 
         ev.prevent_default();
-        // Decode percent-encoded characters (e.g. %20 → space) before lookup
-        let slug = js_sys::decode_uri_component(&href)
-            .ok()
-            .and_then(|s| s.as_string())
-            .unwrap_or(href);
-        let is_broken = anchor.class_list().contains("broken-link");
-        ctx.navigate_wiki_link(slug, is_broken);
+        match link {
+            MarkdownLinkTarget::External(url) => {
+                leptos::task::spawn_local(async move {
+                    let _ = ipc::open_url(&url).await;
+                });
+            }
+            MarkdownLinkTarget::Wiki { slug, is_broken } => ctx.navigate_wiki_link(slug, is_broken),
+        }
     };
 
     view! {

@@ -133,7 +133,7 @@ fn render_with_wiki_links<'lookup>(
 /// Generate the initial file content for a new note.
 ///
 /// Produces a YAML frontmatter block with `created_at` and `modified_at` set
-/// to the current UTC time, followed by a level-1 heading using the slug.
+/// to the current UTC time. The note body starts empty.
 pub fn initial_content(_slug: &str) -> String {
     let now = Utc::now();
     let fm = Frontmatter {

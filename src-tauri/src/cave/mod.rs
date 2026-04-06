@@ -236,15 +236,7 @@ impl Cave {
         // Create the note if it doesn't exist yet, setting the calendar icon.
         if !self.notes.contains_key(today.as_str()) {
             self.create_note(&today, Some(folder_path))?;
-            let abs_path = self.notes[today.as_str()].clone();
-            let raw = std::fs::read_to_string(&abs_path)?;
-            let updated = crate::markdown::rebuild_with_frontmatter(
-                &raw,
-                "",
-                None,
-                Some("Calendar".to_string()),
-            );
-            std::fs::write(&abs_path, updated)?;
+            self.set_note_icon(&today, Some("Calendar".to_string()))?;
         }
 
         self.read_note(&today)
@@ -584,6 +576,26 @@ impl Cave {
         Ok(meta)
     }
 
+    /// Update only a note's icon while preserving the current body and tags.
+    pub fn set_note_icon(&self, slug: &str, icon: Option<String>) -> Result<NoteMeta, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+
+        let existing_raw = std::fs::read_to_string(abs_path)?;
+        let existing_body = crate::markdown::strip_frontmatter(&existing_raw);
+        let updated =
+            crate::markdown::rebuild_with_frontmatter(&existing_raw, existing_body, None, icon);
+        std::fs::write(abs_path, &updated)?;
+
+        let rel = self.relative_path(abs_path);
+        let mut meta = note_meta_from_relative_path(&rel);
+        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        Ok(meta)
+    }
+
     /// Replace `old_text` with `new_text` in an existing note (looked up by slug).
     /// Fails if `old_text` is not found in the note's content.
     #[allow(dead_code)]
@@ -822,7 +834,11 @@ impl Cave {
         if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
-                let _ = std::fs::rename(&final_abs, &old_abs);
+                if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
+                    return Err(CaveError::Io(format!(
+                        "failed to write updated note after rename: {e}; rollback also failed: {rollback_err}"
+                    )));
+                }
             }
             return Err(e.into());
         }
@@ -1634,6 +1650,24 @@ mod tests {
         assert!(dir.path().join("Daily").is_dir());
         assert!(dir.path().join(format!("Daily/{today}.md")).exists());
         assert_eq!(note.meta.icon.as_deref(), Some("Calendar"));
+        assert!(note.content.is_empty(), "daily note body should stay empty");
+    }
+
+    #[test]
+    fn test_set_note_icon_preserves_existing_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let note_path = dir.path().join("note.md");
+        std::fs::write(&note_path, "---\ntags: [test]\n---\nBody text\n").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let meta = cave
+            .set_note_icon("note", Some("Star".to_string()))
+            .unwrap();
+        let note = cave.read_note("note").unwrap();
+
+        assert_eq!(meta.icon.as_deref(), Some("Star"));
+        assert_eq!(note.meta.icon.as_deref(), Some("Star"));
+        assert_eq!(note.content, "Body text\n");
     }
 
     #[test]

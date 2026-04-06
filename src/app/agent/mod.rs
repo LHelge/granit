@@ -60,6 +60,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 messages.set(Vec::new());
                 streaming_content.set(String::new());
                 stream_error.set(None);
+                is_streaming.set(false);
             }
         }
         prev_identity.set(Some(current));

@@ -1,7 +1,11 @@
-use crate::app::{components::icons::Icon, ipc, AppCtx};
+use crate::app::{
+    components::icons::Icon,
+    ipc,
+    markdown_links::{classify_markdown_link_target, MarkdownLinkTarget},
+    AppCtx,
+};
 use granit_types::{ChatMessage, ChatRole, ToolCallInfo};
 use leptos::{ev::MouseEvent, prelude::*, task::spawn_local};
-use wasm_bindgen::JsCast;
 
 #[derive(Clone)]
 pub(super) struct DisplayMessage {
@@ -43,56 +47,32 @@ pub(super) fn MessageList(
 
     // Intercept clicks on links in rendered markdown within the agent panel.
     let on_link_click = move |ev: MouseEvent| {
-        let Some(target) = ev.target() else { return };
-        let anchor = target
-            .dyn_ref::<web_sys::Element>()
-            .and_then(|el| {
-                if el.tag_name().eq_ignore_ascii_case("a") {
-                    Some(el.clone())
-                } else {
-                    el.closest("a").ok().flatten()
-                }
-            })
-            .and_then(|el| el.dyn_into::<web_sys::HtmlAnchorElement>().ok());
-
-        let Some(anchor) = anchor else { return };
-        let href = anchor.get_attribute("href").unwrap_or_default();
-
-        if href.is_empty() || href.starts_with('#') || href.starts_with('/') {
+        let Some(link) = classify_markdown_link_target(ev.target()) else {
             return;
-        }
+        };
 
-        // External links → open in system browser
-        if href.starts_with("http://") || href.starts_with("https://") {
-            ev.prevent_default();
-            let url = href.clone();
-            spawn_local(async move {
-                let _ = ipc::open_url(&url).await;
-            });
-            return;
-        }
-
-        // Wiki-link → navigate to note
         ev.prevent_default();
-        let slug = js_sys::decode_uri_component(&href)
-            .ok()
-            .and_then(|s| s.as_string())
-            .unwrap_or(href);
-        let is_broken = anchor.class_list().contains("broken-link");
-        spawn_local(async move {
-            if is_broken {
-                if let Ok(meta) = ipc::create_note(&slug, None).await {
-                    if let Ok(all) = ipc::fetch_notes().await {
-                        app.notes.set(all);
-                    }
-                    if let Ok(note) = ipc::read_note(&meta.slug).await {
-                        app.active_note.set(Some(note));
-                    }
-                }
-            } else if let Ok(note) = ipc::read_note(&slug).await {
-                app.active_note.set(Some(note));
+        match link {
+            MarkdownLinkTarget::External(url) => {
+                spawn_local(async move {
+                    let _ = ipc::open_url(&url).await;
+                });
             }
-        });
+            MarkdownLinkTarget::Wiki { slug, is_broken } => spawn_local(async move {
+                if is_broken {
+                    if let Ok(meta) = ipc::create_note(&slug, None).await {
+                        if let Ok(all) = ipc::fetch_notes().await {
+                            app.notes.set(all);
+                        }
+                        if let Ok(note) = ipc::read_note(&meta.slug).await {
+                            app.active_note.set(Some(note));
+                        }
+                    }
+                } else if let Ok(note) = ipc::read_note(&slug).await {
+                    app.active_note.set(Some(note));
+                }
+            }),
+        }
     };
 
     view! {

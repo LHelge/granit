@@ -107,6 +107,15 @@ impl ProviderEntry {
             ProviderConfig::Prisma { .. } => "Prisma".to_string(),
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        match &self.provider {
+            ProviderConfig::Ollama { .. } => Ok(()),
+            ProviderConfig::Anthropic { api_key } => validate_api_key("Anthropic", api_key),
+            ProviderConfig::Mistral { api_key } => validate_api_key("Mistral", api_key),
+            ProviderConfig::Prisma { api_key } => validate_api_key("Prisma", api_key),
+        }
+    }
 }
 
 /// Agent configuration.
@@ -153,6 +162,36 @@ impl AgentConfig {
             provider: ProviderConfig::Ollama { base_url: None },
         }]
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.providers.is_empty() {
+            return Err("At least one provider must be configured".to_string());
+        }
+
+        if self.selected_provider >= self.providers.len() {
+            return Err(format!(
+                "Selected provider index {} is out of range for {} configured provider(s)",
+                self.selected_provider,
+                self.providers.len()
+            ));
+        }
+
+        for (index, entry) in self.providers.iter().enumerate() {
+            entry
+                .validate()
+                .map_err(|err| format!("Provider {}: {err}", index + 1))?;
+        }
+
+        if self.max_history == 0 {
+            return Err("Max history must be greater than 0".to_string());
+        }
+
+        if self.max_turns == 0 {
+            return Err("Max turns must be greater than 0".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for AgentConfig {
@@ -168,6 +207,14 @@ impl Default for AgentConfig {
             brave_api_key: None,
         }
     }
+}
+
+fn validate_api_key(provider: &str, api_key: &str) -> Result<(), String> {
+    if api_key.trim().is_empty() {
+        return Err(format!("{provider} provider requires an API key"));
+    }
+
+    Ok(())
 }
 
 /// Lightweight model information returned by a provider's API.
@@ -385,6 +432,41 @@ mod tests {
         assert_eq!(parsed.selected_provider, 1);
         assert_eq!(parsed.max_history, 50);
         assert_eq!(parsed.providers[1].name, Some("Claude".into()));
+    }
+
+    #[test]
+    fn provider_validation_requires_api_keys_when_needed() {
+        let entry = ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Anthropic {
+                api_key: "   ".into(),
+            },
+        };
+
+        let err = entry.validate().expect_err("validation should fail");
+        assert!(err.contains("requires an API key"));
+    }
+
+    #[test]
+    fn agent_config_validation_rejects_empty_provider_list() {
+        let config = AgentConfig {
+            providers: Vec::new(),
+            ..AgentConfig::default()
+        };
+
+        let err = config.validate().expect_err("validation should fail");
+        assert!(err.contains("At least one provider"));
+    }
+
+    #[test]
+    fn agent_config_validation_rejects_invalid_selected_provider() {
+        let config = AgentConfig {
+            selected_provider: 5,
+            ..AgentConfig::default()
+        };
+
+        let err = config.validate().expect_err("validation should fail");
+        assert!(err.contains("out of range"));
     }
 
     #[test]

@@ -5,6 +5,7 @@ mod editor;
 mod explorer;
 mod info;
 pub(crate) mod ipc;
+mod markdown_links;
 mod settings;
 
 pub(crate) use context::AppCtx;
@@ -108,23 +109,8 @@ pub fn App() -> impl IntoView {
 
         // Re-open the last cave so the backend has a cave_path set
         if let Some(path) = recent {
-            match ipc::open_cave(&path).await {
-                Ok(new_cfg) => {
-                    ctx.config.set(new_cfg);
-                    match ipc::fetch_notes().await {
-                        Ok(n) => {
-                            ctx.clear_source("notes");
-                            ctx.notes.set(n);
-                        }
-                        Err(e) => {
-                            ctx.clear_source("notes");
-                            ctx.push_error("notes", e);
-                        }
-                    }
-                    if let Ok(f) = ipc::fetch_folders().await {
-                        ctx.folders.set(f);
-                    }
-                }
+            match ctx.open_cave_and_refresh(&path).await {
+                Ok(()) => {}
                 Err(e) => {
                     ctx.push_error("cave", format!("Failed to reopen cave: {e}"));
                 }

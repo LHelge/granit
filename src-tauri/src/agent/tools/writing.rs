@@ -63,7 +63,7 @@ impl Tool for CreateNoteTool {
             let meta =
                 cave.create_note(&args.name, args.folder.as_deref().map(std::path::Path::new))?;
             if let Some(icon) = args.icon {
-                cave.update_note(&meta.slug, &meta.slug, "", None, Some(icon))?;
+                cave.set_note_icon(&meta.slug, Some(icon))?;
             }
             Ok(CreateNoteOutput {
                 slug: meta.slug.clone(),
