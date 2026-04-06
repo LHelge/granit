@@ -200,6 +200,15 @@ impl SettingsSection {
 pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
     let config = ctx.config;
+    let active_cave = config.get_untracked().active_cave.unwrap_or_default();
+    let cave_name = active_cave
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Current cave")
+        .to_string();
+    let modal_title = format!("{cave_name} Settings");
+    let modal_subtitle = format!("Saved in {cave_name}/.granit/config.yml");
     // Active section in the sidebar
     let (active_section, set_active_section) = signal(SettingsSection::Agent);
 
@@ -295,8 +304,8 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
 
     view! {
         <Modal
-            title="Global Settings"
-            subtitle="Saved to ~/.config/granit/config.yml"
+            title=modal_title
+            subtitle=modal_subtitle
             panel_class="w-[640px] max-w-[90vw] h-[480px] max-h-[80vh]"
             on_close=Callback::new(move |()| cancel_for_modal())
         >
