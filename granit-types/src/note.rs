@@ -62,6 +62,25 @@ pub struct Note {
     pub content: String,
 }
 
+/// Metadata for a template stored under `.granit/templates`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateMeta {
+    /// Filename without extension (e.g., "daily").
+    pub slug: String,
+    /// Relative path inside the templates store (e.g., "daily.md").
+    pub relative_path: String,
+    /// Optional icon ID in PascalCase without vendor prefix (e.g., "Pencil"), from frontmatter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+/// Full template content returned when reading a template.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Template {
+    pub meta: TemplateMeta,
+    pub content: String,
+}
+
 /// A match from a full-text content search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentMatch {

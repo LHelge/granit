@@ -65,11 +65,11 @@ pub(super) fn MessageList(
                             app.notes.set(all);
                         }
                         if let Ok(note) = ipc::read_note(&meta.slug).await {
-                            app.active_note.set(Some(note));
+                            app.set_active_note_document(note);
                         }
                     }
                 } else if let Ok(note) = ipc::read_note(&slug).await {
-                    app.active_note.set(Some(note));
+                    app.set_active_note_document(note);
                 }
             }),
         }

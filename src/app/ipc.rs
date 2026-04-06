@@ -1,6 +1,6 @@
 use granit_types::{
     AppConfig, AppMetadata, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig,
-    TodoList, ToolCallInfo, ToolInfo,
+    Template, TemplateMeta, TodoList, ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -72,6 +72,7 @@ pub async fn save_config(
     reading_font: FontConfig,
     agent_font: FontConfig,
     daily_note_folder: String,
+    daily_note_template_slug: Option<String>,
     theme: String,
 ) -> Result<AppConfig, String> {
     #[derive(Serialize)]
@@ -82,6 +83,7 @@ pub async fn save_config(
         reading_font: FontConfig,
         agent_font: FontConfig,
         daily_note_folder: String,
+        daily_note_template_slug: Option<String>,
         theme: String,
     }
     invoke_cmd(
@@ -92,6 +94,7 @@ pub async fn save_config(
             reading_font,
             agent_font,
             daily_note_folder,
+            daily_note_template_slug,
             theme,
         },
     )
@@ -171,6 +174,10 @@ pub async fn fetch_folders() -> Result<Vec<String>, String> {
     invoke_no_args("list_folders").await
 }
 
+pub async fn fetch_templates() -> Result<Vec<TemplateMeta>, String> {
+    invoke_no_args("list_templates").await
+}
+
 // ── Notes ──────────────────────────────────────────────────────────
 
 pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
@@ -188,6 +195,18 @@ pub async fn read_note(name: &str) -> Result<Note, String> {
 
 pub async fn open_daily_note() -> Result<Note, String> {
     invoke_no_args("open_daily_note").await
+}
+
+pub async fn create_template(name: &str) -> Result<TemplateMeta, String> {
+    invoke_cmd("create_template", &HashMap::from([("name", name)])).await
+}
+
+pub async fn read_template(name: &str) -> Result<Template, String> {
+    invoke_cmd("read_template", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_template(name: &str) -> Result<RenderedNote, String> {
+    invoke_cmd("render_template", &HashMap::from([("name", name)])).await
 }
 
 pub async fn render_note(name: &str) -> Result<RenderedNote, String> {
@@ -243,6 +262,39 @@ pub async fn rename_note(old_name: &str, new_name: &str) -> Result<NoteMeta, Str
 
 pub async fn delete_note(slug: &str) -> Result<(), String> {
     invoke_unit("delete_note", &HashMap::from([("name", slug)])).await
+}
+
+pub async fn update_template(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+) -> Result<TemplateMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+        tags: Option<Vec<String>>,
+        icon: Option<String>,
+    }
+    invoke_cmd(
+        "update_template",
+        &Args {
+            old_name,
+            new_name,
+            content,
+            tags,
+            icon,
+        },
+    )
+    .await
+}
+
+pub async fn delete_template(slug: &str) -> Result<(), String> {
+    invoke_unit("delete_template", &HashMap::from([("name", slug)])).await
 }
 
 pub async fn move_note(slug: &str, destination: Option<&str>) -> Result<NoteMeta, String> {

@@ -17,8 +17,10 @@ pub struct AppError {
 pub struct AppCtx {
     pub config: RwSignal<granit_types::AppConfig>,
     pub notes: RwSignal<Vec<granit_types::NoteMeta>>,
+    pub templates: RwSignal<Vec<granit_types::TemplateMeta>>,
     pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<granit_types::Note>>,
+    pub active_template: RwSignal<Option<granit_types::Template>>,
     pub is_mac: bool,
     errors: RwSignal<Vec<AppError>>,
     next_id: RwSignal<u32>,
@@ -30,8 +32,10 @@ impl AppCtx {
         Self {
             config: RwSignal::new(granit_types::AppConfig::default()),
             notes: RwSignal::new(Vec::new()),
+            templates: RwSignal::new(Vec::new()),
             folders: RwSignal::new(Vec::new()),
             active_note: RwSignal::new(None),
+            active_template: RwSignal::new(None),
             is_mac,
             errors: RwSignal::new(Vec::new()),
             next_id: RwSignal::new(0),
@@ -93,6 +97,21 @@ impl AppCtx {
         let _ = root.set_attribute("data-theme", name);
     }
 
+    pub fn set_active_note_document(&self, note: granit_types::Note) {
+        self.active_template.set(None);
+        self.active_note.set(Some(note));
+    }
+
+    pub fn set_active_template_document(&self, template: granit_types::Template) {
+        self.active_note.set(None);
+        self.active_template.set(Some(template));
+    }
+
+    pub fn clear_active_document(&self) {
+        self.active_note.set(None);
+        self.active_template.set(None);
+    }
+
     /// Open a cave through IPC and refresh all frontend state that depends on it.
     pub async fn open_cave_and_refresh(self, path: &str) -> Result<(), String> {
         let new_config = ipc::open_cave(path).await?;
@@ -113,7 +132,18 @@ impl AppCtx {
             self.folders.set(folders);
         }
 
-        self.active_note.set(None);
+        match ipc::fetch_templates().await {
+            Ok(templates) => {
+                self.clear_source("templates");
+                self.templates.set(templates);
+            }
+            Err(err) => {
+                self.clear_source("templates");
+                self.push_error("templates", err);
+            }
+        }
+
+        self.clear_active_document();
         Ok(())
     }
 }

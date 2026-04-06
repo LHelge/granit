@@ -135,15 +135,20 @@ fn render_with_wiki_links<'lookup>(
 /// Produces a YAML frontmatter block with `created_at` and `modified_at` set
 /// to the current UTC time. The note body starts empty.
 pub fn initial_content(_slug: &str) -> String {
+    initial_content_with_body("", None)
+}
+
+/// Generate initial file content with fresh frontmatter and a provided body.
+pub fn initial_content_with_body(body: &str, icon: Option<String>) -> String {
     let now = Utc::now();
     let fm = Frontmatter {
         tags: Vec::new(),
         created_at: Some(now),
         modified_at: Some(now),
-        icon: None,
+        icon,
     };
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
-    format!("---\n{yaml}---\n")
+    format!("---\n{yaml}---\n{body}")
 }
 
 /// Update the `modified_at` field in the YAML frontmatter of `raw` to the

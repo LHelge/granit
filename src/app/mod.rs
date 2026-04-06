@@ -67,9 +67,9 @@ pub fn App() -> impl IntoView {
                     if let Ok(notes) = ipc::fetch_notes().await {
                         if let Some(active) = ctx.active_note.get_untracked() {
                             if !notes.iter().any(|n| n.slug == active.meta.slug) {
-                                ctx.active_note.set(None);
+                                ctx.clear_active_document();
                             } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
-                                ctx.active_note.set(Some(note));
+                                ctx.set_active_note_document(note);
                             }
                         }
                         ctx.notes.set(notes);
@@ -119,6 +119,13 @@ pub fn App() -> impl IntoView {
                 Ok(folders) => ctx.folders.set(folders),
                 Err(e) => {
                     ctx.push_error("folders", format!("Failed to load folders: {e}"));
+                }
+            }
+
+            match ipc::fetch_templates().await {
+                Ok(templates) => ctx.templates.set(templates),
+                Err(e) => {
+                    ctx.push_error("templates", format!("Failed to load templates: {e}"));
                 }
             }
         }
@@ -219,7 +226,7 @@ pub fn App() -> impl IntoView {
                                 spawn_local(async move {
                                     match ipc::open_daily_note().await {
                                         Ok(note) => {
-                                            ctx.active_note.set(Some(note));
+                                            ctx.set_active_note_document(note);
                                             if let Ok(notes) = ipc::fetch_notes().await {
                                                 ctx.notes.set(notes);
                                             }
