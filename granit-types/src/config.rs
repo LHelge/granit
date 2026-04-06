@@ -84,7 +84,7 @@ pub struct AppConfig {
     #[serde(default = "default_daily_note_folder")]
     pub daily_note_folder: String,
     /// The currently open cave path, if any. Runtime-only in backend persistence.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_cave: Option<String>,
 }
 
@@ -166,5 +166,11 @@ mod tests {
         assert_eq!(config.markdown_font, FontConfig::markdown_default());
         assert_eq!(config.reading_font, FontConfig::reading_default());
         assert_eq!(config.agent_font, FontConfig::agent_default());
+    }
+
+    #[test]
+    fn test_active_cave_none_is_not_serialized() {
+        let yaml = serde_yml::to_string(&AppConfig::default()).unwrap();
+        assert!(!yaml.contains("active_cave"));
     }
 }

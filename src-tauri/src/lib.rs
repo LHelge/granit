@@ -1,6 +1,5 @@
 mod agent;
 mod cave;
-mod config;
 mod markdown;
 
 use std::path::{Path, PathBuf};
@@ -9,7 +8,6 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta};
-use config::ConfigError;
 use granit_types::{
     AgentConfig, AppConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, SidebarConfig,
     TodoList,
@@ -18,6 +16,27 @@ use tauri_plugin_store::StoreExt;
 
 const APP_STATE_STORE_PATH: &str = "app-state.json";
 const ACTIVE_CAVE_STORE_KEY: &str = "active_cave";
+
+#[derive(Debug, thiserror::Error)]
+enum ConfigError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("YAML parse error: {0}")]
+    Yaml(#[from] serde_yml::Error),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+}
+
+impl serde::Serialize for ConfigError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
 
 fn load_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
@@ -72,7 +91,10 @@ fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(manager: &M) -> 
 
     match Cave::open(path) {
         Ok(cave) => {
+            cave.ensure_config().map_err(|err| err.to_string())?;
+            let config = cave.load_config().map_err(|err| err.to_string())?;
             let state = manager.state::<AppState>();
+            *state.lock_config() = config;
             state.set_cave(Some(cave));
             Ok(())
         }
@@ -197,13 +219,18 @@ fn save_config(
     agent.validate().map_err(ConfigError::Validation)?;
 
     let mut config = state.lock_config();
+    let cave = state.lock_cave();
+    let cave = cave
+        .as_ref()
+        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
     config.agent = agent;
     config.markdown_font = markdown_font;
     config.reading_font = reading_font;
     config.agent_font = agent_font;
     config.daily_note_folder = daily_note_folder;
     config.theme = theme;
-    config::save(&config)?;
+    cave.save_config(&config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))?;
     // Reset the agent so it rebuilds with the new config on the next message.
     state.reset_agent();
     Ok(state.ipc_response(&config))
@@ -218,7 +245,12 @@ fn save_sidebar_state(
     let mut config = state.lock_config();
     config.sidebar = sidebar;
     config.agent_panel = agent_panel;
-    config::save(&config)?;
+    let cave = state.lock_cave();
+    let Some(cave) = cave.as_ref() else {
+        return Ok(());
+    };
+    cave.save_config(&config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))?;
     Ok(())
 }
 
@@ -228,11 +260,12 @@ fn open_cave(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, CaveError> {
-    config::ensure_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
-
     let cave = Cave::open(path.clone())?;
+    cave.ensure_config()?;
+    let config = cave.load_config()?;
     persist_active_cave(&app, &path).map_err(CaveError::Io)?;
 
+    *state.lock_config() = config;
     state.set_cave(Some(cave));
     state.reset_agent();
 
@@ -464,6 +497,10 @@ fn list_providers(
 #[tauri::command]
 fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let mut config = state.lock_config();
+    let cave = state.lock_cave();
+    let cave = cave
+        .as_ref()
+        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
     if index >= config.agent.providers.len() {
         return Err(ConfigError::Validation(format!(
             "Provider index {index} out of range"
@@ -471,7 +508,8 @@ fn select_provider(index: usize, state: tauri::State<AppState>) -> Result<AppCon
     }
     config.agent.selected_provider = index;
     config.agent.selected_model = None;
-    config::save(&config)?;
+    cave.save_config(&config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))?;
     state.reset_agent();
     Ok(state.ipc_response(&config))
 }
@@ -498,8 +536,13 @@ async fn list_models(state: tauri::State<'_, AppState>) -> Result<Vec<ModelInfo>
 #[tauri::command]
 fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<AppConfig, ConfigError> {
     let mut config = state.lock_config();
+    let cave = state.lock_cave();
+    let cave = cave
+        .as_ref()
+        .ok_or_else(|| ConfigError::Validation("No cave is currently open".to_string()))?;
     config.agent.selected_model = Some(model_id);
-    config::save(&config)?;
+    cave.save_config(&config)
+        .map_err(|err| ConfigError::Validation(err.to_string()))?;
     state.reset_agent();
     Ok(state.ipc_response(&config))
 }
@@ -583,7 +626,7 @@ fn list_tools() -> Vec<granit_types::ToolInfo> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let config = config::ensure().expect("failed to initialize config");
+    let config = AppConfig::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
