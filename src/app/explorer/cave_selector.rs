@@ -28,9 +28,17 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
         let cfg = ctx.config.get();
         cfg.active_cave
             .as_deref()
-            .and_then(|p| p.rsplit('/').next().or_else(|| p.rsplit('\\').next()))
+            .and_then(|p| p.rsplit(['/', '\\']).next())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "No cave open".to_string())
+    };
+
+    let settings_tooltip = move || {
+        if ctx.config.get().active_cave.is_some() {
+            "Cave settings"
+        } else {
+            "Open a cave to edit settings"
+        }
     };
 
     view! {
@@ -49,10 +57,15 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                 </div>
 
                 // Settings gear icon
-                <div class="tooltip tooltip-top z-50" data-tip="Settings">
+                <div class="tooltip tooltip-top z-50" data-tip=settings_tooltip>
                     <button
                         class="btn btn-ghost btn-xs btn-square"
-                        on:click=move |_| set_settings_open.set(true)
+                        disabled=move || ctx.config.get().active_cave.is_none()
+                        on:click=move |_| {
+                            if ctx.config.get_untracked().active_cave.is_some() {
+                                set_settings_open.set(true);
+                            }
+                        }
                     >
                         <Icon icon=icondata_lu::LuSettings width="1rem" height="1rem"/>
                     </button>

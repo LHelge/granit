@@ -296,7 +296,7 @@ pub fn App() -> impl IntoView {
             </div>
 
             // Settings modal
-            <Show when=move || settings_open.get()>
+            <Show when=move || settings_open.get() && ctx.config.get().active_cave.is_some()>
                 <SettingsModal set_open=set_settings_open />
             </Show>
 
