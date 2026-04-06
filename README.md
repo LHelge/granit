@@ -6,7 +6,7 @@ Built for personal use. No plugins, no sync, no bloat.
 
 ## Current Features
 
-- **Cave-based storage** — Any directory can be opened as a cave, and recently opened caves are tracked in global config.
+- **Cave-based storage** — Any directory can be opened as a cave, and each cave stores its own settings in `.granit/config.yml`.
 - **Nested folders** — Notes can live in subdirectories, with a tree view, drag-and-drop moves, inline rename, and context-menu actions for notes and folders.
 - **Rendered markdown reader** — Notes render to HTML via `pulldown-cmark`, with YAML frontmatter for tags, timestamps, and optional note icons.
 - **Wiki-links** — `[[note]]` and `[[note|label]]` links resolve by filename across the cave. Broken links are styled separately so the frontend can handle them distinctly.
@@ -15,7 +15,7 @@ Built for personal use. No plugins, no sync, no bloat.
 - **Daily notes** — Open or create today’s note in a configurable daily-note folder.
 - **AI agent** — Streaming chat UI backed by `rig-core`, with provider/model selection and tools for note, folder, todo, search, and web operations.
 - **Theme and font settings** — DaisyUI themes, Catppuccin variants, and per-surface font settings are configurable from the app.
-- **Global config** — Settings are stored in `~/.config/granit/config.yml`.
+- **Active cave restore** — The last open cave is restored from app state without keeping a recent-caves list.
 
 ## Cave Rules
 
@@ -26,15 +26,17 @@ Built for personal use. No plugins, no sync, no bloat.
 
 ## Current Config Model
 
-Configuration is currently **global-only**.
+Configuration is **cave-local**.
 
 ```text
-~/.config/granit/
-  config.yml
+<cave>/
+  .granit/
+    config.yml
 ```
 
-- The app persists recent caves, sidebar widths/visibility, theme, font settings, daily-note folder, and agent/provider settings in `config.yml`.
-- `active_cave` is runtime-only state and is not persisted.
+- Each cave persists its own sidebar widths/visibility, theme, font settings, daily-note folder, and agent/provider settings in `.granit/config.yml`.
+- The active cave path is stored separately in Tauri store app state and used to restore the last open cave on startup.
+- `active_cave` is runtime-only in IPC responses and is not serialized into cave YAML.
 
 ## Deferred Features
 
@@ -54,7 +56,7 @@ Configuration is currently **global-only**.
 | Markdown | `pulldown-cmark` |
 | AI | `rig-core` |
 | Errors | `thiserror` |
-| Config | `serde_yml`, `dirs` |
+| Config | `serde_yml`, `tauri-plugin-store` |
 
 ## Development
 
@@ -121,7 +123,6 @@ src/
 src-tauri/src/
   agent/        # rig-core integration and tool definitions
   cave/         # cave scanning and note/folder operations
-  config/       # global config load/save
   markdown/     # frontmatter parsing and HTML rendering
   lib.rs        # Tauri command wiring and app state
 ```

@@ -1012,6 +1012,40 @@ mod tests {
     }
 
     #[test]
+    fn test_cave_configs_are_isolated_per_cave() {
+        let dir_a = tempfile::tempdir().unwrap();
+        let dir_b = tempfile::tempdir().unwrap();
+
+        let cave_a = Cave::open(dir_a.path().to_path_buf()).unwrap();
+        let cave_b = Cave::open(dir_b.path().to_path_buf()).unwrap();
+        cave_a.ensure_config().unwrap();
+        cave_b.ensure_config().unwrap();
+
+        cave_a
+            .save_config(&AppConfig {
+                theme: "latte".to_string(),
+                daily_note_folder: "Journal".to_string(),
+                ..AppConfig::default()
+            })
+            .unwrap();
+        cave_b
+            .save_config(&AppConfig {
+                theme: "forest".to_string(),
+                daily_note_folder: "Daily Notes".to_string(),
+                ..AppConfig::default()
+            })
+            .unwrap();
+
+        let loaded_a = cave_a.load_config().unwrap();
+        let loaded_b = cave_b.load_config().unwrap();
+
+        assert_eq!(loaded_a.theme, "latte");
+        assert_eq!(loaded_a.daily_note_folder, "Journal");
+        assert_eq!(loaded_b.theme, "forest");
+        assert_eq!(loaded_b.daily_note_folder, "Daily Notes");
+    }
+
+    #[test]
     fn test_cave_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
