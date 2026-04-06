@@ -2,7 +2,7 @@ mod error;
 mod note;
 
 pub use error::CaveError;
-use granit_types::{TodoItem, TodoList};
+use granit_types::{AppConfig, TodoItem, TodoList};
 use note::{
     ensure_md_extension, note_meta_from_relative_path, note_meta_with_icon, validate_folder_path,
     validate_name,
@@ -37,6 +37,42 @@ impl Cave {
             notes,
             active_slug: None,
         })
+    }
+
+    pub fn config_path(&self) -> PathBuf {
+        self.path.join(".granit").join("config.yml")
+    }
+
+    pub fn ensure_config(&self) -> Result<(), CaveError> {
+        std::fs::create_dir_all(self.path.join(".granit"))?;
+
+        let path = self.config_path();
+        if !path.exists() {
+            self.save_config(&AppConfig::default())?;
+        }
+
+        Ok(())
+    }
+
+    pub fn load_config(&self) -> Result<AppConfig, CaveError> {
+        let path = self.config_path();
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => {
+                let mut config: AppConfig = serde_yml::from_str(&contents)?;
+                config.active_cave = None;
+                Ok(config)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(AppConfig::default()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn save_config(&self, config: &AppConfig) -> Result<(), CaveError> {
+        let mut stored = config.clone();
+        stored.active_cave = None;
+        let yaml = serde_yml::to_string(&stored)?;
+        std::fs::write(self.config_path(), yaml)?;
+        Ok(())
     }
 
     /// Recursively scan `dir` for `.md` files and return a slug → absolute-path map.
@@ -936,6 +972,44 @@ impl Cave {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ensure_config_bootstraps_default_yaml() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.ensure_config().unwrap();
+
+        let config_path = dir.path().join(".granit/config.yml");
+        assert!(config_path.exists());
+
+        let config = cave.load_config().unwrap();
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.daily_note_folder, "Daily");
+    }
+
+    #[test]
+    fn test_save_config_does_not_persist_active_cave() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+
+        let config = AppConfig {
+            theme: "latte".to_string(),
+            active_cave: Some("/tmp/cave".to_string()),
+            ..AppConfig::default()
+        };
+
+        cave.save_config(&config).unwrap();
+
+        let stored = std::fs::read_to_string(cave.config_path()).unwrap();
+        assert!(!stored.contains("active_cave"));
+        assert!(!stored.contains("/tmp/cave"));
+
+        let loaded = cave.load_config().unwrap();
+        assert_eq!(loaded.theme, "latte");
+        assert!(loaded.active_cave.is_none());
+    }
 
     #[test]
     fn test_cave_roundtrip() {

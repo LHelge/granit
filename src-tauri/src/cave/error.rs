@@ -23,11 +23,20 @@ pub enum CaveError {
 
     #[error("IO error: {0}")]
     Io(String),
+
+    #[error("YAML parse error: {0}")]
+    Yaml(String),
 }
 
 impl From<std::io::Error> for CaveError {
     fn from(e: std::io::Error) -> Self {
         CaveError::Io(e.to_string())
+    }
+}
+
+impl From<serde_yml::Error> for CaveError {
+    fn from(e: serde_yml::Error) -> Self {
+        CaveError::Yaml(e.to_string())
     }
 }
 
