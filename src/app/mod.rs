@@ -95,6 +95,7 @@ pub fn App() -> impl IntoView {
                 return;
             }
         };
+        let has_active_cave = cfg.active_cave.is_some();
         // Apply persisted sidebar state
         set_sidebar_visible.set(cfg.sidebar.visible);
         set_sidebar_width.set(cfg.sidebar.width);
@@ -105,6 +106,22 @@ pub fn App() -> impl IntoView {
 
         // Apply the persisted theme immediately to avoid a flash of the default theme
         ctx.set_theme(&theme_name);
+
+        if has_active_cave {
+            match ipc::fetch_notes().await {
+                Ok(notes) => ctx.notes.set(notes),
+                Err(e) => {
+                    ctx.push_error("notes", format!("Failed to load restored cave: {e}"));
+                }
+            }
+
+            match ipc::fetch_folders().await {
+                Ok(folders) => ctx.folders.set(folders),
+                Err(e) => {
+                    ctx.push_error("folders", format!("Failed to load folders: {e}"));
+                }
+            }
+        }
     });
 
     // Persist sidebar visibility / width to the backend config.
