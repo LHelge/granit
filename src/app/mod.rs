@@ -86,7 +86,7 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Load config from backend on mount, and re-open the most recent cave if any
+    // Load config from backend on mount.
     leptos::task::spawn_local(async move {
         let cfg = match ipc::fetch_config().await {
             Ok(c) => c,
@@ -95,7 +95,6 @@ pub fn App() -> impl IntoView {
                 return;
             }
         };
-        let recent = cfg.recent_caves.first().cloned();
         // Apply persisted sidebar state
         set_sidebar_visible.set(cfg.sidebar.visible);
         set_sidebar_width.set(cfg.sidebar.width);
@@ -106,16 +105,6 @@ pub fn App() -> impl IntoView {
 
         // Apply the persisted theme immediately to avoid a flash of the default theme
         ctx.set_theme(&theme_name);
-
-        // Re-open the last cave so the backend has a cave_path set
-        if let Some(path) = recent {
-            match ctx.open_cave_and_refresh(&path).await {
-                Ok(()) => {}
-                Err(e) => {
-                    ctx.push_error("cave", format!("Failed to reopen cave: {e}"));
-                }
-            }
-        }
     });
 
     // Persist sidebar visibility / width to the backend config.
