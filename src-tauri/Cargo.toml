@@ -15,6 +15,7 @@ name = "granit_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+git2 = "0.20.4"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]

@@ -4,7 +4,8 @@ mod notes;
 mod reading;
 mod theme;
 
-use crate::app::{components::icons::Icon, ipc, AppCtx};
+use crate::app::components::modal::Modal;
+use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
 use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo};
 use leptos::prelude::*;
@@ -283,110 +284,90 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
         });
     };
 
+    let cancel_for_modal = cancel.clone();
+
     view! {
-        <dialog class="modal modal-open">
-            // Modal panel
-            <div class="modal-box w-[640px] max-w-[90vw] h-[480px] max-h-[80vh] p-0 flex flex-col">
-                // Header
-                <div class="flex items-center justify-between px-4 py-3 border-b border-base-content/20 shrink-0">
-                    <div>
-                        <h2 class="text-sm font-semibold text-base-content">"Global Settings"</h2>
-                        <p class="text-xs text-base-content/35 mt-0.5">"Saved to ~/.config/granit/config.yml"</p>
+        <Modal
+            title="Global Settings"
+            subtitle="Saved to ~/.config/granit/config.yml"
+            panel_class="w-[640px] max-w-[90vw] h-[480px] max-h-[80vh]"
+            on_close=Callback::new(move |()| cancel_for_modal())
+        >
+            // Body: sidebar + content
+            <form class="flex flex-1 min-h-0" on:submit=on_save>
+                // Sidebar
+                <nav class="w-40 shrink-0 border-r border-base-content/20">
+                    <ul class="menu menu-sm py-2">
+                        {SettingsSection::ALL.into_iter().map(|section| {
+                            let is_active = move || active_section.get() == section;
+                            view! {
+                                <li>
+                                    <button
+                                        type="button"
+                                        class=move || if is_active() { "menu-active" } else { "" }
+                                        on:click=move |_| set_active_section.set(section)
+                                    >
+                                        {section.label()}
+                                    </button>
+                                </li>
+                            }
+                        }).collect_view()}
+                    </ul>
+                </nav>
+
+                // Content pane
+                <div class="flex-1 flex flex-col min-h-0">
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                        // Save error
+                        <Show when=move || save_error.get().is_some()>
+                            <p class="text-xs text-error">
+                                {move || save_error.get().unwrap_or_default()}
+                            </p>
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Markdown>
+                            <MarkdownSettings form=form />
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Reading>
+                            <ReadingSettings form=form />
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Agent>
+                            <AgentSettings form=form />
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Notes>
+                            <NotesSettings form=form />
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Theme>
+                            <ThemeSettings form=form />
+                        </Show>
                     </div>
-                    <button
-                        class="btn btn-ghost btn-xs btn-square"
-                        on:click={
-                            let cancel = cancel.clone();
-                            move |_| cancel()
-                        }
-                    >
-                        <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
-                    </button>
+
+                    // Actions — pinned at bottom
+                    <div class="flex justify-end gap-2 px-4 py-3 border-t border-base-content/20 shrink-0">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-ghost"
+                            on:click={
+                                let cancel = cancel.clone();
+                                move |_| cancel()
+                            }
+                        >
+                            "Cancel"
+                        </button>
+                        <button
+                            type="submit"
+                            class="btn btn-sm btn-primary"
+                            disabled=move || saving.get()
+                        >
+                            {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}
+                        </button>
+                    </div>
                 </div>
-
-                // Body: sidebar + content
-                <form class="flex flex-1 min-h-0" on:submit=on_save>
-                    // Sidebar
-                    <nav class="w-40 shrink-0 border-r border-base-content/20">
-                        <ul class="menu menu-sm py-2">
-                            {SettingsSection::ALL.into_iter().map(|section| {
-                                let is_active = move || active_section.get() == section;
-                                view! {
-                                    <li>
-                                        <button
-                                            type="button"
-                                            class=move || if is_active() { "menu-active" } else { "" }
-                                            on:click=move |_| set_active_section.set(section)
-                                        >
-                                            {section.label()}
-                                        </button>
-                                    </li>
-                                }
-                            }).collect_view()}
-                        </ul>
-                    </nav>
-
-                    // Content pane
-                    <div class="flex-1 flex flex-col min-h-0">
-                        <div class="flex-1 overflow-y-auto p-4 space-y-4">
-                            // Save error
-                            <Show when=move || save_error.get().is_some()>
-                                <p class="text-xs text-error">
-                                    {move || save_error.get().unwrap_or_default()}
-                                </p>
-                            </Show>
-
-                            <Show when=move || active_section.get() == SettingsSection::Markdown>
-                                <MarkdownSettings form=form />
-                            </Show>
-
-                            <Show when=move || active_section.get() == SettingsSection::Reading>
-                                <ReadingSettings form=form />
-                            </Show>
-
-                            <Show when=move || active_section.get() == SettingsSection::Agent>
-                                <AgentSettings form=form />
-                            </Show>
-
-                            <Show when=move || active_section.get() == SettingsSection::Notes>
-                                <NotesSettings form=form />
-                            </Show>
-
-                            <Show when=move || active_section.get() == SettingsSection::Theme>
-                                <ThemeSettings form=form />
-                            </Show>
-                        </div>
-
-                        // Actions — pinned at bottom
-                        <div class="flex justify-end gap-2 px-4 py-3 border-t border-base-content/20 shrink-0">
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-ghost"
-                                on:click={
-                                    let cancel = cancel.clone();
-                                    move |_| cancel()
-                                }
-                            >
-                                "Cancel"
-                            </button>
-                            <button
-                                type="submit"
-                                class="btn btn-sm btn-primary"
-                                disabled=move || saving.get()
-                            >
-                                {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            // Backdrop — click to close
-            <form method="dialog" class="modal-backdrop">
-                <button on:click={
-                    let cancel = cancel.clone();
-                    move |_| cancel()
-                }>"close"</button>
             </form>
-        </dialog>
+        </Modal>
     }
 }
