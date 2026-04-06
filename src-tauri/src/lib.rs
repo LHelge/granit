@@ -3,7 +3,7 @@ mod cave;
 mod config;
 mod markdown;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +14,74 @@ use granit_types::{
     AgentConfig, AppConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, SidebarConfig,
     TodoList,
 };
+use tauri_plugin_store::StoreExt;
+
+const APP_STATE_STORE_PATH: &str = "app-state.json";
+const ACTIVE_CAVE_STORE_KEY: &str = "active_cave";
+
+fn load_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+) -> Result<Option<PathBuf>, String> {
+    let store = manager
+        .store(APP_STATE_STORE_PATH)
+        .map_err(|err| err.to_string())?;
+
+    let Some(value) = store.get(ACTIVE_CAVE_STORE_KEY) else {
+        return Ok(None);
+    };
+
+    let Some(path) = value.as_str() else {
+        store.delete(ACTIVE_CAVE_STORE_KEY);
+        store.save().map_err(|err| err.to_string())?;
+        return Ok(None);
+    };
+
+    Ok(Some(PathBuf::from(path)))
+}
+
+fn persist_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+    path: &Path,
+) -> Result<(), String> {
+    let store = manager
+        .store(APP_STATE_STORE_PATH)
+        .map_err(|err| err.to_string())?;
+    store.set(ACTIVE_CAVE_STORE_KEY, path.to_string_lossy().into_owned());
+    store.save().map_err(|err| err.to_string())
+}
+
+fn clear_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+) -> Result<(), String> {
+    let store = manager
+        .store(APP_STATE_STORE_PATH)
+        .map_err(|err| err.to_string())?;
+    store.delete(ACTIVE_CAVE_STORE_KEY);
+    store.save().map_err(|err| err.to_string())
+}
+
+fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(manager: &M) -> Result<(), String> {
+    let Some(path) = load_persisted_active_cave(manager)? else {
+        return Ok(());
+    };
+
+    if !path.is_dir() {
+        clear_persisted_active_cave(manager)?;
+        return Ok(());
+    }
+
+    match Cave::open(path) {
+        Ok(cave) => {
+            let state = manager.state::<AppState>();
+            state.set_cave(Some(cave));
+            Ok(())
+        }
+        Err(_) => {
+            clear_persisted_active_cave(manager)?;
+            Ok(())
+        }
+    }
+}
 
 struct AppState {
     config: Mutex<AppConfig>,
@@ -155,10 +223,17 @@ fn save_sidebar_state(
 }
 
 #[tauri::command]
-fn open_cave(path: PathBuf, state: tauri::State<AppState>) -> Result<AppConfig, CaveError> {
+fn open_cave(
+    path: PathBuf,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<AppConfig, CaveError> {
     config::ensure_cave(&path).map_err(|e| CaveError::Io(e.to_string()))?;
 
-    state.set_cave(Some(Cave::open(path.clone())?));
+    let cave = Cave::open(path.clone())?;
+    persist_active_cave(&app, &path).map_err(CaveError::Io)?;
+
+    state.set_cave(Some(cave));
     state.reset_agent();
 
     let config = state.lock_config();
@@ -513,11 +588,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState {
             config: Mutex::new(config),
             cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
             agent_generation: AtomicU64::new(0),
+        })
+        .setup(|app| {
+            restore_active_cave(app).map_err(std::io::Error::other)?;
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
