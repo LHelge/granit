@@ -170,6 +170,43 @@ pub fn Templates() -> impl IntoView {
                         }).collect_view()}
                     </ul>
                 </Show>
+
+                <div class="shrink-0 border-t border-base-content/10">
+                    <details class="collapse rounded-none group">
+                        <summary class="collapse-title flex items-center justify-between gap-2 py-2 text-sm font-medium text-base-content/70">
+                            <span>"Template Parameters"</span>
+                            <span class="inline-flex w-3.5 h-3.5 shrink-0 transition-transform rotate-180 group-open:rotate-0">
+                                <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                            </span>
+                        </summary>
+                        <div class="collapse-content pt-0 pb-3 text-xs text-base-content/55">
+                            <div class="space-y-3">
+                                <div>
+                                    <p class="font-medium text-base-content/75">"Available in all note templates"</p>
+                                    <div class="mt-1 flex flex-wrap gap-1.5">
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ slug }}"</span>
+                                    </div>
+                                    <p class="mt-1 leading-relaxed">"The note slug, usually the filename without .md."</p>
+                                </div>
+
+                                <div>
+                                    <p class="font-medium text-base-content/75">"Added for daily notes"</p>
+                                    <div class="mt-1 flex flex-wrap gap-1.5">
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ date }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ tomorrow }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ yesterday }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ year }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ month }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ day }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ weekday }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ weekday_short }}"</span>
+                                    </div>
+                                    <p class="mt-1 leading-relaxed">"These are only available when the created note slug matches the daily-note date format YYYY-MM-DD."</p>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+                </div>
             </Show>
         </div>
     }
