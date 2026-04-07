@@ -1,8 +1,7 @@
+use super::AppState;
 use crate::cave::{CaveError, ContentMatch, Note, NoteMeta, Template, TemplateMeta};
 use crate::markdown;
 use granit_types::{RenderedNote, TodoList};
-
-use super::{with_cave, AppState};
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let guard = state.lock_cave();
@@ -20,7 +19,7 @@ pub(crate) fn create_note(
     template: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         cave.create_note(
             &name,
             folder.as_deref().map(std::path::Path::new),
@@ -34,21 +33,17 @@ pub(crate) fn create_template(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<TemplateMeta, CaveError> {
-    with_cave(&state, |cave| cave.create_template(&name))
+    state.with_cave(|cave| cave.create_template(&name))
 }
 
 #[tauri::command]
 pub(crate) fn create_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    with_cave(&state, |cave| {
-        cave.create_folder(std::path::Path::new(&path))
-    })
+    state.with_cave(|cave| cave.create_folder(std::path::Path::new(&path)))
 }
 
 #[tauri::command]
 pub(crate) fn delete_folder(path: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    with_cave(&state, |cave| {
-        cave.delete_folder(std::path::Path::new(&path))
-    })
+    state.with_cave(|cave| cave.delete_folder(std::path::Path::new(&path)))
 }
 
 #[tauri::command]
@@ -57,9 +52,7 @@ pub(crate) fn move_note(
     destination: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| {
-        cave.move_note(&name, destination.as_deref().map(std::path::Path::new))
-    })
+    state.with_cave(|cave| cave.move_note(&name, destination.as_deref().map(std::path::Path::new)))
 }
 
 #[tauri::command]
@@ -68,7 +61,7 @@ pub(crate) fn move_folder(
     destination: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         cave.move_folder(
             std::path::Path::new(&source),
             destination.as_deref().map(std::path::Path::new),
@@ -78,14 +71,14 @@ pub(crate) fn move_folder(
 
 #[tauri::command]
 pub(crate) fn list_notes(state: tauri::State<AppState>) -> Result<Vec<NoteMeta>, CaveError> {
-    with_cave(&state, |cave| cave.list_notes())
+    state.with_cave(|cave| cave.list_notes())
 }
 
 #[tauri::command]
 pub(crate) fn list_templates(
     state: tauri::State<AppState>,
 ) -> Result<Vec<TemplateMeta>, CaveError> {
-    with_cave(&state, |cave| cave.list_templates())
+    state.with_cave(|cave| cave.list_templates())
 }
 
 #[tauri::command]
@@ -94,17 +87,17 @@ pub(crate) fn search_content(
     max_results: Option<usize>,
     state: tauri::State<AppState>,
 ) -> Result<Vec<ContentMatch>, CaveError> {
-    with_cave(&state, |cave| cave.search_content(&query, max_results))
+    state.with_cave(|cave| cave.search_content(&query, max_results))
 }
 
 #[tauri::command]
 pub(crate) fn list_folders(state: tauri::State<AppState>) -> Result<Vec<String>, CaveError> {
-    with_cave(&state, |cave| cave.list_folders())
+    state.with_cave(|cave| cave.list_folders())
 }
 
 #[tauri::command]
 pub(crate) fn read_note(name: String, state: tauri::State<AppState>) -> Result<Note, CaveError> {
-    with_cave(&state, |cave| cave.read_note(&name))
+    state.with_cave(|cave| cave.read_note(&name))
 }
 
 #[tauri::command]
@@ -112,13 +105,13 @@ pub(crate) fn read_template(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<Template, CaveError> {
-    with_cave(&state, |cave| cave.read_template(&name))
+    state.with_cave(|cave| cave.read_template(&name))
 }
 
 #[tauri::command]
 pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Note, CaveError> {
     let config = state.lock_config().clone();
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         cave.open_daily_note(
             &config.daily_note_folder,
             config.daily_note_template_slug.as_deref(),
@@ -132,7 +125,7 @@ pub(crate) fn save_note(
     content: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| cave.save_note(&name, &content))
+    state.with_cave(|cave| cave.save_note(&name, &content))
 }
 
 #[tauri::command]
@@ -141,7 +134,7 @@ pub(crate) fn save_template(
     content: String,
     state: tauri::State<AppState>,
 ) -> Result<TemplateMeta, CaveError> {
-    with_cave(&state, |cave| cave.save_template(&name, &content))
+    state.with_cave(|cave| cave.save_template(&name, &content))
 }
 
 #[tauri::command]
@@ -150,7 +143,7 @@ pub(crate) fn rename_note(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| cave.rename_note(&old_name, &new_name))
+    state.with_cave(|cave| cave.rename_note(&old_name, &new_name))
 }
 
 #[tauri::command]
@@ -159,7 +152,7 @@ pub(crate) fn rename_template(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<TemplateMeta, CaveError> {
-    with_cave(&state, |cave| cave.rename_template(&old_name, &new_name))
+    state.with_cave(|cave| cave.rename_template(&old_name, &new_name))
 }
 
 #[tauri::command]
@@ -172,9 +165,7 @@ pub(crate) fn update_note(
     favorite: Option<bool>,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| {
-        cave.update_note(&old_name, &new_name, &content, tags, icon, favorite)
-    })
+    state.with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))
 }
 
 #[tauri::command]
@@ -186,9 +177,7 @@ pub(crate) fn update_template(
     icon: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<TemplateMeta, CaveError> {
-    with_cave(&state, |cave| {
-        cave.update_template(&old_name, &new_name, &content, tags, icon)
-    })
+    state.with_cave(|cave| cave.update_template(&old_name, &new_name, &content, tags, icon))
 }
 
 #[tauri::command]
@@ -197,14 +186,12 @@ pub(crate) fn rename_folder(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    with_cave(&state, |cave| {
-        cave.rename_folder(std::path::Path::new(&source), &new_name)
-    })
+    state.with_cave(|cave| cave.rename_folder(std::path::Path::new(&source), &new_name))
 }
 
 #[tauri::command]
 pub(crate) fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    with_cave(&state, |cave| cave.delete_note(&name))
+    state.with_cave(|cave| cave.delete_note(&name))
 }
 
 #[tauri::command]
@@ -212,12 +199,12 @@ pub(crate) fn delete_template(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    with_cave(&state, |cave| cave.delete_template(&name))
+    state.with_cave(|cave| cave.delete_template(&name))
 }
 
 #[tauri::command]
 pub(crate) fn list_todos(state: tauri::State<AppState>) -> Result<TodoList, CaveError> {
-    with_cave(&state, |cave| cave.list_todos())
+    state.with_cave(|cave| cave.list_todos())
 }
 
 #[tauri::command]
@@ -228,7 +215,7 @@ pub(crate) fn toggle_todo(
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
     use tauri::Emitter;
-    with_cave(&state, |cave| cave.toggle_todo(&slug, line))?;
+    state.with_cave(|cave| cave.toggle_todo(&slug, line))?;
     let _ = app.emit("cave:notes-changed", ());
     Ok(())
 }
@@ -241,7 +228,7 @@ pub(crate) fn toggle_todo_by_index(
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
     use tauri::Emitter;
-    with_cave(&state, |cave| cave.toggle_todo_by_index(&slug, index))?;
+    state.with_cave(|cave| cave.toggle_todo_by_index(&slug, index))?;
     let _ = app.emit("cave:notes-changed", ());
     Ok(())
 }
@@ -251,7 +238,7 @@ pub(crate) fn render_note(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<RenderedNote, CaveError> {
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         let slug = cave.resolve_slug(&name)?;
         let raw = cave.read_note_raw(&slug)?;
         let mut rendered = markdown::render_note(&raw, &slug, |s| cave.lookup_slug(s));
@@ -265,7 +252,7 @@ pub(crate) fn render_template(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<RenderedNote, CaveError> {
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         let raw = cave.read_template_raw(&name)?;
         Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
     })
@@ -281,7 +268,7 @@ pub(crate) fn set_active_note(
     slug: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    with_cave(&state, |cave| {
+    state.with_cave(|cave| {
         cave.set_active_slug(slug);
         Ok(())
     })

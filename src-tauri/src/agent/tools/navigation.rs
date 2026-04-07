@@ -3,7 +3,8 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave, SharedCave, ToolError};
+use super::{SharedCave, with_shared_cave};
+use crate::cave::CaveError;
 
 // ── list_notes ─────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ pub struct ListNotesTool {
 
 impl Tool for ListNotesTool {
     const NAME: &'static str = "list_notes";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = ListNotesArgs;
     type Output = ListNotesOutput;
 
@@ -44,7 +45,7 @@ impl Tool for ListNotesTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let notes = cave.list_notes()?;
             Ok(ListNotesOutput {
                 notes: notes
@@ -75,7 +76,7 @@ pub struct ListFoldersTool {
 
 impl Tool for ListFoldersTool {
     const NAME: &'static str = "list_folders";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = ListFoldersArgs;
     type Output = ListFoldersOutput;
 
@@ -92,7 +93,7 @@ impl Tool for ListFoldersTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let folders = cave.list_folders()?;
             Ok(ListFoldersOutput { folders })
         })
@@ -124,7 +125,7 @@ pub struct SearchNotesTool {
 
 impl Tool for SearchNotesTool {
     const NAME: &'static str = "search_notes";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = SearchNotesArgs;
     type Output = SearchNotesOutput;
 
@@ -147,7 +148,7 @@ impl Tool for SearchNotesTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let all_notes = cave.list_notes()?;
             let query_lower = args.query.to_lowercase();
             let matches = all_notes
@@ -188,7 +189,7 @@ pub struct SearchContentTool {
 
 impl Tool for SearchContentTool {
     const NAME: &'static str = "search_content";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = SearchContentArgs;
     type Output = SearchContentOutput;
 
@@ -212,7 +213,7 @@ impl Tool for SearchContentTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let hits = cave.search_content(&args.query, Some(20))?;
             let matches = hits
                 .into_iter()

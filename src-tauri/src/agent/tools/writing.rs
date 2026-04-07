@@ -3,7 +3,8 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave_mut, SharedCave, ToolError};
+use super::{SharedCave, with_shared_cave};
+use crate::cave::CaveError;
 
 // ── create_note ────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ pub struct CreateNoteTool {
 
 impl Tool for CreateNoteTool {
     const NAME: &'static str = "create_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = CreateNoteArgs;
     type Output = CreateNoteOutput;
 
@@ -59,7 +60,7 @@ impl Tool for CreateNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let meta = cave.create_note(
                 &args.name,
                 args.folder.as_deref().map(std::path::Path::new),
@@ -100,7 +101,7 @@ pub struct UpdateNoteTool {
 
 impl Tool for UpdateNoteTool {
     const NAME: &'static str = "update_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = UpdateNoteArgs;
     type Output = UpdateNoteOutput;
 
@@ -130,7 +131,7 @@ impl Tool for UpdateNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
             let meta = cave.update_note(&slug, &slug, &args.content, None, args.icon, None)?;
             Ok(UpdateNoteOutput {
@@ -165,7 +166,7 @@ pub struct EditNoteTool {
 
 impl Tool for EditNoteTool {
     const NAME: &'static str = "edit_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = EditNoteArgs;
     type Output = EditNoteOutput;
 
@@ -197,7 +198,7 @@ impl Tool for EditNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = match &args.slug {
                 Some(s) => cave.resolve_slug(s)?.to_string(),
                 None => cave
@@ -236,7 +237,7 @@ pub struct OpenDailyNoteTool {
 
 impl Tool for OpenDailyNoteTool {
     const NAME: &'static str = "open_daily_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = OpenDailyNoteArgs;
     type Output = OpenDailyNoteOutput;
 
@@ -254,7 +255,7 @@ impl Tool for OpenDailyNoteTool {
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let config = cave.load_config()?;
             let note = cave.open_daily_note(
                 &config.daily_note_folder,

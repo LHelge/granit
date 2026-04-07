@@ -3,7 +3,8 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave, SharedCave, ToolError};
+use super::{SharedCave, with_shared_cave};
+use crate::cave::CaveError;
 
 // ── list_todos ─────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ pub struct ListTodosTool {
 
 impl Tool for ListTodosTool {
     const NAME: &'static str = "list_todos";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = ListTodosArgs;
     type Output = ListTodosOutput;
 
@@ -56,7 +57,7 @@ impl Tool for ListTodosTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let list = cave.list_todos()?;
             let to_entry = |t: granit_types::TodoItem| TodoEntry {
                 slug: t.slug,
@@ -105,7 +106,7 @@ pub struct ToggleTodoTool {
 
 impl Tool for ToggleTodoTool {
     const NAME: &'static str = "toggle_todo";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = ToggleTodoArgs;
     type Output = ToggleTodoOutput;
 
@@ -131,7 +132,7 @@ impl Tool for ToggleTodoTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             cave.toggle_todo(&args.slug, args.line)?;
             Ok(ToggleTodoOutput {
                 message: format!("Toggled todo on line {} in '{}'", args.line, args.slug),

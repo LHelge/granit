@@ -3,7 +3,8 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave_mut, SharedCave, ToolError};
+use super::{SharedCave, with_shared_cave};
+use crate::cave::CaveError;
 
 // ── move_note ──────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ pub struct MoveNoteTool {
 
 impl Tool for MoveNoteTool {
     const NAME: &'static str = "move_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = MoveNoteArgs;
     type Output = MoveNoteOutput;
 
@@ -53,7 +54,7 @@ impl Tool for MoveNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
             let dest = args
                 .destination
@@ -92,7 +93,7 @@ pub struct RenameNoteTool {
 
 impl Tool for RenameNoteTool {
     const NAME: &'static str = "rename_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = RenameNoteArgs;
     type Output = RenameNoteOutput;
 
@@ -118,7 +119,7 @@ impl Tool for RenameNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
             let meta = cave.rename_note(&slug, &args.new_name)?;
             Ok(RenameNoteOutput {
@@ -149,7 +150,7 @@ pub struct DeleteNoteTool {
 
 impl Tool for DeleteNoteTool {
     const NAME: &'static str = "delete_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = DeleteNoteArgs;
     type Output = DeleteNoteOutput;
 
@@ -171,7 +172,7 @@ impl Tool for DeleteNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
             cave.delete_note(&slug)?;
             Ok(DeleteNoteOutput { deleted: slug })
@@ -198,7 +199,7 @@ pub struct CreateFolderTool {
 
 impl Tool for CreateFolderTool {
     const NAME: &'static str = "create_folder";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = CreateFolderArgs;
     type Output = CreateFolderOutput;
 
@@ -220,7 +221,7 @@ impl Tool for CreateFolderTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             cave.create_folder(std::path::Path::new(&args.path))?;
             Ok(CreateFolderOutput {
                 created: args.path.clone(),
@@ -251,7 +252,7 @@ pub struct RenameFolderTool {
 
 impl Tool for RenameFolderTool {
     const NAME: &'static str = "rename_folder";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = RenameFolderArgs;
     type Output = RenameFolderOutput;
 
@@ -277,7 +278,7 @@ impl Tool for RenameFolderTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             cave.rename_folder(std::path::Path::new(&args.path), &args.new_name)?;
             Ok(RenameFolderOutput {
                 old_path: args.path.clone(),
@@ -309,7 +310,7 @@ pub struct MoveFolderTool {
 
 impl Tool for MoveFolderTool {
     const NAME: &'static str = "move_folder";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = MoveFolderArgs;
     type Output = MoveFolderOutput;
 
@@ -335,7 +336,7 @@ impl Tool for MoveFolderTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let dest = args
                 .destination
                 .as_deref()
@@ -369,7 +370,7 @@ pub struct DeleteFolderTool {
 
 impl Tool for DeleteFolderTool {
     const NAME: &'static str = "delete_folder";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = DeleteFolderArgs;
     type Output = DeleteFolderOutput;
 
@@ -391,7 +392,7 @@ impl Tool for DeleteFolderTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave_mut(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             cave.delete_folder(std::path::Path::new(&args.path))?;
             Ok(DeleteFolderOutput {
                 deleted: args.path.clone(),
