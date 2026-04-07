@@ -17,6 +17,7 @@ use theme::ThemeSettings;
 /// Flat representation of one provider for form editing.
 #[derive(Clone)]
 pub(super) struct ProviderFormEntry {
+    pub id: usize,
     pub provider_type: String,
     pub name: String,
     pub base_url: String,
@@ -24,7 +25,7 @@ pub(super) struct ProviderFormEntry {
 }
 
 impl ProviderFormEntry {
-    fn from_entry(entry: &ProviderEntry) -> Self {
+    fn from_entry(id: usize, entry: &ProviderEntry) -> Self {
         let (provider_type, base_url, api_key) = match &entry.provider {
             ProviderConfig::Ollama { base_url } => (
                 "ollama".into(),
@@ -40,6 +41,7 @@ impl ProviderFormEntry {
             ProviderConfig::Prisma { api_key } => ("prisma".into(), String::new(), api_key.clone()),
         };
         Self {
+            id,
             provider_type,
             name: entry.name.clone().unwrap_or_default(),
             base_url,
@@ -47,8 +49,9 @@ impl ProviderFormEntry {
         }
     }
 
-    fn new_default(provider_type: &str) -> Self {
+    fn new_default(id: usize, provider_type: &str) -> Self {
         Self {
+            id,
             provider_type: provider_type.into(),
             name: String::new(),
             base_url: String::new(),
@@ -116,6 +119,7 @@ impl ProviderFormEntry {
 #[derive(Clone)]
 pub(super) struct SettingsForm {
     pub providers: Vec<ProviderFormEntry>,
+    pub next_provider_id: usize,
     // Fonts
     pub markdown_font: FontConfig,
     pub reading_font: FontConfig,
@@ -143,10 +147,12 @@ impl SettingsForm {
             .agent
             .providers
             .iter()
-            .map(ProviderFormEntry::from_entry)
+            .enumerate()
+            .map(|(id, entry)| ProviderFormEntry::from_entry(id, entry))
             .collect();
         Self {
             providers,
+            next_provider_id: config.agent.providers.len(),
             markdown_font: config.markdown_font.clone(),
             reading_font: config.reading_font.clone(),
             agent_font: config.agent_font.clone(),
@@ -281,17 +287,16 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 disabled_tools: f.disabled_tools,
                 brave_api_key,
             };
-            match ipc::save_config(
-                agent,
-                f.markdown_font,
-                f.reading_font,
-                f.agent_font,
-                f.daily_note_folder,
-                f.daily_note_template_slug,
-                f.theme,
-            )
-            .await
-            {
+            let mut next_config = config.get_untracked();
+            next_config.agent = agent;
+            next_config.markdown_font = f.markdown_font;
+            next_config.reading_font = f.reading_font;
+            next_config.agent_font = f.agent_font;
+            next_config.daily_note_folder = f.daily_note_folder;
+            next_config.daily_note_template_slug = f.daily_note_template_slug;
+            next_config.theme = f.theme;
+
+            match ipc::save_config(next_config).await {
                 Ok(new_config) => {
                     ctx.set_theme(&new_config.theme);
                     config.set(new_config);

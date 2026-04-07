@@ -60,7 +60,7 @@ pub(super) fn MessageList(
             }
             MarkdownLinkTarget::Wiki { slug, is_broken } => spawn_local(async move {
                 if is_broken {
-                    if let Ok(meta) = ipc::create_note(&slug, None).await {
+                    if let Ok(meta) = ipc::create_note(&slug, None, None).await {
                         if let Ok(all) = ipc::fetch_notes().await {
                             app.notes.set(all);
                         }

@@ -1,7 +1,7 @@
 mod error;
 mod note;
 
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 pub use error::CaveError;
 use granit_types::{AppConfig, TodoItem, TodoList};
 use note::{
@@ -209,22 +209,45 @@ impl Cave {
         Ok(crate::markdown::strip_frontmatter(&raw).to_string())
     }
 
-    fn render_daily_note_template(
+    fn parse_daily_note_slug(slug: &str) -> Option<NaiveDate> {
+        NaiveDate::parse_from_str(slug, "%Y-%m-%d").ok()
+    }
+
+    fn render_note_template(
         &self,
         template_slug: &str,
         note_slug: &str,
     ) -> Result<String, CaveError> {
         let template_body = self.read_template_body(template_slug)?;
-        let now = chrono::Local::now();
         let mut context = tera::Context::new();
         context.insert("slug", note_slug);
-        context.insert("date", &now.format("%Y-%m-%d").to_string());
-        context.insert("year", &now.year());
-        context.insert("month", &now.month());
-        context.insert("day", &now.day());
-        context.insert("weekday", &now.format("%A").to_string());
-        context.insert("weekday_short", &now.format("%a").to_string());
+
+        if let Some(note_date) = Self::parse_daily_note_slug(note_slug) {
+            let tomorrow = note_date + chrono::Duration::days(1);
+            let yesterday = note_date - chrono::Duration::days(1);
+            context.insert("date", &note_date.format("%Y-%m-%d").to_string());
+            context.insert("tomorrow", &tomorrow.format("%Y-%m-%d").to_string());
+            context.insert("yesterday", &yesterday.format("%Y-%m-%d").to_string());
+            context.insert("year", &note_date.year());
+            context.insert("month", &note_date.month());
+            context.insert("day", &note_date.day());
+            context.insert("weekday", &note_date.format("%A").to_string());
+            context.insert("weekday_short", &note_date.format("%a").to_string());
+        }
+
         Ok(tera::Tera::one_off(&template_body, &context, false)?)
+    }
+
+    fn initial_body_for_new_note(
+        &self,
+        slug: &str,
+        template_slug: Option<&str>,
+    ) -> Result<String, CaveError> {
+        if let Some(template_slug) = template_slug {
+            return self.render_note_template(template_slug, slug);
+        }
+
+        Ok(String::new())
     }
 
     /// Return the relative path from `self.path` to `abs_path` as a `PathBuf`.
@@ -272,8 +295,56 @@ impl Cave {
         self.active_slug.as_deref()
     }
 
+    /// Resolve the filename and slug for a new note, handling `"untitled"` auto-numbering.
+    fn resolve_new_slug(&self, name: &str) -> Result<(String, String), CaveError> {
+        let base_filename = ensure_md_extension(name);
+        if name == "untitled" && self.notes.contains_key("untitled") {
+            let mut n = 2u32;
+            loop {
+                let candidate_slug = format!("untitled-{n}");
+                if !self.notes.contains_key(&candidate_slug) {
+                    return Ok((format!("{candidate_slug}.md"), candidate_slug));
+                }
+                n += 1;
+            }
+        } else if self.notes.contains_key(name) {
+            Err(CaveError::AlreadyExists(base_filename))
+        } else {
+            Ok((base_filename, name.to_string()))
+        }
+    }
+
+    /// Resolve the target directory for a new note.
+    ///
+    /// Priority: explicit `folder` > daily note default folder > cave root.
+    fn resolve_target_dir(
+        &self,
+        folder: Option<&Path>,
+        daily_config: Option<&AppConfig>,
+    ) -> Result<PathBuf, CaveError> {
+        if let Some(f) = folder {
+            validate_folder_path(f)?;
+            let d = self.path.join(f);
+            if !d.is_dir() {
+                return Err(CaveError::NotFound(f.to_string_lossy().into_owned()));
+            }
+            self.check_containment(&d)?;
+            Ok(d)
+        } else if let Some(config) = daily_config {
+            let daily_folder = Path::new(&config.daily_note_folder);
+            validate_folder_path(daily_folder)?;
+            let d = self.path.join(daily_folder);
+            std::fs::create_dir_all(&d)?;
+            self.check_containment(&d)?;
+            Ok(d)
+        } else {
+            Ok(self.path.clone())
+        }
+    }
+
     /// Create a new note in this cave, optionally inside `folder` (relative path
-    /// from cave root). Returns the metadata of the created note.
+    /// from cave root) and optionally seeded from a template slug. Returns the
+    /// metadata of the created note.
     ///
     /// If `name` is `"untitled"` and the slug already exists anywhere in the cave,
     /// a numeric suffix is appended (`untitled-2`, `untitled-3`, …).
@@ -282,43 +353,27 @@ impl Cave {
         &mut self,
         name: &str,
         folder: Option<&Path>,
+        template_slug: Option<&str>,
     ) -> Result<NoteMeta, CaveError> {
         validate_name(name)?;
 
-        // Resolve the target directory.
-        let target_dir = if let Some(f) = folder {
-            validate_folder_path(f)?;
-            let d = self.path.join(f);
-            if !d.is_dir() {
-                return Err(CaveError::NotFound(f.to_string_lossy().into_owned()));
-            }
-            self.check_containment(&d)?;
-            d
-        } else {
-            self.path.clone()
-        };
+        let (filename, slug) = self.resolve_new_slug(name)?;
 
-        let base_filename = ensure_md_extension(name);
+        let daily_config = Self::parse_daily_note_slug(&slug)
+            .map(|_| self.load_config())
+            .transpose()?;
 
-        // For "untitled" auto-numbering, uniqueness is checked globally via the index.
-        let (filename, slug) = if name == "untitled" && self.notes.contains_key("untitled") {
-            let mut n = 2u32;
-            loop {
-                let candidate_slug = format!("untitled-{n}");
-                let candidate_file = format!("{candidate_slug}.md");
-                if !self.notes.contains_key(&candidate_slug) {
-                    break (candidate_file, candidate_slug);
-                }
-                n += 1;
-            }
-        } else if self.notes.contains_key(name) {
-            return Err(CaveError::AlreadyExists(base_filename));
-        } else {
-            (base_filename, name.to_string())
-        };
+        let target_dir = self.resolve_target_dir(folder, daily_config.as_ref())?;
+
+        let effective_template_slug = template_slug.map(str::to_string).or_else(|| {
+            daily_config
+                .as_ref()
+                .and_then(|config| config.daily_note_template_slug.clone())
+        });
 
         let final_path = target_dir.join(&filename);
-        let initial_content = crate::markdown::initial_content(&slug);
+        let body = self.initial_body_for_new_note(&slug, effective_template_slug.as_deref())?;
+        let initial_content = crate::markdown::initial_content_with_body(&body, None);
         std::fs::write(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
 
@@ -381,7 +436,7 @@ impl Cave {
         // Create the note if it doesn't exist yet, rendering the configured template if possible.
         if !self.notes.contains_key(today.as_str()) {
             let body = template_slug
-                .and_then(|slug| self.render_daily_note_template(slug, &today).ok())
+                .and_then(|slug| self.render_note_template(slug, &today).ok())
                 .unwrap_or_default();
             let final_path = abs_folder.join(format!("{today}.md"));
             let initial_content =
@@ -1329,7 +1384,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let meta = cave.create_note("hello", None).unwrap();
+        let meta = cave.create_note("hello", None, None).unwrap();
         assert_eq!(meta.slug, "hello");
 
         let notes = cave.list_notes().unwrap();
@@ -1356,7 +1411,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let meta = cave.create_note("my-note", None).unwrap();
+        let meta = cave.create_note("my-note", None, None).unwrap();
         assert_eq!(meta.slug, "my-note");
         assert_eq!(meta.relative_path, "my-note.md");
 
@@ -1371,7 +1426,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("notes")).unwrap();
 
         let meta = cave
-            .create_note("nested", Some(Path::new("notes")))
+            .create_note("nested", Some(Path::new("notes")), None)
             .unwrap();
         assert_eq!(meta.slug, "nested");
         assert_eq!(meta.relative_path, "notes/nested.md");
@@ -1384,7 +1439,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
-            .create_note("note", Some(Path::new("nonexistent")))
+            .create_note("note", Some(Path::new("nonexistent")), None)
             .unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
@@ -1394,8 +1449,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        cave.create_note("test", None).unwrap();
-        let err = cave.create_note("test", None).unwrap_err();
+        cave.create_note("test", None, None).unwrap();
+        let err = cave.create_note("test", None, None).unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
     }
 
@@ -1406,8 +1461,10 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
 
-        cave.create_note("foo", None).unwrap();
-        let err = cave.create_note("foo", Some(Path::new("sub"))).unwrap_err();
+        cave.create_note("foo", None, None).unwrap();
+        let err = cave
+            .create_note("foo", Some(Path::new("sub")), None)
+            .unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
     }
 
@@ -1416,14 +1473,101 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let m1 = cave.create_note("untitled", None).unwrap();
+        let m1 = cave.create_note("untitled", None, None).unwrap();
         assert_eq!(m1.slug, "untitled");
 
-        let m2 = cave.create_note("untitled", None).unwrap();
+        let m2 = cave.create_note("untitled", None, None).unwrap();
         assert_eq!(m2.slug, "untitled-2");
 
-        let m3 = cave.create_note("untitled", None).unwrap();
+        let m3 = cave.create_note("untitled", None, None).unwrap();
         assert_eq!(m3.slug, "untitled-3");
+    }
+
+    #[test]
+    fn test_create_note_uses_explicit_template_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/starter.md"),
+            "---\ntags: [template]\nicon: Star\n---\n# {{ slug }}\nBody\n",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+
+        let meta = cave
+            .create_note("project-kickoff", None, Some("starter"))
+            .unwrap();
+        let raw = cave.read_note_raw(&meta.slug).unwrap();
+        let note = cave.read_note(&meta.slug).unwrap();
+
+        assert_eq!(note.content, "# project-kickoff\nBody\n");
+        assert!(!raw.contains("template"));
+        assert!(!raw.contains("icon: Star"));
+        assert!(raw.contains("created_at"));
+    }
+
+    #[test]
+    fn test_create_note_daily_slug_uses_configured_daily_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/daily-template.md"),
+            "# {{ date }}\nNext: {{ tomorrow }}\nYesterday: {{ yesterday }}\n{{ weekday }} / {{ weekday_short }}\n",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+        cave.save_config(&AppConfig {
+            daily_note_template_slug: Some("daily-template".to_string()),
+            ..AppConfig::default()
+        })
+        .unwrap();
+
+        let meta = cave.create_note("2024-02-29", None, None).unwrap();
+        let note = cave.read_note(&meta.slug).unwrap();
+
+        assert_eq!(meta.relative_path, "Daily/2024-02-29.md");
+        assert_eq!(
+            note.content,
+            "# 2024-02-29\nNext: 2024-03-01\nYesterday: 2024-02-28\nThursday / Thu\n"
+        );
+    }
+
+    #[test]
+    fn test_create_note_explicit_template_overrides_daily_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/daily-template.md"),
+            "daily {{ date }}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/manual-template.md"),
+            "manual {{ slug }}\n",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+        cave.save_config(&AppConfig {
+            daily_note_template_slug: Some("daily-template".to_string()),
+            ..AppConfig::default()
+        })
+        .unwrap();
+
+        let meta = cave
+            .create_note("2024-02-29", None, Some("manual-template"))
+            .unwrap();
+        let note = cave.read_note(&meta.slug).unwrap();
+
+        assert_eq!(meta.relative_path, "Daily/2024-02-29.md");
+        assert_eq!(note.content, "manual 2024-02-29\n");
     }
 
     #[test]
@@ -1749,7 +1893,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
-        cave.create_note("note", None).unwrap();
+        cave.create_note("note", None, None).unwrap();
         // Place a file at the destination path that isn't in the index.
         std::fs::write(dir.path().join("sub/note.md"), "conflict").unwrap();
 
@@ -2030,7 +2174,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.create_template("daily-template").unwrap();
-        cave.create_note("note", None).unwrap();
+        cave.create_note("note", None, None).unwrap();
 
         let notes = cave.list_notes().unwrap();
         let templates = cave.list_templates().unwrap();

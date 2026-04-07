@@ -8,7 +8,7 @@ use messages::{DisplayItem, MessageList};
 use model_selector::ModelSelector;
 use provider_selector::ProviderSelector;
 
-use granit_types::{ChatMessage, ModelInfo, ProviderInfo};
+use granit_types::{ChatMessage, ModelInfo};
 use leptos::{ev::SubmitEvent, prelude::*, task::spawn_local};
 use wasm_bindgen::JsCast;
 
@@ -23,7 +23,6 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let messages_container: NodeRef<leptos::html::Div> = NodeRef::new();
 
     // ── Provider / model selection state ──────────────────────────────
-    let providers: RwSignal<Vec<ProviderInfo>> = RwSignal::new(Vec::new());
     let models: RwSignal<Vec<ModelInfo>> = RwSignal::new(Vec::new());
     let models_loading: RwSignal<bool> = RwSignal::new(false);
 
@@ -77,19 +76,19 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         }
     });
 
-    // Fetch providers list on mount.
-    spawn_local(async move {
-        if let Ok(p) = ipc::list_providers().await {
-            providers.set(p);
-        }
-        models_loading.set(true);
-        if let Ok(m) = ipc::list_models().await {
-            models.set(m);
-        }
-        models_loading.set(false);
+    let active_provider = Memo::new(move |_| {
+        let cfg = config.get();
+        (
+            cfg.agent.selected_provider,
+            cfg.agent
+                .providers
+                .get(cfg.agent.selected_provider)
+                .cloned(),
+        )
     });
 
-    let on_provider_changed = move || {
+    Effect::new(move |_| {
+        let _ = active_provider.get();
         models.set(Vec::new());
         models_loading.set(true);
         spawn_local(async move {
@@ -98,7 +97,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             }
             models_loading.set(false);
         });
-    };
+    });
 
     // Register streaming event listeners.
     streaming::setup_stream_listeners(messages, streaming_content, is_streaming, stream_error);
@@ -131,9 +130,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             // Header — provider selector + clear chat
             <div class="px-2 py-1.5 border-b border-base-content/10 flex items-center">
                 <ProviderSelector
-                    providers=providers
                     disabled=Signal::derive(move || is_streaming.get())
-                    on_changed=on_provider_changed
                 />
                 <div class="flex-1" />
                 <div class="tooltip tooltip-left" data-tip="Clear chat">

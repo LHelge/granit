@@ -2,37 +2,28 @@ use crate::app::{
     components::icons::{Icon, ProviderIcon},
     ipc, AppCtx,
 };
-use granit_types::ProviderInfo;
 use leptos::{prelude::*, task::spawn_local};
 
 #[component]
-pub fn ProviderSelector(
-    providers: RwSignal<Vec<ProviderInfo>>,
-    #[prop(into)] disabled: Signal<bool>,
-    on_changed: impl Fn() + Copy + Send + Sync + 'static,
-) -> impl IntoView {
+pub fn ProviderSelector(#[prop(into)] disabled: Signal<bool>) -> impl IntoView {
     let config = expect_context::<AppCtx>().config;
     let (dropdown_open, set_dropdown_open) = signal(false);
 
     let selected_label = move || {
         let cfg = config.get();
-        let idx = cfg.agent.selected_provider;
-        providers
-            .get()
-            .iter()
-            .find(|p| p.index == idx)
-            .map(|p| p.display_name.clone())
+        cfg.agent
+            .providers
+            .get(cfg.agent.selected_provider)
+            .map(|provider| provider.display_name())
             .unwrap_or_else(|| "No provider".to_string())
     };
 
     let selected_type = move || {
         let cfg = config.get();
-        let idx = cfg.agent.selected_provider;
-        providers
-            .get()
-            .iter()
-            .find(|p| p.index == idx)
-            .map(|p| p.provider_type.clone())
+        cfg.agent
+            .providers
+            .get(cfg.agent.selected_provider)
+            .map(|provider| provider.provider.provider_type().to_string())
             .unwrap_or_default()
     };
 
@@ -42,7 +33,6 @@ pub fn ProviderSelector(
             if let Ok(new_cfg) = ipc::select_provider(idx).await {
                 config.set(new_cfg);
             }
-            on_changed();
         });
     };
 
@@ -68,11 +58,10 @@ pub fn ProviderSelector(
                     {move || {
                         let cfg = config.get();
                         let selected = cfg.agent.selected_provider;
-                        providers.get().into_iter().map(|p| {
-                            let idx = p.index;
+                        cfg.agent.providers.iter().enumerate().map(|(idx, provider)| {
                             let is_active = idx == selected;
-                            let display = p.display_name.clone();
-                            let ptype = p.provider_type.clone();
+                            let display = provider.display_name();
+                            let ptype = provider.provider.provider_type().to_string();
                             view! {
                                 <button
                                     class="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-content/10 transition-colors truncate"

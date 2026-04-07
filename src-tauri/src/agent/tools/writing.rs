@@ -13,6 +13,8 @@ pub struct CreateNoteArgs {
     name: String,
     /// Optional folder path (relative to cave root) to create the note in.
     folder: Option<String>,
+    /// Optional template slug from `.granit/templates` used to seed the note body.
+    template: Option<String>,
     /// Optional icon ID (e.g. "Star", "Book"). Omit for the default file icon.
     icon: Option<String>,
 }
@@ -48,6 +50,10 @@ impl Tool for CreateNoteTool {
                         "type": "string",
                         "description": "Optional subfolder path (relative to cave root) to create the note in"
                     },
+                    "template": {
+                        "type": "string",
+                        "description": "Optional template slug from .granit/templates used to seed the note body"
+                    },
                     "icon": {
                         "type": "string",
                         "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
@@ -60,8 +66,11 @@ impl Tool for CreateNoteTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave_mut(&self.cave, |cave| {
-            let meta =
-                cave.create_note(&args.name, args.folder.as_deref().map(std::path::Path::new))?;
+            let meta = cave.create_note(
+                &args.name,
+                args.folder.as_deref().map(std::path::Path::new),
+                args.template.as_deref(),
+            )?;
             if let Some(icon) = args.icon {
                 cave.set_note_icon(&meta.slug, Some(icon))?;
             }

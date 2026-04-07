@@ -15,8 +15,19 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 
     let add_provider = move |_| {
         form.update(|f| {
-            f.providers.push(ProviderFormEntry::new_default("ollama"));
+            let id = f.next_provider_id;
+            f.next_provider_id += 1;
+            f.providers
+                .push(ProviderFormEntry::new_default(id, "ollama"));
         });
+    };
+
+    let provider_rows = move || {
+        form.get()
+            .providers
+            .into_iter()
+            .enumerate()
+            .collect::<Vec<_>>()
     };
 
     view! {
@@ -192,12 +203,16 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             </div>
 
             // Provider entries
-            {move || {
-                let count = form.get().providers.len();
-                (0..count).map(|idx| {
+            <For
+                each=provider_rows
+                key=|(_, provider)| provider.id
+                let:provider_row
+            >
+                {
+                    let (idx, _) = provider_row;
                     view! { <ProviderRow form=form index=idx /> }
-                }).collect_view()
-            }}
+                }
+            </For>
 
             <Show when=move || form.get().providers.is_empty()>
                 <p class="text-xs text-base-content/35 italic">"No providers configured. Click Add to create one."</p>

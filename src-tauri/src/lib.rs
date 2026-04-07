@@ -8,10 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta, Template, TemplateMeta};
-use granit_types::{
-    AgentConfig, AppConfig, AppMetadata, FontConfig, ModelInfo, RenderedNote, SidebarConfig,
-    TodoList,
-};
+use granit_types::{AppConfig, AppMetadata, ModelInfo, RenderedNote, SidebarConfig, TodoList};
 use tauri_plugin_store::StoreExt;
 
 const APP_STATE_STORE_PATH: &str = "app-state.json";
@@ -246,27 +243,17 @@ fn list_system_fonts() -> Vec<String> {
 #[tauri::command]
 /// Save settings to the current config storage.
 fn save_config(
-    agent: AgentConfig,
-    markdown_font: FontConfig,
-    reading_font: FontConfig,
-    agent_font: FontConfig,
-    daily_note_folder: String,
-    daily_note_template_slug: Option<String>,
-    theme: String,
+    mut config: AppConfig,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, ConfigError> {
-    agent.validate().map_err(ConfigError::Validation)?;
+    config.agent.validate().map_err(ConfigError::Validation)?;
 
     let response = {
-        let mut config = state.lock_config();
-        config.agent = agent;
-        config.markdown_font = markdown_font;
-        config.reading_font = reading_font;
-        config.agent_font = agent_font;
-        config.daily_note_folder = daily_note_folder;
-        config.daily_note_template_slug = daily_note_template_slug;
-        config.theme = theme;
-        config.clone()
+        config.active_cave = None;
+
+        let mut stored_config = state.lock_config();
+        *stored_config = config.clone();
+        config
     };
 
     save_config_to_active_cave(state.inner(), &response)?;
@@ -332,10 +319,15 @@ where
 fn create_note(
     name: String,
     folder: Option<String>,
+    template: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
     with_cave_mut(&state, |cave| {
-        cave.create_note(&name, folder.as_deref().map(std::path::Path::new))
+        cave.create_note(
+            &name,
+            folder.as_deref().map(std::path::Path::new),
+            template.as_deref(),
+        )
     })
 }
 
