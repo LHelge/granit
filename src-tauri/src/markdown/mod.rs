@@ -1014,12 +1014,18 @@ mod tests {
             Some(true),
         );
 
-        assert!(result.starts_with("---\n"), "frontmatter should be added: {result}");
+        assert!(
+            result.starts_with("---\n"),
+            "frontmatter should be added: {result}"
+        );
         assert!(
             result.contains("tags:\n- legacy\n- migrated"),
             "tags should be written: {result}"
         );
-        assert!(result.contains("icon: Star"), "icon should be written: {result}");
+        assert!(
+            result.contains("icon: Star"),
+            "icon should be written: {result}"
+        );
         assert!(
             result.contains("favorite: true"),
             "favorite should be written: {result}"

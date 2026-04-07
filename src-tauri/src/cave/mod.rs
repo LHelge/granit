@@ -2398,12 +2398,18 @@ mod tests {
 
         assert_eq!(meta.icon.as_deref(), Some("Star"));
         assert_eq!(meta.favorite, Some(true));
-        assert!(raw.starts_with("---\n"), "frontmatter should be added: {raw}");
+        assert!(
+            raw.starts_with("---\n"),
+            "frontmatter should be added: {raw}"
+        );
         assert!(
             raw.contains("tags:\n- legacy\n- migrated"),
             "tags should be persisted: {raw}"
         );
-        assert!(raw.contains("icon: Star"), "icon should be persisted: {raw}");
+        assert!(
+            raw.contains("icon: Star"),
+            "icon should be persisted: {raw}"
+        );
         assert!(
             raw.contains("favorite: true"),
             "favorite should be persisted: {raw}"

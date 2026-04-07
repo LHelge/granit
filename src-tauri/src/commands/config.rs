@@ -3,9 +3,12 @@ use std::path::{Path, PathBuf};
 use crate::agent::{self, AgentError};
 use crate::cave::{Cave, CaveError};
 use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
+use tauri::Manager;
 use tauri_plugin_store::StoreExt;
 
-use super::{save_config_to_active_cave, save_config_to_active_cave_if_open, AppState, ConfigError};
+use super::{
+    save_config_to_active_cave, save_config_to_active_cave_if_open, AppState, ConfigError,
+};
 
 const APP_STATE_STORE_PATH: &str = "app-state.json";
 const ACTIVE_CAVE_STORE_KEY: &str = "active_cave";
@@ -82,15 +85,13 @@ fn restore_active_cave_from_path(
     }
 }
 
-pub(crate) fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
-    manager: &M,
-) -> Result<(), String> {
-    let path = load_persisted_active_cave(manager)?;
-    let state = manager.state::<AppState>();
+pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let path = load_persisted_active_cave(app)?;
+    let state = app.state::<AppState>();
     let outcome = restore_active_cave_from_path(path, state.inner())?;
 
     if outcome == RestoreActiveCaveOutcome::ClearStoredKey {
-        clear_persisted_active_cave(manager)?;
+        clear_persisted_active_cave(app)?;
     }
 
     Ok(())

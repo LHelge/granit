@@ -114,7 +114,8 @@ mod tests {
     }
 
     fn note_slugs(nodes: &[TreeNode]) -> Vec<&str> {
-        nodes.iter()
+        nodes
+            .iter()
             .filter_map(|node| match node {
                 TreeNode::Note(meta) => Some(meta.slug.as_str()),
                 TreeNode::Folder { .. } => None,
@@ -124,7 +125,10 @@ mod tests {
 
     #[wasm_bindgen_test]
     fn build_tree_creates_missing_folder_hierarchy_from_notes() {
-        let tree = build_tree(vec![note("deep-note", "projects/2026/deep-note.md")], vec![]);
+        let tree = build_tree(
+            vec![note("deep-note", "projects/2026/deep-note.md")],
+            vec![],
+        );
 
         let TreeNode::Folder { children, .. } = folder(&tree, "projects") else {
             unreachable!();
