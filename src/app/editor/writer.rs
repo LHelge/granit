@@ -26,11 +26,19 @@ fn textarea_state(textarea: &web_sys::HtmlTextAreaElement) -> TextareaState {
     TextareaState::from_utf16(value, start, end)
 }
 
+fn sync_selected_text(textarea: &web_sys::HtmlTextAreaElement, ctx: EditorCtx) {
+    let selected = textarea_state(textarea)
+        .selected_text()
+        .filter(|text| !text.trim().is_empty());
+    ctx.app.selected_note_text.set(selected);
+}
+
 /// Apply an `EditResult` to the DOM textarea and sync the content signal.
 fn apply_result(textarea: &web_sys::HtmlTextAreaElement, result: &EditResult, ctx: EditorCtx) {
     textarea.set_value(&result.value);
     let _ = textarea.set_selection_range(result.cursor_start_utf16(), result.cursor_end_utf16());
     ctx.content.set(textarea.value());
+    sync_selected_text(textarea, ctx);
 }
 
 // ── Paste handler ──────────────────────────────────────────────────
@@ -179,7 +187,31 @@ pub(super) fn Writer() -> impl IntoView {
             style:font-family=move || ctx.config.get().markdown_font.font_family
             style:font-size=move || format!("{}px", ctx.config.get().markdown_font.font_size)
             prop:value=move || ctx.content.get()
-            on:input=move |ev| ctx.content.set(event_target_value(&ev))
+            on:input=move |_| {
+                if let Some(el) = content_ref.get() {
+                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                    ctx.content.set(textarea.value());
+                    sync_selected_text(textarea, ctx);
+                }
+            }
+            on:select=move |_| {
+                if let Some(el) = content_ref.get() {
+                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                    sync_selected_text(textarea, ctx);
+                }
+            }
+            on:keyup=move |_| {
+                if let Some(el) = content_ref.get() {
+                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                    sync_selected_text(textarea, ctx);
+                }
+            }
+            on:mouseup=move |_| {
+                if let Some(el) = content_ref.get() {
+                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
+                    sync_selected_text(textarea, ctx);
+                }
+            }
             on:keydown=move |ev| handle_content_keydown(ev, content_ref, ctx)
             on:paste=move |ev| handle_paste(ev, content_ref, ctx)
         />

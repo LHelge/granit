@@ -69,6 +69,10 @@ impl TextareaState {
         self.chars[self.start..self.end].iter().collect()
     }
 
+    pub fn selected_text(&self) -> Option<String> {
+        self.has_selection().then(|| self.selected())
+    }
+
     fn after_cursor(&self) -> String {
         self.chars[self.start..].iter().collect()
     }

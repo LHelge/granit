@@ -21,6 +21,7 @@ pub struct AppCtx {
     pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<granit_types::Note>>,
     pub active_template: RwSignal<Option<granit_types::Template>>,
+    pub selected_note_text: RwSignal<Option<String>>,
     pub is_mac: bool,
     errors: RwSignal<Vec<AppError>>,
     next_id: RwSignal<u32>,
@@ -36,6 +37,7 @@ impl AppCtx {
             folders: RwSignal::new(Vec::new()),
             active_note: RwSignal::new(None),
             active_template: RwSignal::new(None),
+            selected_note_text: RwSignal::new(None),
             is_mac,
             errors: RwSignal::new(Vec::new()),
             next_id: RwSignal::new(0),
@@ -105,11 +107,13 @@ impl AppCtx {
     pub fn set_active_template_document(&self, template: granit_types::Template) {
         self.active_note.set(None);
         self.active_template.set(Some(template));
+        self.selected_note_text.set(None);
     }
 
     pub fn clear_active_document(&self) {
         self.active_note.set(None);
         self.active_template.set(None);
+        self.selected_note_text.set(None);
     }
 
     /// Open a cave through IPC and refresh all frontend state that depends on it.

@@ -7,13 +7,121 @@ use crate::app::{
 };
 use granit_types::resolve_note_icon;
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{closure::Closure, JsCast, JsValue};
+
+const READER_SELECTION_HANDLER_KEY: &str = "__granitReaderSelectionHandler";
+
+fn current_selection() -> Option<JsValue> {
+    let window = web_sys::window()?;
+    let get_selection = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("getSelection"))
+        .ok()?
+        .dyn_into::<js_sys::Function>()
+        .ok()?;
+    let selection = get_selection.call0(window.as_ref()).ok()?;
+    if selection.is_null() || selection.is_undefined() {
+        return None;
+    }
+
+    Some(selection)
+}
+
+fn selection_text(selection: &JsValue) -> Option<String> {
+    let to_string = js_sys::Reflect::get(selection, &JsValue::from_str("toString"))
+        .ok()?
+        .dyn_into::<js_sys::Function>()
+        .ok()?;
+    let text = to_string.call0(selection).ok()?.as_string()?;
+
+    (!text.trim().is_empty()).then_some(text)
+}
+
+fn selection_node(selection: &JsValue, key: &str) -> Option<web_sys::Node> {
+    js_sys::Reflect::get(selection, &JsValue::from_str(key))
+        .ok()?
+        .dyn_into::<web_sys::Node>()
+        .ok()
+}
+
+fn reader_contains_node(reader: &web_sys::HtmlDivElement, node: &web_sys::Node) -> bool {
+    let Some(contains) = js_sys::Reflect::get(reader.as_ref(), &JsValue::from_str("contains"))
+        .ok()
+        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+    else {
+        return false;
+    };
+
+    contains
+        .call1(reader.as_ref(), node.as_ref())
+        .ok()
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
+fn current_reader_selection_text(reader: &web_sys::HtmlDivElement) -> Option<String> {
+    let selection = current_selection()?;
+    let text = selection_text(&selection)?;
+    let anchor = selection_node(&selection, "anchorNode")?;
+    let focus = selection_node(&selection, "focusNode")?;
+
+    (reader_contains_node(reader, &anchor) && reader_contains_node(reader, &focus)).then_some(text)
+}
+
+fn sync_reader_selection(reader_ref: NodeRef<leptos::html::Div>, ctx: super::EditorCtx) {
+    let Some(reader) = reader_ref.get() else {
+        return;
+    };
+    let reader: &web_sys::HtmlDivElement = reader.as_ref();
+    ctx.app
+        .selected_note_text
+        .set(current_reader_selection_text(reader));
+}
 
 /// Rendered preview of the active note with wiki-link navigation.
 #[component]
 pub(super) fn Reader() -> impl IntoView {
     let ctx = use_editor_ctx();
     let app_ctx = expect_context::<AppCtx>();
+    let reader_ref = NodeRef::<leptos::html::Div>::new();
+
+    Effect::new(move |_| {
+        let Some(reader) = reader_ref.get() else {
+            return;
+        };
+        let Some(document) = web_sys::window().and_then(|window| window.document()) else {
+            return;
+        };
+
+        if let Some(existing_handler) = js_sys::Reflect::get(
+            document.as_ref(),
+            &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
+        )
+        .ok()
+        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+        {
+            let existing_handler_ref: &js_sys::Function = existing_handler.unchecked_ref();
+            let _ = document
+                .remove_event_listener_with_callback("selectionchange", existing_handler_ref);
+        }
+
+        let reader_for_listener = reader.clone();
+        let ctx_for_listener = ctx;
+        let listener = Closure::wrap(Box::new(move |_event: web_sys::Event| {
+            let reader: &web_sys::HtmlDivElement = reader_for_listener.as_ref();
+            ctx_for_listener
+                .app
+                .selected_note_text
+                .set(current_reader_selection_text(reader));
+        }) as Box<dyn FnMut(web_sys::Event)>);
+
+        let _ = document
+            .add_event_listener_with_callback("selectionchange", listener.as_ref().unchecked_ref());
+        let _ = js_sys::Reflect::set(
+            document.as_ref(),
+            &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
+            listener.as_ref(),
+        );
+        listener.forget();
+    });
 
     // Intercept clicks on links and checkboxes in rendered markdown.
     // - Checkboxes toggle the underlying markdown via the backend.
@@ -91,55 +199,60 @@ pub(super) fn Reader() -> impl IntoView {
     };
 
     view! {
-        <h1 class="!mt-0 !mb-1 flex items-center gap-2">
-            {move || ctx.icon.get().map(|id| view! {
-                <span class="inline-flex w-6 h-6 shrink-0 text-accent">
-                    <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
-                </span>
-            })}
-            {move || ctx.favorite.get().unwrap_or(false).then(|| view! {
-                <span class="inline-flex w-5 h-5 shrink-0 text-warning" aria-label="Favorite note">
-                    <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
-                </span>
-            })}
-            {move || ctx.rendered_note.get().map(|r| r.title).unwrap_or_default()}
-        </h1>
-        {move || {
-            let note = ctx.rendered_note.get()?;
-            let tags = note
-                .frontmatter
-                .map(|fm| fm.tags)
-                .unwrap_or_default();
-            let created = note.created_display;
-            let modified = note.modified_display;
-            if tags.is_empty() && created.is_none() && modified.is_none() {
-                return None;
-            }
-            Some(view! {
-                <div class="not-prose !mt-0 !mb-4 flex flex-col gap-0.5">
-                    {(!tags.is_empty()).then(|| view! {
-                        <div class="flex flex-wrap items-center gap-2 mb-2">
-                            {tags.into_iter().map(|tag| view! {
-                                <span class="badge badge-ghost badge-sm">
-                                    {tag}
-                                </span>
-                            }).collect_view()}
-                        </div>
-                    })}
-                    {created.map(|ts| view! {
-                        <span class="text-xs italic text-base-content/35">{format!("Created: {ts}")}</span>
-                    })}
-                    {modified.map(|ts| view! {
-                        <span class="text-xs italic text-base-content/35">{format!("Modified: {ts}")}</span>
-                    })}
-                </div>
-            })
-        }}
         <div
-            style:font-family=move || ctx.config.get().reading_font.font_family
-            style:font-size=move || format!("{}px", ctx.config.get().reading_font.font_size)
-            inner_html=move || ctx.rendered_note.get().map(|r| r.html).unwrap_or_default()
+            node_ref=reader_ref
             on:click=on_click
-        />
+            on:keyup=move |_| sync_reader_selection(reader_ref, ctx)
+        >
+            <h1 class="!mt-0 !mb-1 flex items-center gap-2">
+                {move || ctx.icon.get().map(|id| view! {
+                    <span class="inline-flex w-6 h-6 shrink-0 text-accent">
+                        <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
+                    </span>
+                })}
+                {move || ctx.favorite.get().unwrap_or(false).then(|| view! {
+                    <span class="inline-flex w-5 h-5 shrink-0 text-warning" aria-label="Favorite note">
+                        <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                    </span>
+                })}
+                {move || ctx.rendered_note.get().map(|r| r.title).unwrap_or_default()}
+            </h1>
+            {move || {
+                let note = ctx.rendered_note.get()?;
+                let tags = note
+                    .frontmatter
+                    .map(|fm| fm.tags)
+                    .unwrap_or_default();
+                let created = note.created_display;
+                let modified = note.modified_display;
+                if tags.is_empty() && created.is_none() && modified.is_none() {
+                    return None;
+                }
+                Some(view! {
+                    <div class="not-prose !mt-0 !mb-4 flex flex-col gap-0.5">
+                        {(!tags.is_empty()).then(|| view! {
+                            <div class="flex flex-wrap items-center gap-2 mb-2">
+                                {tags.into_iter().map(|tag| view! {
+                                    <span class="badge badge-ghost badge-sm">
+                                        {tag}
+                                    </span>
+                                }).collect_view()}
+                            </div>
+                        })}
+                        {created.map(|ts| view! {
+                            <span class="text-xs italic text-base-content/35">{format!("Created: {ts}")}</span>
+                        })}
+                        {modified.map(|ts| view! {
+                            <span class="text-xs italic text-base-content/35">{format!("Modified: {ts}")}</span>
+                        })}
+                    </div>
+                })
+            }}
+            <div
+                style:font-family=move || ctx.config.get().reading_font.font_family
+                style:font-size=move || format!("{}px", ctx.config.get().reading_font.font_size)
+                inner_html=move || ctx.rendered_note.get().map(|r| r.html).unwrap_or_default()
+            />
+        </div>
     }
 }

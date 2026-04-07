@@ -1,6 +1,6 @@
 use granit_types::{
-    AppConfig, AppMetadata, ContentMatch, Note, NoteMeta, RenderedNote, SidebarConfig, Template,
-    TemplateMeta, TodoList, ToolCallInfo, ToolInfo,
+    AppConfig, AppMetadata, AttachedNote, ContentMatch, Note, NoteMeta, RenderedNote,
+    SidebarConfig, Template, TemplateMeta, TodoList, ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -346,8 +346,22 @@ pub async fn render_markdown(content: &str) -> Result<String, String> {
         .ok_or_else(|| "invalid response".to_string())
 }
 
-pub async fn send_message(msg: &str) -> Result<(), String> {
-    invoke_unit("send_message", &HashMap::from([("msg", msg)])).await
+pub async fn send_message(msg: &str, attached_notes: Vec<AttachedNote>) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        msg: &'a str,
+        attached_notes: Vec<AttachedNote>,
+    }
+
+    invoke_unit(
+        "send_message",
+        &Args {
+            msg,
+            attached_notes,
+        },
+    )
+    .await
 }
 
 pub async fn clear_chat() -> Result<(), String> {
