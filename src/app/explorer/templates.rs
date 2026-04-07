@@ -76,14 +76,15 @@ pub fn Templates() -> impl IntoView {
                         <p class="text-xs text-base-content/40">"Stored in .granit/templates"</p>
                     </div>
                     <button
-                        class="btn btn-primary btn-xs"
+                        class="btn btn-ghost btn-xs btn-square text-base-content/60 hover:text-base-content"
                         disabled=move || loading.get()
+                        title="New template"
+                        aria-label="New template"
                         on:click=create_template
                     >
                         <span class="inline-flex w-3.5 h-3.5">
-                            <Icon icon=icondata_lu::LuPlus width="100%" height="100%"/>
+                            <Icon icon=icondata_lu::LuFilePlus width="100%" height="100%"/>
                         </span>
-                        "New"
                     </button>
                 </div>
 
@@ -95,7 +96,7 @@ pub fn Templates() -> impl IntoView {
                         </div>
                     }
                 >
-                    <ul class="menu menu-sm p-0 flex-1 overflow-y-auto">
+                    <ul class="menu w-full menu-sm p-0 flex-1 overflow-y-auto">
                         {move || ctx.templates.get().into_iter().map(|template| {
                             let slug = template.slug.clone();
                             let slug_open = slug.clone();
@@ -113,14 +114,14 @@ pub fn Templates() -> impl IntoView {
                                     <div
                                         class=move || {
                                             if is_active() {
-                                                "flex items-center gap-2 rounded-none bg-base-content/10 text-base-content"
+                                                "flex w-full items-center gap-2 rounded-none bg-base-content/10 text-base-content"
                                             } else {
-                                                "flex items-center gap-2 rounded-none text-base-content/70 hover:bg-base-content/5 hover:text-base-content"
+                                                "flex w-full items-center gap-2 rounded-none text-base-content/70 hover:bg-base-content/5 hover:text-base-content"
                                             }
                                         }
                                     >
                                         <button
-                                            class="flex-1 flex items-center gap-2 text-left min-w-0"
+                                            class="flex flex-1 items-center gap-2 text-left min-w-0 w-full"
                                             on:click=move |_| {
                                                 let s = slug_open.clone();
                                                 leptos::task::spawn_local(async move {

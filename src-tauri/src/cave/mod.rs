@@ -250,6 +250,30 @@ impl Cave {
         Ok(String::new())
     }
 
+    fn initial_icon_for_new_note(
+        &self,
+        template_slug: Option<&str>,
+    ) -> Result<Option<String>, CaveError> {
+        let Some(template_slug) = template_slug else {
+            return Ok(None);
+        };
+
+        let raw = self.read_template_raw(template_slug)?;
+        Ok(crate::markdown::read_frontmatter_icon(&raw))
+    }
+
+    fn initial_tags_for_new_note(
+        &self,
+        template_slug: Option<&str>,
+    ) -> Result<Vec<String>, CaveError> {
+        let Some(template_slug) = template_slug else {
+            return Ok(Vec::new());
+        };
+
+        let raw = self.read_template_raw(template_slug)?;
+        Ok(crate::markdown::read_frontmatter_tags(&raw))
+    }
+
     /// Return the relative path from `self.path` to `abs_path` as a `PathBuf`.
     fn relative_path(&self, abs_path: &Path) -> PathBuf {
         abs_path
@@ -373,7 +397,9 @@ impl Cave {
 
         let final_path = target_dir.join(&filename);
         let body = self.initial_body_for_new_note(&slug, effective_template_slug.as_deref())?;
-        let initial_content = crate::markdown::initial_content_with_body(&body, None);
+        let tags = self.initial_tags_for_new_note(effective_template_slug.as_deref())?;
+        let icon = self.initial_icon_for_new_note(effective_template_slug.as_deref())?;
+        let initial_content = crate::markdown::initial_content_with_body(&body, tags, icon);
         std::fs::write(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
 
@@ -438,9 +464,15 @@ impl Cave {
             let body = template_slug
                 .and_then(|slug| self.render_note_template(slug, &today).ok())
                 .unwrap_or_default();
+            let tags = template_slug
+                .and_then(|slug| self.initial_tags_for_new_note(Some(slug)).ok())
+                .unwrap_or_default();
             let final_path = abs_folder.join(format!("{today}.md"));
-            let initial_content =
-                crate::markdown::initial_content_with_body(&body, Some("Calendar".to_string()));
+            let initial_content = crate::markdown::initial_content_with_body(
+                &body,
+                tags,
+                Some("Calendar".to_string()),
+            );
             std::fs::write(&final_path, initial_content)?;
             self.notes.insert(today.clone(), final_path);
         }
@@ -1503,8 +1535,12 @@ mod tests {
         let note = cave.read_note(&meta.slug).unwrap();
 
         assert_eq!(note.content, "# project-kickoff\nBody\n");
-        assert!(!raw.contains("template"));
-        assert!(!raw.contains("icon: Star"));
+        assert_eq!(note.meta.icon.as_deref(), Some("Star"));
+        assert_eq!(
+            crate::markdown::read_frontmatter_tags(&raw),
+            vec!["template".to_string()]
+        );
+        assert!(raw.contains("icon: Star"));
         assert!(raw.contains("created_at"));
     }
 
@@ -2260,9 +2296,12 @@ mod tests {
 
         assert!(note.content.contains(&format!("# {today}")));
         assert!(note.content.contains("Hello "));
+        assert_eq!(
+            crate::markdown::read_frontmatter_tags(&raw),
+            vec!["template".to_string()]
+        );
         assert!(raw.contains("icon: Calendar"));
         assert!(!raw.contains("icon: Star"));
-        assert!(!raw.contains("template"));
     }
 
     #[test]

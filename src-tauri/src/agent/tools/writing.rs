@@ -13,8 +13,6 @@ pub struct CreateNoteArgs {
     name: String,
     /// Optional folder path (relative to cave root) to create the note in.
     folder: Option<String>,
-    /// Optional template slug from `.granit/templates` used to seed the note body.
-    template: Option<String>,
     /// Optional icon ID (e.g. "Star", "Book"). Omit for the default file icon.
     icon: Option<String>,
 }
@@ -50,10 +48,6 @@ impl Tool for CreateNoteTool {
                         "type": "string",
                         "description": "Optional subfolder path (relative to cave root) to create the note in"
                     },
-                    "template": {
-                        "type": "string",
-                        "description": "Optional template slug from .granit/templates used to seed the note body"
-                    },
                     "icon": {
                         "type": "string",
                         "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
@@ -69,7 +63,7 @@ impl Tool for CreateNoteTool {
             let meta = cave.create_note(
                 &args.name,
                 args.folder.as_deref().map(std::path::Path::new),
-                args.template.as_deref(),
+                None,
             )?;
             if let Some(icon) = args.icon {
                 cave.set_note_icon(&meta.slug, Some(icon))?;
@@ -227,10 +221,7 @@ impl Tool for EditNoteTool {
 // ── open_daily_note ────────────────────────────────────────────────
 
 #[derive(Deserialize)]
-pub struct OpenDailyNoteArgs {
-    /// Folder for daily notes (relative path from cave root, e.g. "Daily").
-    folder: Option<String>,
-}
+pub struct OpenDailyNoteArgs {}
 
 #[derive(Serialize)]
 pub struct OpenDailyNoteOutput {
@@ -253,28 +244,22 @@ impl Tool for OpenDailyNoteTool {
         ToolDefinition {
             name: "open_daily_note".to_string(),
             description:
-                "Open or create today's daily note. Creates the folder and note if they don't exist."
+                "Open or create today's daily note using the configured daily note folder. Creates the folder and note if they don't exist."
                     .to_string(),
             parameters: json!({
                 "type": "object",
-                "properties": {
-                    "folder": {
-                        "type": "string",
-                        "description": "Folder for daily notes (default: \"Daily\")"
-                    }
-                }
+                "properties": {}
             }),
         }
     }
 
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave_mut(&self.cave, |cave| {
             let config = cave.load_config()?;
-            let folder = args
-                .folder
-                .as_deref()
-                .unwrap_or(config.daily_note_folder.as_str());
-            let note = cave.open_daily_note(folder, config.daily_note_template_slug.as_deref())?;
+            let note = cave.open_daily_note(
+                &config.daily_note_folder,
+                config.daily_note_template_slug.as_deref(),
+            )?;
             Ok(OpenDailyNoteOutput {
                 slug: note.meta.slug,
                 relative_path: note.meta.relative_path,
