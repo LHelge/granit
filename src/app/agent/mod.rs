@@ -128,7 +128,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             style:width=move || format!("{}px", width.get())
         >
             // Header — provider selector + clear chat
-            <div class="px-2 py-1.5 border-b border-base-content/10 flex items-center">
+            <div class="px-2 py-1.5 flex items-center">
                 <ProviderSelector
                     disabled=Signal::derive(move || is_streaming.get())
                 />
