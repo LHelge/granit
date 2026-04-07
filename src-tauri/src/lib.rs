@@ -471,7 +471,7 @@ fn save_note(
     content: String,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
-    with_cave(&state, |cave| cave.save_note(&name, &content))
+    with_cave_mut(&state, |cave| cave.save_note(&name, &content))
 }
 
 #[tauri::command]
@@ -585,8 +585,11 @@ fn toggle_todo_by_index(
 #[tauri::command]
 fn render_note(name: String, state: tauri::State<AppState>) -> Result<RenderedNote, CaveError> {
     with_cave(&state, |cave| {
-        let raw = cave.read_note_raw(&name)?;
-        Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
+        let slug = cave.resolve_slug(&name)?;
+        let raw = cave.read_note_raw(&slug)?;
+        let mut rendered = markdown::render_note(&raw, &slug, |s| cave.lookup_slug(s));
+        rendered.backlinks = cave.backlink_note_metas(&slug)?;
+        Ok(rendered)
     })
 }
 

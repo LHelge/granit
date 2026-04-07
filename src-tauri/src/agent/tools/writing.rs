@@ -3,7 +3,7 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave, with_cave_mut, SharedCave, ToolError};
+use super::{with_cave_mut, SharedCave, ToolError};
 
 // ── create_note ────────────────────────────────────────────────────
 
@@ -197,7 +197,7 @@ impl Tool for EditNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_cave_mut(&self.cave, |cave| {
             let slug = match &args.slug {
                 Some(s) => cave.resolve_slug(s)?.to_string(),
                 None => cave

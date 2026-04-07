@@ -35,7 +35,7 @@ struct ToolMeta {
 const TOOL_CATALOGUE: &[ToolMeta] = &[
     ToolMeta {
         name: "read_note",
-        description: "Read a note's content by slug (or the currently active note)",
+        description: "Read a note's content and backlinks by slug (or the currently active note)",
     },
     ToolMeta {
         name: "list_notes",
