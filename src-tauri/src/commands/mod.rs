@@ -1,6 +1,7 @@
 mod agent;
 mod cave;
 mod config;
+mod store;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -133,18 +134,10 @@ pub(super) fn save_config_to_active_cave_if_open(
 
 pub(super) fn with_cave<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
 where
-    F: FnOnce(&Cave) -> Result<T, CaveError>,
-{
-    let guard = state.lock_cave();
-    let cave = guard.as_ref().ok_or(CaveError::NoCaveOpen)?;
-    f(cave)
-}
-
-pub(super) fn with_cave_mut<F, T>(state: &tauri::State<AppState>, f: F) -> Result<T, CaveError>
-where
     F: FnOnce(&mut Cave) -> Result<T, CaveError>,
 {
     let mut guard = state.lock_cave();
     let cave = guard.as_mut().ok_or(CaveError::NoCaveOpen)?;
+    cave.ensure_scanned()?;
     f(cave)
 }

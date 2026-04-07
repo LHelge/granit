@@ -28,24 +28,47 @@ pub struct Cave {
     templates: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
     active_slug: Option<String>,
+    /// Whether the notes/backlinks/templates indexes have been populated.
+    scanned: bool,
 }
 
 impl Cave {
+    /// Create a cave handle for the given directory without scanning its
+    /// contents. Only the path is stored; the notes, backlinks, and templates
+    /// indexes remain empty until [`ensure_scanned`] (or [`open`]) is called.
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            notes: HashMap::new(),
+            backlinks: HashMap::new(),
+            templates: HashMap::new(),
+            active_slug: None,
+            scanned: false,
+        }
+    }
+
+    /// Populate the in-memory indexes (notes, backlinks, templates) by
+    /// recursively scanning the cave directory. This is a no-op if the cave
+    /// has already been scanned.
+    pub fn ensure_scanned(&mut self) -> Result<(), CaveError> {
+        if self.scanned {
+            return Ok(());
+        }
+        self.notes = Self::scan_recursive(&self.path, &self.path)?;
+        self.backlinks = Self::build_backlinks(&self.notes);
+        self.templates = Self::scan_templates(&self.templates_dir())?;
+        self.scanned = true;
+        Ok(())
+    }
+
     /// Open a cave at the given directory path. Eagerly scans recursively for
     /// `.md` files to populate the in-memory notes index.
     ///
     /// Returns an error if two files share the same slug (filename without `.md`).
     pub fn open(path: PathBuf) -> Result<Self, CaveError> {
-        let notes = Self::scan_recursive(&path, &path)?;
-        let backlinks = Self::build_backlinks(&notes);
-        let templates = Self::scan_templates(&path.join(".granit").join("templates"))?;
-        Ok(Self {
-            path,
-            notes,
-            backlinks,
-            templates,
-            active_slug: None,
-        })
+        let mut cave = Self::new(path);
+        cave.ensure_scanned()?;
+        Ok(cave)
     }
 
     pub fn config_path(&self) -> PathBuf {
