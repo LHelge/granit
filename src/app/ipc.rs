@@ -1,6 +1,6 @@
 use granit_types::{
-    AppConfig, AppMetadata, ContentMatch, FontConfig, Note, NoteMeta, RenderedNote, SidebarConfig,
-    Template, TemplateMeta, TodoList, ToolCallInfo, ToolInfo,
+    AppConfig, AppMetadata, ContentMatch, Note, NoteMeta, RenderedNote, SidebarConfig, Template,
+    TemplateMeta, TodoList, ToolCallInfo, ToolInfo,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -66,39 +66,12 @@ pub async fn list_system_fonts() -> Result<Vec<String>, String> {
     invoke_no_args("list_system_fonts").await
 }
 
-pub async fn save_config(
-    agent: granit_types::AgentConfig,
-    markdown_font: FontConfig,
-    reading_font: FontConfig,
-    agent_font: FontConfig,
-    daily_note_folder: String,
-    daily_note_template_slug: Option<String>,
-    theme: String,
-) -> Result<AppConfig, String> {
+pub async fn save_config(config: AppConfig) -> Result<AppConfig, String> {
     #[derive(Serialize)]
-    #[serde(rename_all = "camelCase")]
     struct Args {
-        agent: granit_types::AgentConfig,
-        markdown_font: FontConfig,
-        reading_font: FontConfig,
-        agent_font: FontConfig,
-        daily_note_folder: String,
-        daily_note_template_slug: Option<String>,
-        theme: String,
+        config: AppConfig,
     }
-    invoke_cmd(
-        "save_config",
-        &Args {
-            agent,
-            markdown_font,
-            reading_font,
-            agent_font,
-            daily_note_folder,
-            daily_note_template_slug,
-            theme,
-        },
-    )
-    .await
+    invoke_cmd("save_config", &Args { config }).await
 }
 
 pub async fn save_sidebar_state(
@@ -122,10 +95,6 @@ pub async fn save_sidebar_state(
 }
 
 // ── Provider / Model selection ──────────────────────────────────────
-
-pub async fn list_providers() -> Result<Vec<granit_types::ProviderInfo>, String> {
-    invoke_no_args("list_providers").await
-}
 
 pub async fn select_provider(index: usize) -> Result<AppConfig, String> {
     invoke_cmd("select_provider", &HashMap::from([("index", index)])).await
@@ -180,13 +149,26 @@ pub async fn fetch_templates() -> Result<Vec<TemplateMeta>, String> {
 
 // ── Notes ──────────────────────────────────────────────────────────
 
-pub async fn create_note(name: &str, folder: Option<&str>) -> Result<NoteMeta, String> {
+pub async fn create_note(
+    name: &str,
+    folder: Option<&str>,
+    template: Option<&str>,
+) -> Result<NoteMeta, String> {
     #[derive(Serialize)]
     struct Args<'a> {
         name: &'a str,
         folder: Option<&'a str>,
+        template: Option<&'a str>,
     }
-    invoke_cmd("create_note", &Args { name, folder }).await
+    invoke_cmd(
+        "create_note",
+        &Args {
+            name,
+            folder,
+            template,
+        },
+    )
+    .await
 }
 
 pub async fn read_note(name: &str) -> Result<Note, String> {

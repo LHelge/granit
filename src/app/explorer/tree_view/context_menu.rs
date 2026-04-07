@@ -87,7 +87,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
                     let p = path_new_note.clone();
                     ctx.context_menu.set(None);
                     leptos::task::spawn_local(async move {
-                        match ipc::create_note("untitled", Some(&p)).await {
+                        match ipc::create_note("untitled", Some(&p), None).await {
                             Ok(meta) => {
                                 ctx.refresh_async().await;
                                 match ipc::read_note(&meta.slug).await {
