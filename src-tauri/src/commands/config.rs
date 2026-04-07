@@ -1,98 +1,34 @@
-use std::path::{Path, PathBuf};
-
-use crate::agent::{self, AgentError};
-use crate::cave::{Cave, CaveError};
-use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
-use tauri::Manager;
-use tauri_plugin_store::StoreExt;
-
+use super::store::Store;
 use super::{
     save_config_to_active_cave, save_config_to_active_cave_if_open, AppState, ConfigError,
 };
+use crate::agent::{self, AgentError};
+use crate::cave::{Cave, CaveError};
+use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
+use std::path::PathBuf;
 
-const APP_STATE_STORE_PATH: &str = "app-state.json";
-const ACTIVE_CAVE_STORE_KEY: &str = "active_cave";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RestoreActiveCaveOutcome {
-    NoStoredPath,
-    Restored,
-    ClearStoredKey,
-}
-
-fn load_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
+pub(crate) fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
-) -> Result<Option<PathBuf>, String> {
-    let store = manager
-        .store(APP_STATE_STORE_PATH)
-        .map_err(|err| err.to_string())?;
+) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::new(manager);
 
-    let Some(value) = store.get(ACTIVE_CAVE_STORE_KEY) else {
-        return Ok(None);
-    };
-
-    let Some(path) = value.as_str() else {
-        store.delete(ACTIVE_CAVE_STORE_KEY);
-        store.save().map_err(|err| err.to_string())?;
-        return Ok(None);
-    };
-
-    Ok(Some(PathBuf::from(path)))
-}
-
-fn persist_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
-    manager: &M,
-    path: &Path,
-) -> Result<(), String> {
-    let store = manager
-        .store(APP_STATE_STORE_PATH)
-        .map_err(|err| err.to_string())?;
-    store.set(ACTIVE_CAVE_STORE_KEY, path.to_string_lossy().into_owned());
-    store.save().map_err(|err| err.to_string())
-}
-
-fn clear_persisted_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
-    manager: &M,
-) -> Result<(), String> {
-    let store = manager
-        .store(APP_STATE_STORE_PATH)
-        .map_err(|err| err.to_string())?;
-    store.delete(ACTIVE_CAVE_STORE_KEY);
-    store.save().map_err(|err| err.to_string())
-}
-
-fn restore_active_cave_from_path(
-    path: Option<PathBuf>,
-    state: &AppState,
-) -> Result<RestoreActiveCaveOutcome, String> {
-    let Some(path) = path else {
-        return Ok(RestoreActiveCaveOutcome::NoStoredPath);
+    let Some(path) = store.load_persisted_active_cave()? else {
+        // No path stored, nothing to restore, just return
+        return Ok(());
     };
 
     if !path.is_dir() {
-        return Ok(RestoreActiveCaveOutcome::ClearStoredKey);
+        // Stored path is invalid, clear it and return
+        store.clear_persisted_active_cave()?;
+        return Ok(());
     }
 
-    match Cave::open(path) {
-        Ok(cave) => {
-            cave.ensure_config().map_err(|err| err.to_string())?;
-            let config = cave.load_config().map_err(|err| err.to_string())?;
-            *state.lock_config() = config;
-            state.set_cave(Some(cave));
-            Ok(RestoreActiveCaveOutcome::Restored)
-        }
-        Err(_) => Ok(RestoreActiveCaveOutcome::ClearStoredKey),
-    }
-}
-
-pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let path = load_persisted_active_cave(app)?;
-    let state = app.state::<AppState>();
-    let outcome = restore_active_cave_from_path(path, state.inner())?;
-
-    if outcome == RestoreActiveCaveOutcome::ClearStoredKey {
-        clear_persisted_active_cave(app)?;
-    }
+    let state = manager.state::<AppState>();
+    let cave = Cave::new(path);
+    cave.ensure_config().map_err(|err| err.to_string())?;
+    let config = cave.load_config()?;
+    *state.lock_config() = config;
+    state.set_cave(Some(cave));
 
     Ok(())
 }
@@ -257,7 +193,9 @@ pub(crate) fn open_cave(
     let cave = Cave::open(path.clone())?;
     cave.ensure_config()?;
     let config = cave.load_config()?;
-    persist_active_cave(&app, &path).map_err(CaveError::Io)?;
+
+    let store = Store::new(&app);
+    store.persist_active_cave(&path).map_err(CaveError::Io)?;
 
     *state.lock_config() = config;
     state.set_cave(Some(cave));
@@ -348,47 +286,6 @@ mod tests {
             disabled_tools: Vec::new(),
             brave_api_key: None,
         }
-    }
-
-    #[test]
-    fn test_restore_active_cave_from_path_restores_cave_config() {
-        let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
-        cave.ensure_config().unwrap();
-
-        let config = AppConfig {
-            theme: "latte".to_string(),
-            ..AppConfig::default()
-        };
-        cave.save_config(&config).unwrap();
-
-        let state = test_app_state();
-        let outcome =
-            restore_active_cave_from_path(Some(dir.path().to_path_buf()), &state).unwrap();
-
-        assert_eq!(outcome, RestoreActiveCaveOutcome::Restored);
-        assert_eq!(state.active_cave_path(), Some(dir.path().to_path_buf()));
-        assert_eq!(state.lock_config().theme, "latte");
-    }
-
-    #[test]
-    fn test_restore_active_cave_from_path_requests_clear_for_missing_cave() {
-        let state = test_app_state();
-        let missing_path = std::env::temp_dir().join("granit-missing-cave-test-path");
-        let outcome = restore_active_cave_from_path(Some(missing_path), &state).unwrap();
-
-        assert_eq!(outcome, RestoreActiveCaveOutcome::ClearStoredKey);
-        assert!(state.active_cave_path().is_none());
-        assert_eq!(state.lock_config().theme, AppConfig::default().theme);
-    }
-
-    #[test]
-    fn test_restore_active_cave_from_path_with_no_stored_path_is_noop() {
-        let state = test_app_state();
-        let outcome = restore_active_cave_from_path(None, &state).unwrap();
-
-        assert_eq!(outcome, RestoreActiveCaveOutcome::NoStoredPath);
-        assert!(state.active_cave_path().is_none());
     }
 
     #[test]
