@@ -3,7 +3,7 @@ use super::{
     text_editing::{self, EditResult, TextareaState},
     use_editor_ctx, EditorCtx,
 };
-use crate::app::components::icon_picker::IconPicker;
+use crate::app::components::{icon_picker::IconPicker, icons::Icon};
 use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
@@ -128,6 +128,31 @@ pub(super) fn Writer() -> impl IntoView {
                 value=Signal::derive(move || ctx.icon.get())
                 on_change=move |v| ctx.icon.set(v)
             />
+            <Show when=move || ctx.active_note.get().is_some()>
+                <button
+                    type="button"
+                    class=move || {
+                        if ctx.favorite.get().unwrap_or(false) {
+                            "inline-flex w-5 h-5 shrink-0 text-warning transition-colors hover:opacity-80"
+                        } else {
+                            "inline-flex w-5 h-5 shrink-0 text-base-content/35 transition-colors hover:text-base-content/55"
+                        }
+                    }
+                    aria-label=move || {
+                        if ctx.favorite.get().unwrap_or(false) {
+                            "Unfavorite note"
+                        } else {
+                            "Favorite note"
+                        }
+                    }
+                    on:click=move |_| {
+                        let next = !ctx.favorite.get_untracked().unwrap_or(false);
+                        ctx.favorite.set(Some(next));
+                    }
+                >
+                    <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                </button>
+            </Show>
             <input
                 type="text"
                 node_ref=title_ref

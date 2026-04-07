@@ -101,6 +101,11 @@ pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
                             <span class="inline-flex w-3.5 h-3.5 shrink-0 text-accent">
                                 <Icon icon=resolve_note_icon(meta.icon.as_deref().unwrap_or("")) width="100%" height="100%"/>
                             </span>
+                            <Show when=move || meta.favorite.unwrap_or(false)>
+                                <span class="inline-flex w-3 h-3 shrink-0 text-warning">
+                                    <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                                </span>
+                            </Show>
                             {slug_click.clone()}
                         </button>
                     }

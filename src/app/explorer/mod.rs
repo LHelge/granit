@@ -1,4 +1,5 @@
 mod cave_selector;
+mod favorites;
 mod search;
 mod templates;
 mod todo;
@@ -6,6 +7,7 @@ pub(crate) mod tree_view;
 
 use crate::app::{components::icons::Icon, AppCtx};
 use cave_selector::CaveSelector;
+use favorites::Favorites;
 use leptos::prelude::*;
 use search::Search;
 use templates::Templates;
@@ -62,6 +64,16 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                     on:click=move |_| set_active_tab.set(3)
                 >
                     <span class="inline-flex w-5 h-5">
+                        <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                    </span>
+                </button>
+                <button
+                    role="tab"
+                    class="tab"
+                    class:tab-active=move || active_tab.get() == 4
+                    on:click=move |_| set_active_tab.set(4)
+                >
+                    <span class="inline-flex w-5 h-5">
                         <Icon icon=icondata_lu::LuNotepadTextDashed width="100%" height="100%"/>
                     </span>
                 </button>
@@ -84,6 +96,9 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                     <Todo />
                 </Show>
                 <Show when=move || active_tab.get() == 3>
+                    <Favorites />
+                </Show>
+                <Show when=move || active_tab.get() == 4>
                     <Templates />
                 </Show>
             </div>

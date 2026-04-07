@@ -20,6 +20,15 @@ enum PersistedMeta {
     Template(TemplateMeta),
 }
 
+struct PersistRequest<'a> {
+    slug: &'a str,
+    name: &'a str,
+    content: &'a str,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+    favorite: Option<bool>,
+}
+
 // ── Shared context: open next note in edit mode ────────────────────
 
 /// How the editor should open when switching to a new note.
@@ -69,6 +78,8 @@ pub(super) struct EditorCtx {
     pub tags: RwSignal<Vec<String>>,
     /// Frontmatter icon ID for the current note, e.g. `"Star"`.
     pub icon: RwSignal<Option<String>>,
+    /// Frontmatter favorite flag for the current note.
+    pub favorite: RwSignal<Option<bool>>,
     /// Monotonic counter used to ignore stale async render results.
     render_request_id: RwSignal<u64>,
 }
@@ -107,22 +118,33 @@ impl EditorCtx {
     async fn persist(
         self,
         kind: DocumentKind,
-        slug: &str,
-        name: &str,
-        content: &str,
-        tags: Option<Vec<String>>,
-        icon: Option<String>,
+        request: PersistRequest<'_>,
     ) -> Result<PersistedMeta, String> {
         match kind {
             DocumentKind::Note => {
-                let meta = ipc::update_note(slug, name, content, tags, icon).await?;
+                let meta = ipc::update_note(
+                    request.slug,
+                    request.name,
+                    request.content,
+                    request.tags,
+                    request.icon,
+                    request.favorite,
+                )
+                .await?;
                 if let Ok(notes) = ipc::fetch_notes().await {
                     self.notes.set(notes);
                 }
                 Ok(PersistedMeta::Note(meta))
             }
             DocumentKind::Template => {
-                let meta = ipc::update_template(slug, name, content, tags, icon).await?;
+                let meta = ipc::update_template(
+                    request.slug,
+                    request.name,
+                    request.content,
+                    request.tags,
+                    request.icon,
+                )
+                .await?;
                 if let Ok(templates) = ipc::fetch_templates().await {
                     self.templates.set(templates);
                 }
@@ -175,6 +197,7 @@ impl EditorCtx {
         let title = self.title_input.get_untracked().trim().to_string();
         let tags = self.tags.get_untracked();
         let icon = self.icon.get_untracked();
+        let favorite = self.favorite.get_untracked();
         let slug = slug.to_string();
         let name = if title.is_empty() {
             slug.clone()
@@ -183,7 +206,17 @@ impl EditorCtx {
         };
         leptos::task::spawn_local(async move {
             if let Err(e) = self
-                .persist(kind, &slug, &name, &content, Some(tags), icon)
+                .persist(
+                    kind,
+                    PersistRequest {
+                        slug: &slug,
+                        name: &name,
+                        content: &content,
+                        tags: Some(tags),
+                        icon,
+                        favorite,
+                    },
+                )
                 .await
             {
                 self.error.set(Some(format!("Autosave failed: {e}")));
@@ -219,10 +252,21 @@ impl EditorCtx {
         };
         let tags = self.tags.get_untracked();
         let icon = self.icon.get_untracked();
+        let favorite = self.favorite.get_untracked();
 
         leptos::task::spawn_local(async move {
             match self
-                .persist(kind, &old_slug, &name, &content, Some(tags), icon)
+                .persist(
+                    kind,
+                    PersistRequest {
+                        slug: &old_slug,
+                        name: &name,
+                        content: &content,
+                        tags: Some(tags),
+                        icon,
+                        favorite,
+                    },
+                )
                 .await
             {
                 Ok(PersistedMeta::Note(meta)) => {
@@ -316,6 +360,7 @@ pub fn Editor() -> impl IntoView {
         prev_doc_key: RwSignal::new(None),
         tags: RwSignal::new(Vec::new()),
         icon: RwSignal::new(None),
+        favorite: RwSignal::new(None),
         render_request_id: RwSignal::new(0),
     };
     provide_context(ctx);
@@ -372,28 +417,37 @@ pub fn Editor() -> impl IntoView {
                 .set(Some(format!("template:{}", template.meta.slug.clone())));
             ctx.content.set(template.content.clone());
             ctx.title_input.set(template.meta.slug.clone());
+            ctx.favorite.set(None);
         } else if let Some(note) = new_note {
             ctx.prev_doc_key
                 .set(Some(format!("note:{}", note.meta.slug.clone())));
             ctx.content.set(note.content.clone());
             ctx.title_input.set(note.meta.slug.clone());
+            ctx.favorite.set(note.meta.favorite);
         } else {
             ctx.prev_doc_key.set(None);
             ctx.content.set(String::new());
             ctx.title_input.set(String::new());
             ctx.tags.set(Vec::new());
             ctx.icon.set(None);
+            ctx.favorite.set(None);
         }
         ctx.error.set(None);
     });
 
-    // Sync tags and icon from rendered note frontmatter whenever it changes.
+    // Sync tags, icon, and favorite from rendered note frontmatter whenever it changes.
     Effect::new(move || {
         let fm = ctx.rendered_note.get().and_then(|r| r.frontmatter);
         let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
-        let icon = fm.and_then(|f| f.icon);
+        let icon = fm.as_ref().and_then(|f| f.icon.clone());
+        let favorite = if ctx.active_note.get().is_some() {
+            fm.and_then(|f| f.favorite)
+        } else {
+            None
+        };
         ctx.tags.set(tags);
         ctx.icon.set(icon);
+        ctx.favorite.set(favorite);
     });
 
     let has_document =

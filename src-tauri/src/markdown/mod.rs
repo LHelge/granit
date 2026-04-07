@@ -146,6 +146,7 @@ pub fn initial_content_with_body(body: &str, tags: Vec<String>, icon: Option<Str
         created_at: Some(now),
         modified_at: Some(now),
         icon,
+        favorite: None,
     };
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
     format!("---\n{yaml}---\n{body}")
@@ -167,6 +168,14 @@ pub(crate) fn read_frontmatter_icon(raw: &str) -> Option<String> {
     extract_frontmatter(raw).0.and_then(|fm| fm.icon)
 }
 
+/// Extract the `favorite` field from YAML frontmatter without rendering markdown.
+///
+/// Returns `None` if the note has no frontmatter, the frontmatter is
+/// malformed, or the `favorite` field is absent.
+pub(crate) fn read_frontmatter_favorite(raw: &str) -> Option<bool> {
+    extract_frontmatter(raw).0.and_then(|fm| fm.favorite)
+}
+
 /// Extract the `tags` field from YAML frontmatter without rendering markdown.
 ///
 /// Returns an empty vector if the note has no frontmatter, the frontmatter is
@@ -184,6 +193,7 @@ pub(crate) fn read_frontmatter_tags(raw: &str) -> Vec<String> {
 /// - `tags`: `None` = preserve existing tags; `Some(v)` = replace.
 /// - `icon`: `None` = preserve existing icon; `Some("")` = clear;
 ///   `Some(s)` = set to `s`.
+/// - `favorite`: `None` = preserve existing value; `Some(v)` = set to `v`.
 ///
 /// If the existing content has no parseable frontmatter the body is returned
 /// unchanged.
@@ -192,6 +202,7 @@ pub fn rebuild_with_frontmatter(
     new_body: &str,
     tags: Option<Vec<String>>,
     icon: Option<String>,
+    favorite: Option<bool>,
 ) -> String {
     let (fm, _) = extract_frontmatter(existing_raw);
     let Some(mut fm) = fm else {
@@ -203,6 +214,9 @@ pub fn rebuild_with_frontmatter(
     }
     if let Some(icon) = icon {
         fm.icon = if icon.is_empty() { None } else { Some(icon) };
+    }
+    if let Some(favorite) = favorite {
+        fm.favorite = Some(favorite);
     }
     // Strip any frontmatter the caller may have included in new_body to
     // avoid duplication (e.g. agent tools sending full-file content).
@@ -684,7 +698,7 @@ mod tests {
         let existing =
             "---\ntags:\n- original\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nOld body";
         let new_body_with_fm = "---\nsome: injected\n---\nNew body content";
-        let result = rebuild_with_frontmatter(existing, new_body_with_fm, None, None);
+        let result = rebuild_with_frontmatter(existing, new_body_with_fm, None, None, None);
         assert!(result.starts_with("---\n"), "must start with frontmatter");
         assert!(
             result.contains("original"),
@@ -707,7 +721,8 @@ mod tests {
     fn test_rebuild_with_tags_override() {
         let existing =
             "---\ntags:\n- old\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
-        let result = rebuild_with_frontmatter(existing, "Body", Some(vec!["new".into()]), None);
+        let result =
+            rebuild_with_frontmatter(existing, "Body", Some(vec!["new".into()]), None, None);
         assert!(result.contains("new"), "new tag must be present");
         assert!(!result.contains("old"), "old tag must be removed");
     }
@@ -716,10 +731,10 @@ mod tests {
     fn test_rebuild_with_icon_set_and_clear() {
         let existing =
             "---\ntags: []\ncreated_at: \"2026-01-01T00:00:00Z\"\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
-        let with_icon = rebuild_with_frontmatter(existing, "Body", None, Some("Star".into()));
+        let with_icon = rebuild_with_frontmatter(existing, "Body", None, Some("Star".into()), None);
         assert!(with_icon.contains("Star"), "icon must be set");
 
-        let cleared = rebuild_with_frontmatter(&with_icon, "Body", None, Some(String::new()));
+        let cleared = rebuild_with_frontmatter(&with_icon, "Body", None, Some(String::new()), None);
         assert!(
             !cleared.contains("Star"),
             "icon must be cleared after empty string"
@@ -729,7 +744,7 @@ mod tests {
     #[test]
     fn test_rebuild_no_frontmatter_returns_body_unchanged() {
         // If the original note has no frontmatter, return new_body as-is.
-        let result = rebuild_with_frontmatter("No frontmatter here", "new body", None, None);
+        let result = rebuild_with_frontmatter("No frontmatter here", "new body", None, None, None);
         assert_eq!(result, "new body");
     }
 
@@ -818,10 +833,12 @@ mod tests {
             created_at: None,
             modified_at: None,
             icon: Some("LuFolder".to_string()),
+            favorite: Some(true),
         };
         let yaml = serde_yml::to_string(&fm).unwrap();
         let parsed: Frontmatter = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed.icon.as_deref(), Some("LuFolder"));
+        assert_eq!(parsed.favorite, Some(true));
         assert_eq!(parsed.tags, ["test"]);
     }
 
@@ -832,18 +849,23 @@ mod tests {
             created_at: None,
             modified_at: None,
             icon: None,
+            favorite: None,
         };
         let yaml = serde_yml::to_string(&fm).unwrap();
         assert!(
             !yaml.contains("icon"),
             "icon: None should be omitted: {yaml}"
         );
+        assert!(
+            !yaml.contains("favorite"),
+            "favorite: None should be omitted: {yaml}"
+        );
     }
 
     #[test]
     fn test_rebuild_preserves_icon() {
         let existing = "---\ntags:\n  - old\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nOld body";
-        let result = rebuild_with_frontmatter(existing, "New body", None, None);
+        let result = rebuild_with_frontmatter(existing, "New body", None, None, None);
         assert!(
             result.contains("icon: LuStar"),
             "icon should be preserved: {result}"
@@ -854,7 +876,8 @@ mod tests {
     #[test]
     fn test_rebuild_overrides_icon() {
         let existing = "---\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
-        let result = rebuild_with_frontmatter(existing, "Body", None, Some("LuFolder".to_string()));
+        let result =
+            rebuild_with_frontmatter(existing, "Body", None, Some("LuFolder".to_string()), None);
         assert!(
             result.contains("icon: LuFolder"),
             "icon should be updated: {result}"
@@ -868,10 +891,44 @@ mod tests {
     #[test]
     fn test_rebuild_clears_icon() {
         let existing = "---\nicon: LuStar\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
-        let result = rebuild_with_frontmatter(existing, "Body", None, Some(String::new()));
+        let result = rebuild_with_frontmatter(existing, "Body", None, Some(String::new()), None);
         assert!(
             !result.contains("icon:"),
             "icon should be cleared: {result}"
+        );
+    }
+
+    #[test]
+    fn test_frontmatter_with_favorite() {
+        let raw = "---\nfavorite: true\n---\n# Body";
+        let (fm, body) = extract_frontmatter(raw);
+        let fm = fm.expect("frontmatter should be parsed");
+        assert_eq!(fm.favorite, Some(true));
+        assert_eq!(body, "# Body");
+    }
+
+    #[test]
+    fn test_rebuild_preserves_favorite() {
+        let existing = "---\nfavorite: true\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let result = rebuild_with_frontmatter(existing, "New body", None, None, None);
+        assert!(
+            result.contains("favorite: true"),
+            "favorite should be preserved: {result}"
+        );
+        assert!(result.contains("New body"));
+    }
+
+    #[test]
+    fn test_rebuild_overrides_favorite() {
+        let existing = "---\nfavorite: true\ncreated_at: \"2026-01-01T00:00:00Z\"\n---\nBody";
+        let result = rebuild_with_frontmatter(existing, "Body", None, None, Some(false));
+        assert!(
+            result.contains("favorite: false"),
+            "favorite should be updated: {result}"
+        );
+        assert!(
+            !result.contains("favorite: true"),
+            "old favorite should be gone: {result}"
         );
     }
 }
