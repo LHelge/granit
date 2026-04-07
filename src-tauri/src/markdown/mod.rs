@@ -234,8 +234,8 @@ pub(crate) fn read_frontmatter_tags(raw: &str) -> Vec<String> {
 ///   `Some(s)` = set to `s`.
 /// - `favorite`: `None` = preserve existing value; `Some(v)` = set to `v`.
 ///
-/// If the existing content has no parseable frontmatter the body is returned
-/// unchanged.
+/// If the existing content has no parseable frontmatter, a new frontmatter
+/// block is created so legacy notes can gain metadata fields.
 pub fn rebuild_with_frontmatter(
     existing_raw: &str,
     new_body: &str,
@@ -244,10 +244,23 @@ pub fn rebuild_with_frontmatter(
     favorite: Option<bool>,
 ) -> String {
     let (fm, _) = extract_frontmatter(existing_raw);
-    let Some(mut fm) = fm else {
-        return new_body.to_string();
+    let (_, body) = extract_frontmatter(new_body);
+    let should_create_frontmatter = tags.as_ref().is_some_and(|tags| !tags.is_empty())
+        || icon.as_deref().is_some_and(|icon| !icon.is_empty())
+        || favorite.is_some();
+    let now = Utc::now();
+    let mut fm = match fm {
+        Some(fm) => fm,
+        None if should_create_frontmatter => Frontmatter {
+            tags: Vec::new(),
+            created_at: Some(now),
+            modified_at: Some(now),
+            icon: None,
+            favorite: None,
+        },
+        None => return body.to_string(),
     };
-    fm.modified_at = Some(Utc::now());
+    fm.modified_at = Some(now);
     if let Some(tags) = tags {
         fm.tags = tags;
     }
@@ -259,7 +272,6 @@ pub fn rebuild_with_frontmatter(
     }
     // Strip any frontmatter the caller may have included in new_body to
     // avoid duplication (e.g. agent tools sending full-file content).
-    let (_, body) = extract_frontmatter(new_body);
     let yaml = serde_yml::to_string(&fm).unwrap_or_default();
     format!("---\n{yaml}---\n{body}")
 }
@@ -989,6 +1001,40 @@ mod tests {
         assert!(
             !result.contains("favorite: true"),
             "old favorite should be gone: {result}"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_creates_frontmatter_when_missing() {
+        let result = rebuild_with_frontmatter(
+            "Legacy body",
+            "Updated body",
+            Some(vec!["legacy".into(), "migrated".into()]),
+            Some("Star".into()),
+            Some(true),
+        );
+
+        assert!(result.starts_with("---\n"), "frontmatter should be added: {result}");
+        assert!(
+            result.contains("tags:\n- legacy\n- migrated"),
+            "tags should be written: {result}"
+        );
+        assert!(result.contains("icon: Star"), "icon should be written: {result}");
+        assert!(
+            result.contains("favorite: true"),
+            "favorite should be written: {result}"
+        );
+        assert!(
+            result.contains("created_at:"),
+            "created_at should be initialized: {result}"
+        );
+        assert!(
+            result.contains("modified_at:"),
+            "modified_at should be initialized: {result}"
+        );
+        assert!(
+            result.ends_with("Updated body"),
+            "body should be preserved: {result}"
         );
     }
 }
