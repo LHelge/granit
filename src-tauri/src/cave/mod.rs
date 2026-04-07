@@ -9,7 +9,7 @@ use note::{
     template_meta_from_path, template_meta_with_icon, validate_folder_path, validate_name,
 };
 pub use note::{Note, NoteMeta, Template, TemplateMeta};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub use granit_types::ContentMatch;
@@ -22,6 +22,8 @@ pub struct Cave {
     /// sync by create / delete / rename / update operations.
     /// Slug uniqueness is enforced globally across all subdirectories.
     notes: HashMap<String, PathBuf>,
+    /// In-memory reverse wiki-link index: target slug → source slugs.
+    backlinks: HashMap<String, Vec<String>>,
     /// In-memory index: template slug → absolute path inside `.granit/templates`.
     templates: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
@@ -35,10 +37,12 @@ impl Cave {
     /// Returns an error if two files share the same slug (filename without `.md`).
     pub fn open(path: PathBuf) -> Result<Self, CaveError> {
         let notes = Self::scan_recursive(&path, &path)?;
+        let backlinks = Self::build_backlinks(&notes);
         let templates = Self::scan_templates(&path.join(".granit").join("templates"))?;
         Ok(Self {
             path,
             notes,
+            backlinks,
             templates,
             active_slug: None,
         })
@@ -204,6 +208,42 @@ impl Cave {
         Ok(templates)
     }
 
+    fn build_backlinks(notes: &HashMap<String, PathBuf>) -> HashMap<String, Vec<String>> {
+        let mut backlinks: HashMap<String, HashSet<String>> = HashMap::new();
+
+        for (source_slug, abs_path) in notes {
+            let Ok(raw) = std::fs::read_to_string(abs_path) else {
+                continue;
+            };
+
+            for target_slug in crate::markdown::resolved_outgoing_links(&raw, |name| {
+                Self::lookup_slug_in_notes(notes, name)
+            }) {
+                if target_slug == *source_slug {
+                    continue;
+                }
+
+                backlinks
+                    .entry(target_slug)
+                    .or_default()
+                    .insert(source_slug.clone());
+            }
+        }
+
+        backlinks
+            .into_iter()
+            .map(|(target_slug, source_slugs)| {
+                let mut source_slugs: Vec<String> = source_slugs.into_iter().collect();
+                source_slugs.sort_by_key(|slug| slug.to_lowercase());
+                (target_slug, source_slugs)
+            })
+            .collect()
+    }
+
+    fn rebuild_backlinks(&mut self) {
+        self.backlinks = Self::build_backlinks(&self.notes);
+    }
+
     fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {
         let raw = self.read_template_raw(slug)?;
         Ok(crate::markdown::strip_frontmatter(&raw).to_string())
@@ -287,10 +327,17 @@ impl Cave {
     /// Returns the stored slug if found, `None` otherwise. Designed to be passed
     /// as a closure to `markdown::resolve_wiki_links`.
     pub fn lookup_slug(&self, name: &str) -> Option<&str> {
+        Self::lookup_slug_in_notes(&self.notes, name)
+    }
+
+    fn lookup_slug_in_notes<'a>(
+        notes: &'a HashMap<String, PathBuf>,
+        name: &str,
+    ) -> Option<&'a str> {
         let lower = name.to_lowercase();
-        self.notes
+        notes
             .keys()
-            .find(|k| k.to_lowercase() == lower)
+            .find(|slug| slug.to_lowercase() == lower)
             .map(String::as_str)
     }
 
@@ -301,6 +348,25 @@ impl Cave {
         self.lookup_slug(slug)
             .map(String::from)
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))
+    }
+
+    pub fn backlink_slugs(&self, slug: &str) -> Result<Vec<String>, CaveError> {
+        let slug = self.resolve_slug(slug)?;
+        Ok(self.backlinks.get(&slug).cloned().unwrap_or_default())
+    }
+
+    pub fn backlink_note_metas(&self, slug: &str) -> Result<Vec<NoteMeta>, CaveError> {
+        let backlink_slugs = self.backlink_slugs(slug)?;
+        let mut backlinks: Vec<NoteMeta> = backlink_slugs
+            .into_iter()
+            .filter_map(|source_slug| {
+                self.notes.get(&source_slug).map(|abs_path| {
+                    note_meta_with_frontmatter(&self.relative_path(abs_path), abs_path)
+                })
+            })
+            .collect();
+        backlinks.sort_by_key(|meta| meta.slug.to_lowercase());
+        Ok(backlinks)
     }
 
     /// The root directory of this cave.
@@ -402,6 +468,7 @@ impl Cave {
         let initial_content = crate::markdown::initial_content_with_body(&body, tags, icon);
         std::fs::write(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
+        self.rebuild_backlinks();
 
         let rel = self.relative_path(&final_path);
         Ok(note_meta_from_relative_path(&rel))
@@ -475,6 +542,7 @@ impl Cave {
             );
             std::fs::write(&final_path, initial_content)?;
             self.notes.insert(today.clone(), final_path);
+            self.rebuild_backlinks();
         }
 
         self.read_note(&today)
@@ -511,6 +579,7 @@ impl Cave {
         // Filesystem first — only update the index after the delete succeeds.
         std::fs::remove_dir_all(&abs)?;
         self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
+        self.rebuild_backlinks();
         Ok(())
     }
 
@@ -838,18 +907,20 @@ impl Cave {
     }
 
     /// Save new content to an existing note (looked up by slug).
-    pub fn save_note(&self, slug: &str, content: &str) -> Result<NoteMeta, CaveError> {
+    pub fn save_note(&mut self, slug: &str, content: &str) -> Result<NoteMeta, CaveError> {
         validate_name(slug)?;
         let abs_path = self
             .notes
             .get(slug)
-            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
+            .clone();
 
-        let existing_raw = std::fs::read_to_string(abs_path)?;
+        let existing_raw = std::fs::read_to_string(&abs_path)?;
         let updated =
             crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None, None, None);
-        std::fs::write(abs_path, updated.as_str())?;
-        let rel = self.relative_path(abs_path);
+        std::fs::write(&abs_path, updated.as_str())?;
+        self.rebuild_backlinks();
+        let rel = self.relative_path(&abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
         meta.icon = crate::markdown::read_frontmatter_icon(&updated);
         meta.favorite = crate::markdown::read_frontmatter_favorite(&updated);
@@ -903,7 +974,7 @@ impl Cave {
     /// Fails if `old_text` is not found in the note's content.
     #[allow(dead_code)]
     pub fn edit_note(
-        &self,
+        &mut self,
         slug: &str,
         old_text: &str,
         new_text: &str,
@@ -924,6 +995,7 @@ impl Cave {
         let new_content =
             crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None, None, None);
         std::fs::write(&abs_path, &new_content)?;
+        self.rebuild_backlinks();
 
         let rel = self.relative_path(&abs_path);
         Ok(note_meta_from_relative_path(&rel))
@@ -940,6 +1012,7 @@ impl Cave {
 
         std::fs::remove_file(&abs_path)?;
         self.notes.remove(slug);
+        self.rebuild_backlinks();
         Ok(())
     }
 
@@ -1103,6 +1176,7 @@ impl Cave {
         std::fs::rename(&old_abs, &new_abs)?;
         self.notes.remove(old_slug);
         self.notes.insert(new_name.to_string(), new_abs.clone());
+        self.rebuild_backlinks();
 
         let rel = self.relative_path(&new_abs);
         Ok(note_meta_with_frontmatter(&rel, &new_abs))
@@ -1204,6 +1278,7 @@ impl Cave {
             self.notes.remove(old_slug);
             self.notes.insert(new_name.to_string(), final_abs.clone());
         }
+        self.rebuild_backlinks();
 
         let rel = self.relative_path(&final_abs);
         let mut meta = note_meta_from_relative_path(&rel);
@@ -1775,7 +1850,7 @@ mod tests {
     fn test_save_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Old\n").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.save_note("test", "# New Title\nNew body").unwrap();
         assert_eq!(meta.slug, "test");
@@ -1787,7 +1862,7 @@ mod tests {
     #[test]
     fn test_save_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.save_note("missing", "content").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -1796,7 +1871,7 @@ mod tests {
     #[test]
     fn test_save_note_rejects_path_traversal() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.save_note("../escape", "content").unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
@@ -1806,7 +1881,7 @@ mod tests {
     fn test_edit_note() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Hello\nold text here").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave.edit_note("test", "old text", "new text").unwrap();
         assert_eq!(meta.slug, "test");
@@ -1819,7 +1894,7 @@ mod tests {
     #[test]
     fn test_edit_note_not_found() {
         let dir = tempfile::tempdir().unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave.edit_note("missing", "old", "new").unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
@@ -1829,7 +1904,7 @@ mod tests {
     fn test_edit_note_text_not_found() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "# Hello\nsome content").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
             .edit_note("test", "nonexistent text", "replacement")
@@ -1841,11 +1916,101 @@ mod tests {
     fn test_edit_note_replaces_first_occurrence_only() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("test.md"), "AAA BBB AAA").unwrap();
-        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         cave.edit_note("test", "AAA", "CCC").unwrap();
         let content = std::fs::read_to_string(dir.path().join("test.md")).unwrap();
         assert_eq!(content, "CCC BBB AAA");
+    }
+
+    #[test]
+    fn test_open_builds_backlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source-a.md"), "[[target]]\n").unwrap();
+        std::fs::write(dir.path().join("source-b.md"), "[[target]]\n").unwrap();
+
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(
+            cave.backlink_slugs("target").unwrap(),
+            vec!["source-a".to_string(), "source-b".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_backlinks_deduplicate_repeated_links_from_same_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(
+            dir.path().join("source.md"),
+            "[[target]] and [[target|again]]\n",
+        )
+        .unwrap();
+
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(
+            cave.backlink_slugs("target").unwrap(),
+            vec!["source".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_save_note_rebuilds_backlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "No links yet\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert!(cave.backlink_slugs("target").unwrap().is_empty());
+
+        cave.save_note("source", "[[target]]\n").unwrap();
+
+        assert_eq!(
+            cave.backlink_slugs("target").unwrap(),
+            vec!["source".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_rename_note_rebuilds_backlink_source_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "[[target]]\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.rename_note("source", "renamed-source").unwrap();
+
+        assert_eq!(
+            cave.backlink_slugs("target").unwrap(),
+            vec!["renamed-source".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_delete_note_rebuilds_backlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "[[target]]\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.delete_note("source").unwrap();
+
+        assert!(cave.backlink_slugs("target").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_delete_folder_rebuilds_backlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("sub/source.md"), "[[target]]\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.delete_folder(Path::new("sub")).unwrap();
+
+        assert!(cave.backlink_slugs("target").unwrap().is_empty());
     }
 
     #[test]

@@ -33,9 +33,18 @@ pub fn render_note<'lookup>(
         html,
         frontmatter,
         outgoing_links,
+        backlinks: Vec::new(),
         created_display,
         modified_display,
     }
+}
+
+pub fn resolved_outgoing_links<'lookup>(
+    raw: &str,
+    lookup: impl Fn(&str) -> Option<&'lookup str>,
+) -> Vec<String> {
+    let (_, body) = extract_frontmatter(raw);
+    collect_resolved_wiki_links(body, lookup)
 }
 
 /// Render markdown to HTML, resolving `[[wiki-links]]` during event processing.
@@ -73,11 +82,11 @@ fn render_with_wiki_links<'lookup>(
             title: _,
             id,
         }) => {
-            if let Some(slug) = lookup(&dest_url) {
-                outgoing_links.push(slug.to_string());
+            if let Some(slug) = resolve_wiki_link_slug(&dest_url, &lookup) {
+                outgoing_links.push(slug.clone());
                 vec![Event::Start(Tag::Link {
                     link_type: LinkType::Inline,
-                    dest_url: slug.to_string().into(),
+                    dest_url: slug.into(),
                     title: "".into(),
                     id,
                 })]
@@ -128,6 +137,36 @@ fn render_with_wiki_links<'lookup>(
     let mut html_output = String::new();
     html::push_html(&mut html_output, events);
     (html_output, outgoing_links)
+}
+
+fn collect_resolved_wiki_links<'lookup>(
+    markdown: &str,
+    lookup: impl Fn(&str) -> Option<&'lookup str>,
+) -> Vec<String> {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_WIKILINKS);
+
+    Parser::new_ext(markdown, options)
+        .filter_map(|event| match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::WikiLink { .. },
+                dest_url,
+                ..
+            }) => resolve_wiki_link_slug(&dest_url, &lookup),
+            _ => None,
+        })
+        .collect()
+}
+
+fn resolve_wiki_link_slug<'lookup>(
+    dest_url: &str,
+    lookup: &impl Fn(&str) -> Option<&'lookup str>,
+) -> Option<String> {
+    lookup(dest_url).map(ToString::to_string)
 }
 
 /// Generate the initial file content for a new note.
@@ -361,6 +400,27 @@ mod tests {
         let html = render_html("[Granit](https://example.com)");
         assert!(html.contains(r#"href="https://example.com""#));
         assert!(html.contains("Granit"));
+    }
+
+    #[test]
+    fn test_resolved_outgoing_links_collects_resolved_targets() {
+        let links = resolved_outgoing_links("[[Target]] and [[Other|label]]", |name| match name {
+            "Target" => Some("target"),
+            "Other" => Some("other"),
+            _ => None,
+        });
+
+        assert_eq!(links, vec!["target".to_string(), "other".to_string()]);
+    }
+
+    #[test]
+    fn test_resolved_outgoing_links_skips_broken_targets() {
+        let links = resolved_outgoing_links("[[Target]] [[Missing]]", |name| match name {
+            "Target" => Some("target"),
+            _ => None,
+        });
+
+        assert_eq!(links, vec!["target".to_string()]);
     }
 
     #[test]

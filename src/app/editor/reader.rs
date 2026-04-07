@@ -223,9 +223,10 @@ pub(super) fn Reader() -> impl IntoView {
                     .frontmatter
                     .map(|fm| fm.tags)
                     .unwrap_or_default();
+                let backlinks = note.backlinks;
                 let created = note.created_display;
                 let modified = note.modified_display;
-                if tags.is_empty() && created.is_none() && modified.is_none() {
+                if tags.is_empty() && created.is_none() && modified.is_none() && backlinks.is_empty() {
                     return None;
                 }
                 Some(view! {
@@ -244,6 +245,47 @@ pub(super) fn Reader() -> impl IntoView {
                         })}
                         {modified.map(|ts| view! {
                             <span class="text-xs italic text-base-content/35">{format!("Modified: {ts}")}</span>
+                        })}
+                        {(!backlinks.is_empty()).then(|| {
+                            let backlink_count = backlinks.len();
+                            view! {
+                                <details class="collapse rounded-none group -mx-2 mt-1">
+                                    <summary class="collapse-title min-h-0 px-2 py-2 flex items-center justify-between gap-2 text-sm font-medium text-base-content/70">
+                                        <span>{format!("Backlinks ({backlink_count})")}</span>
+                                        <span class="inline-flex w-3.5 h-3.5 shrink-0 transition-transform rotate-180 group-open:rotate-0">
+                                            <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
+                                        </span>
+                                    </summary>
+                                    <div class="collapse-content px-2 pt-0 pb-0">
+                                        <div class="flex flex-col gap-1.5 pb-2">
+                                            {backlinks.into_iter().map(|backlink| {
+                                                let slug = backlink.slug.clone();
+                                                let relative_path = backlink.relative_path.clone();
+                                                let icon = backlink.icon.clone();
+                                                view! {
+                                                    <button
+                                                        type="button"
+                                                        class="flex items-start gap-2 rounded-box px-2 py-1.5 text-left hover:bg-base-200/70"
+                                                        on:click=move |_| ctx.navigate_wiki_link(slug.clone(), false)
+                                                    >
+                                                        <span class="inline-flex w-4 h-4 shrink-0 text-accent mt-0.5">
+                                                            {icon.map(|id| view! {
+                                                                <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
+                                                            }).unwrap_or_else(|| view! {
+                                                                <Icon icon=icondata_lu::LuLink width="100%" height="100%"/>
+                                                            })}
+                                                        </span>
+                                                        <span class="min-w-0 flex flex-col">
+                                                            <span class="truncate text-sm text-base-content">{backlink.slug}</span>
+                                                            <span class="truncate text-xs text-base-content/45">{relative_path}</span>
+                                                        </span>
+                                                    </button>
+                                                }
+                                            }).collect_view()}
+                                        </div>
+                                    </div>
+                                </details>
+                            }
                         })}
                     </div>
                 })

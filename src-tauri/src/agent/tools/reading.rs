@@ -19,6 +19,7 @@ pub struct ReadNoteOutput {
     slug: String,
     relative_path: String,
     content: String,
+    backlinks: Vec<String>,
 }
 
 pub struct ReadNoteTool {
@@ -34,7 +35,7 @@ impl Tool for ReadNoteTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "read_note".to_string(),
-            description: "Read the body of a note (markdown without frontmatter). Pass a slug (filename without .md) to read a specific note, or omit it to read the note currently open in the editor."
+            description: "Read the body of a note (markdown without frontmatter) and the slugs of notes linking to it. Pass a slug (filename without .md) to read a specific note, or omit it to read the note currently open in the editor."
                 .to_string(),
             parameters: json!({
                 "type": "object",
@@ -63,11 +64,63 @@ impl Tool for ReadNoteTool {
                     .to_string(),
             };
             let note = cave.read_note(&slug)?;
+            let backlinks = cave.backlink_slugs(&slug)?;
             Ok(ReadNoteOutput {
                 slug: note.meta.slug,
                 relative_path: note.meta.relative_path,
                 content: note.content,
+                backlinks,
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn shared_cave(cave: crate::cave::Cave) -> SharedCave {
+        Arc::new(Mutex::new(Some(cave)))
+    }
+
+    #[tokio::test]
+    async fn read_note_tool_returns_backlinks_for_explicit_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "[[target]]\n").unwrap();
+
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        let tool = ReadNoteTool {
+            cave: shared_cave(cave),
+        };
+
+        let output = tool
+            .call(ReadNoteArgs {
+                slug: Some("target".to_string()),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(output.slug, "target");
+        assert_eq!(output.backlinks, vec!["source".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn read_note_tool_uses_active_note_when_slug_omitted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "[[target]]\n").unwrap();
+
+        let mut cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.set_active_slug(Some("target".to_string()));
+        let tool = ReadNoteTool {
+            cave: shared_cave(cave),
+        };
+
+        let output = tool.call(ReadNoteArgs { slug: None }).await.unwrap();
+
+        assert_eq!(output.slug, "target");
+        assert_eq!(output.backlinks, vec!["source".to_string()]);
     }
 }
