@@ -270,6 +270,14 @@ pub enum ChatRole {
     Assistant,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttachedNote {
+    pub slug: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selected: Option<String>,
+}
+
 /// Lightweight representation of a tool invocation for the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallInfo {
@@ -493,5 +501,33 @@ mod tests {
         let json = serde_json::to_string(&model).unwrap();
         let parsed: ModelInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, model);
+    }
+
+    #[test]
+    fn attached_note_round_trip_with_selection() {
+        let note = AttachedNote {
+            slug: "daily-note".into(),
+            content: "# Heading\n\nBody".into(),
+            selected: Some("Heading".into()),
+        };
+
+        let json = serde_json::to_string(&note).unwrap();
+        let parsed: AttachedNote = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed, note);
+    }
+
+    #[test]
+    fn attached_note_omits_empty_selection() {
+        let note = AttachedNote {
+            slug: "daily-note".into(),
+            content: "Body".into(),
+            selected: None,
+        };
+
+        let json = serde_json::to_string(&note).unwrap();
+
+        assert!(json.contains("\"slug\":\"daily-note\""));
+        assert!(!json.contains("selected"));
     }
 }

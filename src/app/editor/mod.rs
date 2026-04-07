@@ -399,6 +399,7 @@ pub fn Editor() -> impl IntoView {
                 EditOpen::EditFocusContent => ctx.focus_content.set(true),
                 EditOpen::Preview => {}
             }
+            ctx.app.selected_note_text.set(None);
         }
 
         // Re-render whenever the note changes (switch or same-slug update)
@@ -431,6 +432,7 @@ pub fn Editor() -> impl IntoView {
             ctx.tags.set(Vec::new());
             ctx.icon.set(None);
             ctx.favorite.set(None);
+            ctx.app.selected_note_text.set(None);
         }
         ctx.error.set(None);
     });

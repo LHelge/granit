@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use agent::{Agent, AgentError, SharedCave};
 use cave::{Cave, CaveError, ContentMatch, Note, NoteMeta, Template, TemplateMeta};
-use granit_types::{AppConfig, AppMetadata, ModelInfo, RenderedNote, SidebarConfig, TodoList};
+use granit_types::{
+    AppConfig, AppMetadata, AttachedNote, ModelInfo, RenderedNote, SidebarConfig, TodoList,
+};
 use tauri_plugin_store::StoreExt;
 
 const APP_STATE_STORE_PATH: &str = "app-state.json";
@@ -117,6 +119,49 @@ fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(manager: &M) -> 
     }
 
     Ok(())
+}
+
+fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> String {
+    if attached_notes.is_empty() {
+        return msg.to_string();
+    }
+
+    let attachment_size: usize = attached_notes
+        .iter()
+        .map(|note| {
+            note.slug.len() + note.content.len() + note.selected.as_deref().map_or(0, str::len)
+        })
+        .sum();
+    let mut prompt = String::with_capacity(msg.len() + attachment_size + 256);
+    prompt.push_str(
+        "Use the attached note contexts below for this turn. If the user refers to an attached note or selected text, use these attachments directly.\n\n",
+    );
+    prompt.push_str("<attached_notes>\n");
+
+    for attached_note in attached_notes {
+        prompt.push_str("<attached_note>\n");
+        prompt.push_str("<slug>");
+        prompt.push_str(&attached_note.slug);
+        prompt.push_str("</slug>\n");
+
+        if let Some(selected) = attached_note.selected.as_deref() {
+            prompt.push_str("<selected_text>\n");
+            prompt.push_str(selected);
+            prompt.push_str("\n</selected_text>\n");
+        }
+
+        prompt.push_str("<content>\n");
+        prompt.push_str(&attached_note.content);
+        prompt.push_str("\n</content>\n");
+        prompt.push_str("</attached_note>\n");
+    }
+
+    prompt.push_str("</attached_notes>\n\n");
+    prompt.push_str("<user_request>\n");
+    prompt.push_str(msg);
+    prompt.push_str("\n</user_request>");
+
+    prompt
 }
 
 struct AppState {
@@ -643,6 +688,7 @@ fn select_model(model_id: String, state: tauri::State<AppState>) -> Result<AppCo
 #[tauri::command]
 async fn send_message(
     msg: String,
+    attached_notes: Vec<AttachedNote>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AgentError> {
@@ -659,8 +705,9 @@ async fn send_message(
         a.snapshot()
     };
 
+    let prompt = build_agent_prompt(&msg, &attached_notes);
     let mut stream = agent_clone
-        .stream_with_history(msg.as_str(), history)
+        .stream_with_history(prompt.as_str(), history)
         .await?;
 
     let app_handle = app.clone();
@@ -786,6 +833,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use granit_types::AttachedNote;
 
     fn test_app_state() -> AppState {
         AppState {
@@ -835,5 +883,40 @@ mod tests {
 
         assert_eq!(outcome, RestoreActiveCaveOutcome::NoStoredPath);
         assert!(state.active_cave_path().is_none());
+    }
+
+    #[test]
+    fn test_build_agent_prompt_without_attachment() {
+        let prompt = build_agent_prompt("Summarize this", &[]);
+
+        assert_eq!(prompt, "Summarize this");
+    }
+
+    #[test]
+    fn test_build_agent_prompt_with_attachments_and_selection() {
+        let prompt = build_agent_prompt(
+            "Summarize this",
+            &[
+                AttachedNote {
+                    slug: "daily-note".into(),
+                    content: "# Heading\n\nBody".into(),
+                    selected: Some("Heading".into()),
+                },
+                AttachedNote {
+                    slug: "shopping".into(),
+                    content: "Milk\nEggs".into(),
+                    selected: None,
+                },
+            ],
+        );
+
+        assert!(prompt.contains("Use the attached note contexts below for this turn"));
+        assert!(prompt.contains("<attached_notes>"));
+        assert!(prompt.contains("<slug>daily-note</slug>"));
+        assert!(prompt.contains("<slug>shopping</slug>"));
+        assert!(prompt.contains("<selected_text>\nHeading\n</selected_text>"));
+        assert!(prompt.contains("<content>\n# Heading\n\nBody\n</content>"));
+        assert!(prompt.contains("<content>\nMilk\nEggs\n</content>"));
+        assert!(prompt.contains("<user_request>\nSummarize this\n</user_request>"));
     }
 }

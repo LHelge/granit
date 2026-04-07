@@ -5,8 +5,8 @@ mod metadata;
 mod note;
 
 pub use agent::{
-    default_system_prompt, AgentConfig, ChatMessage, ChatRole, ModelInfo, ProviderConfig,
-    ProviderEntry, ProviderInfo, ToolCallInfo, ToolInfo,
+    default_system_prompt, AgentConfig, AttachedNote, ChatMessage, ChatRole, ModelInfo,
+    ProviderConfig, ProviderEntry, ProviderInfo, ToolCallInfo, ToolInfo,
 };
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use icons::{resolve_note_icon, NoteIconEntry, NOTE_ICONS};
