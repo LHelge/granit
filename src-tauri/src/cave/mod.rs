@@ -2378,6 +2378,54 @@ mod tests {
         assert!(raw.contains("Updated"), "body should be updated: {raw}");
     }
 
+    #[test]
+    fn test_update_note_adds_frontmatter_to_legacy_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("legacy.md"), "Legacy body").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let meta = cave
+            .update_note(
+                "legacy",
+                "legacy",
+                "Updated body",
+                Some(vec!["legacy".into(), "migrated".into()]),
+                Some("Star".into()),
+                Some(true),
+            )
+            .unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("legacy.md")).unwrap();
+
+        assert_eq!(meta.icon.as_deref(), Some("Star"));
+        assert_eq!(meta.favorite, Some(true));
+        assert!(raw.starts_with("---\n"), "frontmatter should be added: {raw}");
+        assert!(
+            raw.contains("tags:\n- legacy\n- migrated"),
+            "tags should be persisted: {raw}"
+        );
+        assert!(raw.contains("icon: Star"), "icon should be persisted: {raw}");
+        assert!(
+            raw.contains("favorite: true"),
+            "favorite should be persisted: {raw}"
+        );
+        assert!(
+            raw.contains("created_at:"),
+            "created_at should be initialized: {raw}"
+        );
+        assert!(
+            raw.contains("modified_at:"),
+            "modified_at should be initialized: {raw}"
+        );
+        assert!(
+            raw.ends_with("Updated body"),
+            "body should be updated: {raw}"
+        );
+        assert_eq!(
+            crate::markdown::read_frontmatter_tags(&raw),
+            vec!["legacy", "migrated"]
+        );
+    }
+
     /// A note whose _content_ cannot be read still appears in list_notes.
     #[test]
     #[cfg(unix)]
