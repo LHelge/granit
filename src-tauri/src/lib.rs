@@ -15,10 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(AppState::new(config))
-        .setup(|app| {
-            restore_active_cave(app).map_err(std::io::Error::other)?;
-            Ok(())
-        })
+        .setup(restore_active_cave)
         .invoke_handler(tauri::generate_handler![
             get_config,
             get_app_metadata,

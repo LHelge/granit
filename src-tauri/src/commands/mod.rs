@@ -12,10 +12,10 @@ use granit_types::AppConfig;
 pub(crate) use agent::{clear_chat, list_tools, send_message};
 pub(crate) use cave::{
     create_folder, create_note, create_template, delete_folder, delete_note, delete_template,
-    list_folders, list_notes, list_templates, list_todos, move_folder, move_note,
-    open_daily_note, read_note, read_template, rename_folder, rename_note, rename_template,
-    render_markdown, render_note, render_template, save_note, save_template, search_content,
-    set_active_note, toggle_todo, toggle_todo_by_index, update_note, update_template,
+    list_folders, list_notes, list_templates, list_todos, move_folder, move_note, open_daily_note,
+    read_note, read_template, rename_folder, rename_note, rename_template, render_markdown,
+    render_note, render_template, save_note, save_template, search_content, set_active_note,
+    toggle_todo, toggle_todo_by_index, update_note, update_template,
 };
 pub(crate) use config::{
     get_app_metadata, get_config, list_models, list_providers, list_system_fonts, open_cave,

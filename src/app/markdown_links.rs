@@ -99,7 +99,9 @@ mod tests {
             .unwrap()
             .dyn_into::<web_sys::HtmlAnchorElement>()
             .unwrap();
-        anchor.set_attribute("href", "folder%2Fmissing-note").unwrap();
+        anchor
+            .set_attribute("href", "folder%2Fmissing-note")
+            .unwrap();
         anchor.set_class_name("broken-link");
 
         let target = classify_markdown_link_target(Some(anchor.into()));
