@@ -132,7 +132,7 @@ impl Tool for UpdateNoteTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_cave_mut(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
-            let meta = cave.update_note(&slug, &slug, &args.content, None, args.icon)?;
+            let meta = cave.update_note(&slug, &slug, &args.content, None, args.icon, None)?;
             Ok(UpdateNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,

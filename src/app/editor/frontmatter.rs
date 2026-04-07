@@ -33,8 +33,8 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
     };
 
     view! {
-        // ── Tag editor ────────────────────────────────────────────────────────
         <div class="not-prose flex flex-wrap items-center gap-1.5 mb-3">
+            // ── Tag editor ────────────────────────────────────────────────────
             <For
                 each=move || ctx.tags.get()
                 key=|tag| tag.clone()

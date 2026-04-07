@@ -463,10 +463,11 @@ fn update_note(
     content: String,
     tags: Option<Vec<String>>,
     icon: Option<String>,
+    favorite: Option<bool>,
     state: tauri::State<AppState>,
 ) -> Result<NoteMeta, CaveError> {
     with_cave_mut(&state, |cave| {
-        cave.update_note(&old_name, &new_name, &content, tags, icon)
+        cave.update_note(&old_name, &new_name, &content, tags, icon, favorite)
     })
 }
 

@@ -97,6 +97,11 @@ pub(super) fn Reader() -> impl IntoView {
                     <Icon icon=resolve_note_icon(&id) width="100%" height="100%"/>
                 </span>
             })}
+            {move || ctx.favorite.get().unwrap_or(false).then(|| view! {
+                <span class="inline-flex w-5 h-5 shrink-0 text-warning" aria-label="Favorite note">
+                    <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                </span>
+            })}
             {move || ctx.rendered_note.get().map(|r| r.title).unwrap_or_default()}
         </h1>
         {move || {

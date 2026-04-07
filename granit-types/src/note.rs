@@ -15,6 +15,8 @@ pub struct Frontmatter {
     pub modified_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favorite: Option<bool>,
 }
 
 /// Result of rendering a markdown note: rendered HTML plus extracted metadata.
@@ -53,6 +55,9 @@ pub struct NoteMeta {
     /// Optional icon ID in PascalCase without vendor prefix (e.g., "Pencil"), from frontmatter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Optional favorite flag from frontmatter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favorite: Option<bool>,
 }
 
 /// Full note content returned when reading a note.
