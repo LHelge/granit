@@ -3,6 +3,106 @@ use crate::app::{editor::EditOpen, ipc};
 use leptos::prelude::*;
 use web_sys::MouseEvent;
 
+fn spawn_create_note(ctx: super::TreeCtx, folder: Option<String>, template: Option<String>) {
+    leptos::task::spawn_local(async move {
+        match ipc::create_note("untitled", folder.as_deref(), template.as_deref()).await {
+            Ok(meta) => {
+                ctx.refresh_async().await;
+                match ipc::read_note(&meta.slug).await {
+                    Ok(note) => {
+                        ctx.open_in_edit.set(EditOpen::EditFocusTitle);
+                        ctx.app.set_active_note_document(note);
+                    }
+                    Err(e) => ctx.push_error(format!("Failed to open note: {e}")),
+                }
+            }
+            Err(e) => ctx.push_error(format!("Failed to create note: {e}")),
+        }
+    });
+}
+
+fn render_new_note_actions(
+    ctx: super::TreeCtx,
+    folder: Option<String>,
+    note_label: &'static str,
+    template_label: &'static str,
+) -> impl IntoView {
+    let folder_new_note = folder.clone();
+    let folder_from_template = folder;
+
+    view! {
+        <li>
+            <button
+                on:click=move |_| {
+                    ctx.context_menu.set(None);
+                    spawn_create_note(ctx, folder_new_note.clone(), None);
+                }
+            >
+                {note_label}
+            </button>
+        </li>
+        <li>
+            <details>
+                <summary>{template_label}</summary>
+                <ul>
+                    {move || {
+                        let daily_template_slug = ctx.app.config.get().daily_note_template_slug;
+                        let templates = ctx
+                            .app
+                            .templates
+                            .get()
+                            .into_iter()
+                            .filter(|template| {
+                                daily_template_slug
+                                    .as_deref()
+                                    .map(|slug| template.slug != slug)
+                                    .unwrap_or(true)
+                            })
+                            .collect::<Vec<_>>();
+
+                        if templates.is_empty() {
+                            return view! {
+                                <li>
+                                    <button disabled=true class="text-base-content/35">
+                                        "No templates yet"
+                                    </button>
+                                </li>
+                            }
+                            .into_any();
+                        }
+
+                        templates
+                            .into_iter()
+                            .map(|template| {
+                                let target_folder = folder_from_template.clone();
+                                let template_slug = template.slug.clone();
+                                let template_label = template.slug;
+                                view! {
+                                    <li>
+                                        <button
+                                            on:click=move |_| {
+                                                ctx.context_menu.set(None);
+                                                spawn_create_note(
+                                                    ctx,
+                                                    target_folder.clone(),
+                                                    Some(template_slug.clone()),
+                                                );
+                                            }
+                                        >
+                                            {template_label.clone()}
+                                        </button>
+                                    </li>
+                                }
+                            })
+                            .collect_view()
+                            .into_any()
+                    }}
+                </ul>
+            </details>
+        </li>
+    }
+}
+
 /// Renders the floating context menu overlay + panel.
 #[component]
 pub(super) fn TreeContextMenu() -> impl IntoView {
@@ -76,36 +176,11 @@ fn render_note_menu(ctx: super::TreeCtx, slug: String) -> impl IntoView {
 }
 
 fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
-    let path_new_note = path.clone();
     let path_new_folder = path.clone();
     let path_rename = path.clone();
     let path_del = path;
     view! {
-        <li>
-            <button
-                on:click=move |_| {
-                    let p = path_new_note.clone();
-                    ctx.context_menu.set(None);
-                    leptos::task::spawn_local(async move {
-                        match ipc::create_note("untitled", Some(&p), None).await {
-                            Ok(meta) => {
-                                ctx.refresh_async().await;
-                                match ipc::read_note(&meta.slug).await {
-                                    Ok(note) => {
-                                        ctx.open_in_edit.set(EditOpen::EditFocusTitle);
-                                        ctx.app.set_active_note_document(note);
-                                    }
-                                    Err(e) => ctx.push_error(format!("Failed to open note: {e}")),
-                                }
-                            }
-                            Err(e) => ctx.push_error(format!("Failed to create note: {e}")),
-                        }
-                    });
-                }
-            >
-                "New note here"
-            </button>
-        </li>
+        {render_new_note_actions(ctx, Some(path_new_folder.clone()), "New note here", "New note here from template")}
         <li>
             <button
                 on:click=move |_| {
@@ -171,6 +246,7 @@ fn render_folder_menu(ctx: super::TreeCtx, path: String) -> impl IntoView {
 
 fn render_root_menu(ctx: super::TreeCtx) -> impl IntoView {
     view! {
+        {render_new_note_actions(ctx, None, "New note", "New note from template")}
         <li>
             <button
                 on:click=move |_| {

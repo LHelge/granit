@@ -135,14 +135,14 @@ fn render_with_wiki_links<'lookup>(
 /// Produces a YAML frontmatter block with `created_at` and `modified_at` set
 /// to the current UTC time. The note body starts empty.
 pub fn initial_content(_slug: &str) -> String {
-    initial_content_with_body("", None)
+    initial_content_with_body("", Vec::new(), None)
 }
 
 /// Generate initial file content with fresh frontmatter and a provided body.
-pub fn initial_content_with_body(body: &str, icon: Option<String>) -> String {
+pub fn initial_content_with_body(body: &str, tags: Vec<String>, icon: Option<String>) -> String {
     let now = Utc::now();
     let fm = Frontmatter {
-        tags: Vec::new(),
+        tags,
         created_at: Some(now),
         modified_at: Some(now),
         icon,
@@ -165,6 +165,17 @@ pub fn strip_frontmatter(raw: &str) -> &str {
 /// malformed, or the `icon` field is absent.
 pub(crate) fn read_frontmatter_icon(raw: &str) -> Option<String> {
     extract_frontmatter(raw).0.and_then(|fm| fm.icon)
+}
+
+/// Extract the `tags` field from YAML frontmatter without rendering markdown.
+///
+/// Returns an empty vector if the note has no frontmatter, the frontmatter is
+/// malformed, or the `tags` field is absent.
+pub(crate) fn read_frontmatter_tags(raw: &str) -> Vec<String> {
+    extract_frontmatter(raw)
+        .0
+        .map(|fm| fm.tags)
+        .unwrap_or_default()
 }
 
 /// Read the existing frontmatter from `existing_raw`, update `modified_at`,

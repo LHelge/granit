@@ -346,7 +346,6 @@ fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
         "web_fetch" => Some("url"),
         "create_note" => Some("name"),
         "create_folder" | "rename_folder" | "move_folder" | "delete_folder" => Some("path"),
-        "open_daily_note" => Some("folder"),
         _ => None,
     };
 
