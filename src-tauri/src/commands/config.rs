@@ -1,16 +1,36 @@
 use super::store::Store;
-use super::{
-    save_config_to_active_cave, save_config_to_active_cave_if_open, AppState, ConfigError,
-};
+use super::AppState;
 use crate::agent::{self, AgentError};
 use crate::cave::{Cave, CaveError};
 use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
 use std::path::PathBuf;
+use tauri::Manager;
 
-pub(crate) fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
-    manager: &M,
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ConfigError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("YAML parse error: {0}")]
+    Yaml(#[from] serde_yml::Error),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+}
+
+impl serde::Serialize for ConfigError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+pub(crate) fn restore_active_cave(
+    app: &mut tauri::App,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Store::new(manager);
+    let store = Store::new(app);
 
     let Some(path) = store.load_persisted_active_cave()? else {
         // No path stored, nothing to restore, just return
@@ -23,7 +43,7 @@ pub(crate) fn restore_active_cave<R: tauri::Runtime, M: tauri::Manager<R>>(
         return Ok(());
     }
 
-    let state = manager.state::<AppState>();
+    let state = app.state::<AppState>();
     let cave = Cave::new(path);
     cave.ensure_config().map_err(|err| err.to_string())?;
     let config = cave.load_config()?;
@@ -52,7 +72,7 @@ fn save_config_for_state(
         config
     };
 
-    save_config_to_active_cave(state, &response)?;
+    state.save_config_to_cave(&response)?;
     state.reset_agent();
     Ok(state.ipc_response(&response))
 }
@@ -68,7 +88,7 @@ fn save_sidebar_state_for_state(
         config.agent_panel = agent_panel;
         config.clone()
     };
-    save_config_to_active_cave_if_open(state, &response)?;
+    state.save_config_to_cave(&response)?;
     Ok(())
 }
 
@@ -100,7 +120,7 @@ fn select_provider_for_state(state: &AppState, index: usize) -> Result<AppConfig
         config.clone()
     };
 
-    save_config_to_active_cave(state, &response)?;
+    state.save_config_to_cave(&response)?;
     state.reset_agent();
     Ok(state.ipc_response(&response))
 }
@@ -127,17 +147,9 @@ fn select_model_for_state(state: &AppState, model_id: String) -> Result<AppConfi
         config.clone()
     };
 
-    save_config_to_active_cave(state, &response)?;
+    state.save_config_to_cave(&response)?;
     state.reset_agent();
     Ok(state.ipc_response(&response))
-}
-
-fn shorten_git_hash(hash: &str) -> String {
-    if hash == "unknown" {
-        return hash.to_string();
-    }
-
-    hash.chars().take(8).collect()
 }
 
 #[tauri::command]
@@ -147,15 +159,7 @@ pub(crate) fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, Con
 
 #[tauri::command]
 pub(crate) fn get_app_metadata() -> AppMetadata {
-    let git_commit_hash = option_env!("GRANIT_GIT_HASH").unwrap_or("unknown");
-
-    AppMetadata {
-        app_name: "Granit".to_string(),
-        repo_url: "https://github.com/LHelge/granit".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        git_commit_hash: shorten_git_hash(git_commit_hash),
-        git_dirty: option_env!("GRANIT_GIT_DIRTY").unwrap_or("false") == "true",
-    }
+    AppMetadata::from_env()
 }
 
 #[tauri::command]

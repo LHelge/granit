@@ -3,7 +3,8 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{with_cave, SharedCave, ToolError};
+use super::{SharedCave, with_shared_cave};
+use crate::cave::CaveError;
 
 // ── read_note ──────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ pub struct ReadNoteTool {
 
 impl Tool for ReadNoteTool {
     const NAME: &'static str = "read_note";
-    type Error = ToolError;
+    type Error = CaveError;
     type Args = ReadNoteArgs;
     type Output = ReadNoteOutput;
 
@@ -51,7 +52,7 @@ impl Tool for ReadNoteTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        with_cave(&self.cave, |cave| {
+        with_shared_cave(&self.cave, |cave| {
             let slug = match &args.slug {
                 Some(s) => cave.resolve_slug(s)?.to_string(),
                 None => cave
