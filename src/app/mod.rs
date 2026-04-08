@@ -22,7 +22,7 @@ use settings::SettingsModal;
 
 // ── Sidebar resize constants ───────────────────────────────────────
 
-const MIN_SIDEBAR_W: u16 = 180;
+const MIN_SIDEBAR_W: u16 = 275;
 const MAX_SIDEBAR_W: u16 = 600;
 
 #[derive(Clone, Copy)]

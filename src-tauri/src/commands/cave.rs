@@ -1,7 +1,7 @@
 use super::AppState;
 use crate::cave::{CaveError, ContentMatch, Document, DocumentMeta, RenderedDocument};
 use crate::markdown::Markdown;
-use granit_types::TodoList;
+use granit_types::{TagMap, TodoList};
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let md = Markdown::new(content);
@@ -124,9 +124,13 @@ pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Document,
 pub(crate) fn save_note(
     name: String,
     content: String,
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.save_note(&name, &content))
+    use tauri::Emitter;
+    let meta = state.with_cave(|cave| cave.save_note(&name, &content))?;
+    let _ = app.emit("cave:notes-changed", ());
+    Ok(meta)
 }
 
 #[tauri::command]
@@ -157,6 +161,7 @@ pub(crate) fn rename_template(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn update_note(
     old_name: String,
     new_name: String,
@@ -164,9 +169,14 @@ pub(crate) fn update_note(
     tags: Option<Vec<String>>,
     icon: Option<String>,
     favorite: Option<bool>,
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))
+    use tauri::Emitter;
+    let meta = state
+        .with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))?;
+    let _ = app.emit("cave:notes-changed", ());
+    Ok(meta)
 }
 
 #[tauri::command]
@@ -206,6 +216,11 @@ pub(crate) fn delete_template(
 #[tauri::command]
 pub(crate) fn list_todos(state: tauri::State<AppState>) -> Result<TodoList, CaveError> {
     state.with_cave(|cave| cave.list_todos())
+}
+
+#[tauri::command]
+pub(crate) fn list_tags(state: tauri::State<AppState>) -> Result<TagMap, CaveError> {
+    state.with_cave(|cave| cave.list_tags())
 }
 
 #[tauri::command]

@@ -382,6 +382,12 @@ pub async fn list_todos() -> Result<TodoList, String> {
     invoke_no_args("list_todos").await
 }
 
+// ── Tags ───────────────────────────────────────────────────────────
+
+pub async fn list_tags() -> Result<granit_types::TagMap, String> {
+    invoke_no_args("list_tags").await
+}
+
 pub async fn toggle_todo(slug: &str, line: usize) -> Result<(), String> {
     #[derive(Serialize)]
     struct Args<'a> {

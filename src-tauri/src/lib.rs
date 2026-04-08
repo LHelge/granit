@@ -50,6 +50,7 @@ pub fn run() {
             render_markdown,
             set_active_note,
             list_todos,
+            list_tags,
             toggle_todo,
             toggle_todo_by_index,
             list_providers,
