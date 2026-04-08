@@ -123,6 +123,27 @@ pub(super) fn Reader() -> impl IntoView {
         listener.forget();
     });
 
+    // Remove the selectionchange listener when the Reader is unmounted so it
+    // doesn't interfere with CM6 selection tracking in writer mode.
+    on_cleanup(move || {
+        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+            if let Some(handler) = js_sys::Reflect::get(
+                document.as_ref(),
+                &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
+            )
+            .ok()
+            .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
+            {
+                let _ = document
+                    .remove_event_listener_with_callback("selectionchange", handler.unchecked_ref());
+                let _ = js_sys::Reflect::delete_property(
+                    &document,
+                    &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
+                );
+            }
+        }
+    });
+
     // Intercept clicks on links and checkboxes in rendered markdown.
     // - Checkboxes toggle the underlying markdown via the backend.
     // - External links (http/https) open in the system browser.

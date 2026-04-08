@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i styles.css -o dist/styles.css --minify",
+    "build:js": "node esbuild.mjs",
+    "build": "npm run build:css && npm run build:js",
+    "watch:js": "node esbuild.mjs --watch"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.18.6",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-markdown": "^6.3.2",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.5",
+    "@tailwindcss/typography": "^0.5.16",
+    "daisyui": "^5.0.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}

@@ -1,6 +1,6 @@
+mod codemirror;
 mod frontmatter;
 mod reader;
-pub(crate) mod text_editing;
 mod writer;
 
 use crate::app::{components::icons::Icon, ipc};

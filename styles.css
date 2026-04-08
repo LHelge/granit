@@ -1,11 +1,11 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
-@plugin "./daisyui.mjs" {
+@plugin "daisyui" {
   themes: all;
 }
 
 /* ── Catppuccin Latte (light) ─────────────────────────────────────── */
-@plugin "./daisyui-theme.mjs" {
+@plugin "daisyui/theme" {
   name: "catppuccin-latte";
   color-scheme: light;
 
@@ -34,7 +34,7 @@
 }
 
 /* ── Catppuccin Frappé (dark) ─────────────────────────────────────── */
-@plugin "./daisyui-theme.mjs" {
+@plugin "daisyui/theme" {
   name: "catppuccin-frappe";
   color-scheme: dark;
 
@@ -63,7 +63,7 @@
 }
 
 /* ── Catppuccin Macchiato (dark) ──────────────────────────────────── */
-@plugin "./daisyui-theme.mjs" {
+@plugin "daisyui/theme" {
   name: "catppuccin-macchiato";
   color-scheme: dark;
 
@@ -92,7 +92,7 @@
 }
 
 /* ── Catppuccin Mocha (dark, system dark default) ─────────────────── */
-@plugin "./daisyui-theme.mjs" {
+@plugin "daisyui/theme" {
   name: "catppuccin-mocha";
   prefersdark: true;
   color-scheme: dark;

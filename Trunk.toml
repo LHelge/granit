@@ -10,5 +10,5 @@ open = false
 
 [[hooks]]
 stage = "pre_build"
-command = "tailwindcss"
-command_arguments = ["-i", "styles.css", "-o", "dist/styles.css", "--minify"]
+command = "npm"
+command_arguments = ["run", "build"]

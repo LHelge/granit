@@ -6,7 +6,9 @@ Granit is a minimal, opinionated desktop note-taking app built for personal use.
 
 - **Backend**: Tauri 2 (Rust) — single source of truth for all data and logic
 - **Frontend**: Leptos 0.8 (Rust → WASM, CSR mode) compiled with Trunk
-- **Styling**: Tailwind CSS + DaisyUI 5 (utility classes and DaisyUI component classes in `view!` macros; see `.github/instructions/daisyui.instructions.md`)
+- **Editor**: CodeMirror 6 (TypeScript) — markdown editing with syntax highlighting, bracket pairing, list continuation, undo/redo. Built via esbuild, interop via `window.GranitEditor` global.
+- **Styling**: Tailwind CSS 4 + DaisyUI 5 (npm packages; utility classes and DaisyUI component classes in `view!` macros; see `.github/instructions/daisyui.instructions.md`)
+- **JS Build**: npm + esbuild — builds CodeMirror bundle (`dist/codemirror.js`) and CSS (`dist/styles.css`). Trunk pre_build hook runs `npm run build`.
 - **Markdown**: `pulldown-cmark` in the backend — frontend receives rendered HTML
 - **AI Agent**: `rig-core` with configurable LLM providers (Ollama, Anthropic, Mistral, Prisma)
 - **Error handling**: `thiserror` for typed error enums
@@ -22,10 +24,12 @@ src/            — Leptos frontend (WASM)
     context.rs  — App-wide reactive state and error helpers
     ipc.rs       — Tauri IPC wrapper layer
     agent/       — Agent panel UI, streaming, provider/model selectors
-    editor/      — Writer, reader, frontmatter, smart text editing
+    editor/      — Writer (CodeMirror 6), reader, frontmatter, CM6 bindings
     explorer/    — Cave selector, tree view, search, todo tabs
     settings/    — Settings modal and sections
     components/  — Shared UI helpers and icon wrappers
+js/             — TypeScript sources (CodeMirror 6 wrapper)
+  editor.ts     — CM6 setup, theme, extensions, window.GranitEditor API
 src-tauri/src/  — Tauri backend (native Rust)
   lib.rs        — Tauri commands, app builder, plugin registration
   main.rs       — Desktop entry point
@@ -82,10 +86,10 @@ The current implementation uses **per-cave config files** plus a small store-bac
 ### Editor
 
 Two modes toggled by the user:
-- **Edit mode**: Raw markdown in a `<textarea>` (no styling)
+- **Edit mode**: CodeMirror 6 markdown editor with syntax highlighting, bracket pairing, list continuation, indent/outdent, undo/redo, and URL-to-link paste
 - **Read mode**: Rendered HTML preview (read-only)
 
-The current editor also includes smart text-editing helpers for bracket pairing, formatting characters, list continuation, indentation, and URL-to-link pasting.
+The CM6 editor is built in TypeScript (`js/editor.ts`), bundled by esbuild into `dist/codemirror.js`, and exposed as `window.GranitEditor`. Rust wasm-bindgen bindings in `src/app/editor/codemirror.rs` call this API. The CM6 theme uses DaisyUI CSS custom properties so it auto-adapts to theme changes.
 
 The long-term goal is an Obsidian-style live preview (WYSIWYM), but the architecture should support swapping the editor component later.
 
@@ -105,11 +109,12 @@ Agent logic lives entirely in the backend. The frontend only renders the chat UI
 ### Build & Run
 
 ```sh
+npm ci                             # Install JS dependencies (first time / CI)
 cd src-tauri && cargo tauri dev    # Full app (launches Trunk + Tauri)
 trunk serve                        # Frontend only (port 1420)
 cargo test -p granit               # Backend unit tests
 cargo test -p granit-types         # Shared types tests
-wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing)
+wasm-pack test --headless --firefox # Frontend WASM tests
 ```
  
 ### Workflow
@@ -117,7 +122,7 @@ wasm-pack test --headless --firefox # Frontend WASM tests (includes text editing
 - **Branches**: Work on feature branches. Never commit directly to `main`.
 - **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
 - **Pull requests**: Use `gh pr create` (GitHub CLI) to open PRs.
-- **Before committing anything**: Ensure formatting, linting, and all tests pass. Run `cargo fmt --all`, `cargo clippy --workspace --all-targets --all-features`, `cargo test -p granit`, `cargo test -p granit-types`, and `wasm-pack test --headless --firefox` before creating a commit.
+- **Before committing anything**: Ensure formatting, linting, and all tests pass. Run `npm ci`, `cargo fmt --all`, `cargo clippy --workspace --all-targets --all-features`, `cargo test -p granit`, `cargo test -p granit-types`, and `wasm-pack test --headless --firefox` before creating a commit.
 - **Dependencies**: Use `cargo add <crate>` to add new dependencies (ensures latest version). Never hand-edit `Cargo.toml` dependency lines.
 - **Planning**: Use the Bears task tracker skill for breaking down features into epics and sub-tasks.
 
