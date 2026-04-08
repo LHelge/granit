@@ -1,6 +1,6 @@
 use super::{ProviderFormEntry, SettingsForm};
 use crate::app::components::{
-    font_picker::FontPicker,
+    font_selector::FontSelector,
     icons::{Icon, ProviderIcon},
 };
 use granit_types::default_system_prompt;
@@ -34,34 +34,15 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
         <fieldset class="fieldset space-y-3">
             <legend class="fieldset-legend">"Agent"</legend>
 
-            // Font family
-            <div class="space-y-1">
-                <label class="label text-xs text-base-content/50">"Font family"</label>
-                <FontPicker
-                    fonts=fonts
-                    value=font_family
-                    set_value=Callback::new(move |v| form.update(|f| f.agent_font.font_family = v))
-                    id="ag-font-family"
-                />
-            </div>
-
-            // Font size
-            <div class="space-y-1">
-                <label class="label text-xs text-base-content/50" for="ag-font-size">"Font size (px)"</label>
-                <input
-                    id="ag-font-size"
-                    type="number"
-                    min="8"
-                    max="48"
-                    class="input input-bordered input-sm w-full"
-                    prop:value=move || font_size.get().to_string()
-                    on:input=move |ev| {
-                        if let Ok(v) = event_target_value(&ev).parse::<u8>() {
-                            form.update(|f| f.agent_font.font_size = v);
-                        }
-                    }
-                />
-            </div>
+            // Font
+            <FontSelector
+                fonts=fonts
+                font_family=font_family
+                set_font_family=Callback::new(move |v| form.update(|f| f.agent_font.font_family = v))
+                font_size=font_size
+                set_font_size=Callback::new(move |v| form.update(|f| f.agent_font.font_size = v))
+                id="ag"
+            />
 
             <div class="divider my-1" />
 

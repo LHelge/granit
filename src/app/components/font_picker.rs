@@ -89,7 +89,7 @@ pub fn FontPicker(
                     </div>
 
                     // Font list
-                    <ul class="menu menu-sm overflow-y-auto flex-1 p-0">
+                    <ul class="menu menu-sm overflow-y-auto flex-1 p-0 flex-nowrap w-full">
                         {move || {
                             let items = filtered();
                             if items.is_empty() {

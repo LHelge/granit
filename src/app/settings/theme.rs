@@ -1,5 +1,5 @@
 use super::SettingsForm;
-use crate::app::AppCtx;
+use crate::app::{components::icons::Icon, AppCtx};
 use leptos::prelude::*;
 
 /// A DaisyUI theme entry: (data-theme value, display label, is_dark).
@@ -210,10 +210,46 @@ const CATPPUCCIN_THEMES: &[ThemeEntry] = &[
     },
 ];
 
+const COMMUNITY_THEMES: &[ThemeEntry] = &[
+    ThemeEntry {
+        id: "gruvbox-light",
+        label: "Gruvbox Light",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "gruvbox-dark",
+        label: "Gruvbox Dark",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "tokyo-night",
+        label: "Tokyo Night",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "rose-pine-dawn",
+        label: "Rosé Pine Dawn",
+        is_dark: false,
+    },
+    ThemeEntry {
+        id: "rose-pine-moon",
+        label: "Rosé Pine Moon",
+        is_dark: true,
+    },
+    ThemeEntry {
+        id: "one-dark",
+        label: "One Dark",
+        is_dark: true,
+    },
+];
+
 #[component]
 pub fn ThemeSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
     let active_id = move || form.get().theme;
+
+    let show_light = RwSignal::new(true);
+    let show_dark = RwSignal::new(true);
 
     let apply = move |id: &'static str| {
         // Visual preview only — persisted when the user clicks Save.
@@ -224,51 +260,126 @@ pub fn ThemeSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     view! {
         <div class="space-y-4">
 
-            // ── Catppuccin themes ─────────────────────────────────
-            <fieldset>
-                <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
-                    "Catppuccin"
-                </legend>
-                <div class="grid grid-cols-2 gap-1">
-                    {CATPPUCCIN_THEMES.iter().map(|t| {
-                        let id = t.id;
-                        let label = t.label;
-                        let is_dark = t.is_dark;
-                        view! {
-                            <ThemeSwatch
-                                id=id
-                                label=label
-                                is_dark=is_dark
-                                active_id=active_id
-                                on_select=move || apply(id)
-                            />
+            // ── Light / dark filter ───────────────────────────────
+            <div class="flex gap-1.5">
+                <button
+                    type="button"
+                    class=move || if show_light.get() {
+                        "btn btn-sm gap-1.5"
+                    } else {
+                        "btn btn-sm btn-ghost gap-1.5 opacity-40"
+                    }
+                    on:click=move |_| {
+                        if !show_light.get_untracked() || show_dark.get_untracked() {
+                            show_light.update(|v| *v = !*v);
                         }
-                    }).collect_view()}
-                </div>
-            </fieldset>
+                    }
+                >
+                    <span class="inline-flex w-3.5 h-3.5">
+                        <Icon icon=icondata_lu::LuSun width="100%" height="100%"/>
+                    </span>
+                    "Light"
+                </button>
+                <button
+                    type="button"
+                    class=move || if show_dark.get() {
+                        "btn btn-sm gap-1.5"
+                    } else {
+                        "btn btn-sm btn-ghost gap-1.5 opacity-40"
+                    }
+                    on:click=move |_| {
+                        if !show_dark.get_untracked() || show_light.get_untracked() {
+                            show_dark.update(|v| *v = !*v);
+                        }
+                    }
+                >
+                    <span class="inline-flex w-3.5 h-3.5">
+                        <Icon icon=icondata_lu::LuMoon width="100%" height="100%"/>
+                    </span>
+                    "Dark"
+                </button>
+            </div>
+
+            // ── Community themes ──────────────────────────────────
+            <Show when=move || COMMUNITY_THEMES.iter().any(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))>
+                <fieldset>
+                    <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
+                        "Community"
+                    </legend>
+                    <div class="grid grid-cols-2 gap-1">
+                        {move || COMMUNITY_THEMES.iter()
+                            .filter(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))
+                            .map(|t| {
+                                let id = t.id;
+                                let label = t.label;
+                                let is_dark = t.is_dark;
+                                view! {
+                                    <ThemeSwatch
+                                        id=id
+                                        label=label
+                                        is_dark=is_dark
+                                        active_id=active_id
+                                        on_select=move || apply(id)
+                                    />
+                                }
+                            }).collect_view()}
+                    </div>
+                </fieldset>
+            </Show>
+
+            // ── Catppuccin themes ─────────────────────────────────
+            <Show when=move || CATPPUCCIN_THEMES.iter().any(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))>
+                <fieldset>
+                    <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
+                        "Catppuccin"
+                    </legend>
+                    <div class="grid grid-cols-2 gap-1">
+                        {move || CATPPUCCIN_THEMES.iter()
+                            .filter(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))
+                            .map(|t| {
+                                let id = t.id;
+                                let label = t.label;
+                                let is_dark = t.is_dark;
+                                view! {
+                                    <ThemeSwatch
+                                        id=id
+                                        label=label
+                                        is_dark=is_dark
+                                        active_id=active_id
+                                        on_select=move || apply(id)
+                                    />
+                                }
+                            }).collect_view()}
+                    </div>
+                </fieldset>
+            </Show>
 
             // ── DaisyUI built-in themes ───────────────────────────
-            <fieldset>
-                <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
-                    "Built-in"
-                </legend>
-                <div class="grid grid-cols-2 gap-1">
-                    {DAISY_THEMES.iter().map(|t| {
-                        let id = t.id;
-                        let label = t.label;
-                        let is_dark = t.is_dark;
-                        view! {
-                            <ThemeSwatch
-                                id=id
-                                label=label
-                                is_dark=is_dark
-                                active_id=active_id
-                                on_select=move || apply(id)
-                            />
-                        }
-                    }).collect_view()}
-                </div>
-            </fieldset>
+            <Show when=move || DAISY_THEMES.iter().any(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))>
+                <fieldset>
+                    <legend class="text-xs font-semibold uppercase tracking-wider text-base-content/50 mb-2">
+                        "DaisyUI"
+                    </legend>
+                    <div class="grid grid-cols-2 gap-1">
+                        {move || DAISY_THEMES.iter()
+                            .filter(|t| (t.is_dark && show_dark.get()) || (!t.is_dark && show_light.get()))
+                            .map(|t| {
+                                let id = t.id;
+                                let label = t.label;
+                                let is_dark = t.is_dark;
+                                view! {
+                                    <ThemeSwatch
+                                        id=id
+                                        label=label
+                                        is_dark=is_dark
+                                        active_id=active_id
+                                        on_select=move || apply(id)
+                                    />
+                                }
+                            }).collect_view()}
+                    </div>
+                </fieldset>
+            </Show>
 
         </div>
     }
@@ -309,14 +420,16 @@ fn ThemeSwatch(
             <span class="flex-1 truncate ml-2">{label}</span>
             <span class=move || {
                 if is_active() {
-                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-primary/20 text-primary"
+                    "ml-1.5 shrink-0 inline-flex items-center p-0.5 rounded-sm bg-primary/20 text-primary"
                 } else if is_dark {
-                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-stone-800 text-stone-200"
+                    "ml-1.5 shrink-0 inline-flex items-center p-0.5 rounded-sm bg-stone-800 text-stone-200"
                 } else {
-                    "ml-1.5 shrink-0 text-xs px-1 py-px rounded-sm bg-stone-100 text-stone-600"
+                    "ml-1.5 shrink-0 inline-flex items-center p-0.5 rounded-sm bg-stone-100 text-stone-600"
                 }
             }>
-                {if is_dark { "dark" } else { "light" }}
+                <span class="inline-flex w-3 h-3">
+                    <Icon icon=if is_dark { icondata_lu::LuMoon } else { icondata_lu::LuSun } width="100%" height="100%"/>
+                </span>
             </span>
         </button>
     }
