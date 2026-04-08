@@ -122,7 +122,7 @@ impl Cave {
         }
 
         let updated =
-            crate::markdown::rebuild_with_frontmatter(&new_content, &new_content, None, None, None);
+            crate::markdown::Markdown::rebuild(&new_content, &new_content, None, None, None);
         std::fs::write(abs_path, updated)?;
         Ok(())
     }

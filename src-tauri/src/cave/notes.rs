@@ -40,7 +40,7 @@ impl Cave {
         let body = self.initial_body_for_new_note(&slug, effective_template_slug.as_deref())?;
         let tags = self.initial_tags_for_new_note(effective_template_slug.as_deref())?;
         let icon = self.initial_icon_for_new_note(effective_template_slug.as_deref())?;
-        let initial_content = crate::markdown::initial_content_with_body(&body, tags, icon);
+        let initial_content = crate::markdown::Markdown::new_note_with_body(&body, tags, icon);
         std::fs::write(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
         self.rebuild_backlinks();
@@ -71,11 +71,12 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
         let raw = std::fs::read_to_string(abs_path)?;
-        let body = crate::markdown::strip_frontmatter(&raw).to_string();
+        let md = crate::markdown::Markdown::new(&raw);
+        let body = md.body().to_string();
         let rel = self.relative_path(abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
-        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
-        meta.favorite = crate::markdown::read_frontmatter_favorite(&raw);
+        meta.icon = md.icon();
+        meta.favorite = md.favorite();
         Ok(Document {
             meta,
             content: body,
@@ -102,14 +103,14 @@ impl Cave {
             .clone();
 
         let existing_raw = std::fs::read_to_string(&abs_path)?;
-        let updated =
-            crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None, None, None);
+        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
         std::fs::write(&abs_path, updated.as_str())?;
         self.rebuild_backlinks();
         let rel = self.relative_path(&abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
-        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
-        meta.favorite = crate::markdown::read_frontmatter_favorite(&updated);
+        let updated_md = crate::markdown::Markdown::new(&updated);
+        meta.icon = updated_md.icon();
+        meta.favorite = updated_md.favorite();
         Ok(meta)
     }
 
@@ -126,20 +127,16 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
         let existing_raw = std::fs::read_to_string(abs_path)?;
-        let existing_body = crate::markdown::strip_frontmatter(&existing_raw);
-        let updated = crate::markdown::rebuild_with_frontmatter(
-            &existing_raw,
-            existing_body,
-            None,
-            icon,
-            None,
-        );
+        let existing_body = crate::markdown::Markdown::new(&existing_raw).body();
+        let updated =
+            crate::markdown::Markdown::rebuild(&existing_raw, existing_body, None, icon, None);
         std::fs::write(abs_path, &updated)?;
 
         let rel = self.relative_path(abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
-        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
-        meta.favorite = crate::markdown::read_frontmatter_favorite(&updated);
+        let updated_md = crate::markdown::Markdown::new(&updated);
+        meta.icon = updated_md.icon();
+        meta.favorite = updated_md.favorite();
         Ok(meta)
     }
 
@@ -159,13 +156,12 @@ impl Cave {
             .clone();
 
         let raw = std::fs::read_to_string(&abs_path)?;
-        let body = crate::markdown::strip_frontmatter(&raw);
+        let body = crate::markdown::Markdown::new(&raw).body();
         if !body.contains(old_text) {
             return Err(CaveError::EditNotFound);
         }
         let new_body = body.replacen(old_text, new_text, 1);
-        let new_content =
-            crate::markdown::rebuild_with_frontmatter(&raw, &new_body, None, None, None);
+        let new_content = crate::markdown::Markdown::rebuild(&raw, &new_body, None, None, None);
         std::fs::write(&abs_path, &new_content)?;
         self.rebuild_backlinks();
 
@@ -324,7 +320,7 @@ impl Cave {
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
         let updated =
-            crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags, icon, favorite);
+            crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, favorite);
         if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
@@ -346,8 +342,9 @@ impl Cave {
 
         let rel = self.relative_path(&final_abs);
         let mut meta = note_meta_from_relative_path(&rel);
-        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
-        meta.favorite = crate::markdown::read_frontmatter_favorite(&updated);
+        let updated_md = crate::markdown::Markdown::new(&updated);
+        meta.icon = updated_md.icon();
+        meta.favorite = updated_md.favorite();
         Ok(meta)
     }
 
@@ -363,9 +360,9 @@ impl Cave {
                 continue;
             };
 
-            for target_slug in crate::markdown::resolved_outgoing_links(&raw, |name| {
-                Self::lookup_slug_in_notes(notes, name)
-            }) {
+            for target_slug in crate::markdown::Markdown::new(&raw)
+                .outgoing_links(|name| Self::lookup_slug_in_notes(notes, name))
+            {
                 if target_slug == *source_slug {
                     continue;
                 }
@@ -542,7 +539,7 @@ mod tests {
         assert_eq!(note.content, "# project-kickoff\nBody\n");
         assert_eq!(note.meta.icon.as_deref(), Some("Star"));
         assert_eq!(
-            crate::markdown::read_frontmatter_tags(&raw),
+            crate::markdown::Markdown::new(&raw).tags(),
             vec!["template".to_string()]
         );
         assert!(raw.contains("icon: Star"));
@@ -1133,7 +1130,7 @@ mod tests {
             "body should be updated: {raw}"
         );
         assert_eq!(
-            crate::markdown::read_frontmatter_tags(&raw),
+            crate::markdown::Markdown::new(&raw).tags(),
             vec!["legacy", "migrated"]
         );
     }
