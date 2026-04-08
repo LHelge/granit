@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Parsed YAML frontmatter from a markdown note.
 ///
@@ -97,4 +98,13 @@ pub struct TodoList {
     pub incomplete: Vec<TodoItem>,
     /// Todos where the checkbox is checked, sorted by slug then line.
     pub completed: Vec<TodoItem>,
+}
+
+/// All unique tags in a cave, mapped to the notes that carry each tag.
+///
+/// Tags are sorted alphabetically (via `BTreeMap`), and notes within each
+/// tag are sorted by slug.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TagMap {
+    pub tags: BTreeMap<String, Vec<DocumentMeta>>,
 }

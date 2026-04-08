@@ -3,6 +3,7 @@ mod folders;
 mod helpers;
 mod notes;
 mod search;
+mod tags;
 mod templates;
 mod todos;
 

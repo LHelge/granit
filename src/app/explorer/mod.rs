@@ -1,6 +1,7 @@
 mod cave_selector;
 mod favorites;
 mod search;
+mod tags;
 mod templates;
 mod todo;
 pub(crate) mod tree_view;
@@ -10,6 +11,7 @@ use cave_selector::CaveSelector;
 use favorites::Favorites;
 use leptos::prelude::*;
 use search::Search;
+use tags::Tags;
 use templates::Templates;
 use todo::Todo;
 use tree_view::TreeView;
@@ -64,7 +66,7 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                     on:click=move |_| set_active_tab.set(3)
                 >
                     <span class="inline-flex w-5 h-5">
-                        <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                        <Icon icon=icondata_lu::LuTag width="100%" height="100%"/>
                     </span>
                 </button>
                 <button
@@ -72,6 +74,16 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                     class="tab"
                     class:tab-active=move || active_tab.get() == 4
                     on:click=move |_| set_active_tab.set(4)
+                >
+                    <span class="inline-flex w-5 h-5">
+                        <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
+                    </span>
+                </button>
+                <button
+                    role="tab"
+                    class="tab"
+                    class:tab-active=move || active_tab.get() == 5
+                    on:click=move |_| set_active_tab.set(5)
                 >
                     <span class="inline-flex w-5 h-5">
                         <Icon icon=icondata_lu::LuNotepadTextDashed width="100%" height="100%"/>
@@ -96,9 +108,12 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                     <Todo />
                 </Show>
                 <Show when=move || active_tab.get() == 3>
-                    <Favorites />
+                    <Tags />
                 </Show>
                 <Show when=move || active_tab.get() == 4>
+                    <Favorites />
+                </Show>
+                <Show when=move || active_tab.get() == 5>
                     <Templates />
                 </Show>
             </div>
