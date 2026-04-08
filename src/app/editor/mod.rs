@@ -4,7 +4,7 @@ pub(crate) mod text_editing;
 mod writer;
 
 use crate::app::{components::icons::Icon, ipc};
-use granit_types::{AppConfig, Note, NoteMeta, RenderedNote, Template, TemplateMeta};
+use granit_types::{AppConfig, Document, DocumentMeta, RenderedDocument};
 use leptos::prelude::*;
 use reader::Reader;
 use writer::Writer;
@@ -16,8 +16,8 @@ enum DocumentKind {
 }
 
 enum PersistedMeta {
-    Note(NoteMeta),
-    Template(TemplateMeta),
+    Note(DocumentMeta),
+    Template(DocumentMeta),
 }
 
 struct PersistRequest<'a> {
@@ -55,17 +55,17 @@ pub struct OpenInEdit(pub RwSignal<EditOpen>);
 #[derive(Clone, Copy)]
 pub(super) struct EditorCtx {
     pub app: crate::app::AppCtx,
-    pub active_note: RwSignal<Option<Note>>,
-    pub active_template: RwSignal<Option<Template>>,
-    pub notes: RwSignal<Vec<NoteMeta>>,
-    pub templates: RwSignal<Vec<TemplateMeta>>,
+    pub active_note: RwSignal<Option<Document>>,
+    pub active_template: RwSignal<Option<Document>>,
+    pub notes: RwSignal<Vec<DocumentMeta>>,
+    pub templates: RwSignal<Vec<DocumentMeta>>,
     pub config: RwSignal<AppConfig>,
     pub editing: RwSignal<bool>,
     pub content: RwSignal<String>,
     pub title_input: RwSignal<String>,
     pub saving: RwSignal<bool>,
     pub error: RwSignal<Option<String>>,
-    pub rendered_note: RwSignal<Option<RenderedNote>>,
+    pub rendered_note: RwSignal<Option<RenderedDocument>>,
     /// When true, the Writer should focus and select the title input.
     pub focus_title: RwSignal<bool>,
     /// When true, the Writer should focus the content textarea.
@@ -272,14 +272,15 @@ impl EditorCtx {
                 Ok(PersistedMeta::Note(meta)) => {
                     self.prev_doc_key
                         .set(Some(format!("note:{}", meta.slug.clone())));
-                    self.app.set_active_note_document(Note { meta, content });
+                    self.app
+                        .set_active_note_document(Document { meta, content });
                     self.editing.set(false);
                 }
                 Ok(PersistedMeta::Template(meta)) => {
                     self.prev_doc_key
                         .set(Some(format!("template:{}", meta.slug.clone())));
                     self.app
-                        .set_active_template_document(Template { meta, content });
+                        .set_active_template_document(Document { meta, content });
                     self.editing.set(false);
                 }
                 Err(e) => self.error.set(Some(e)),

@@ -1,9 +1,9 @@
-use granit_types::NoteMeta;
+use granit_types::DocumentMeta;
 
-/// A node in the display tree built from flat `NoteMeta` list.
+/// A node in the display tree built from flat `DocumentMeta` list.
 #[derive(Clone, Debug)]
 pub(super) enum TreeNode {
-    Note(NoteMeta),
+    Note(DocumentMeta),
     Folder {
         name: String,
         /// Relative path from cave root, e.g. `"projects/2026"`.
@@ -12,10 +12,10 @@ pub(super) enum TreeNode {
     },
 }
 
-/// Build a display tree from a flat list of NoteMeta and folder paths.
+/// Build a display tree from a flat list of DocumentMeta and folder paths.
 /// Each `relative_path` like `"a/b/note.md"` is split on `/` to produce the hierarchy.
 /// `folders` ensures empty directories also appear in the tree.
-pub(super) fn build_tree(notes: Vec<NoteMeta>, folders: Vec<String>) -> Vec<TreeNode> {
+pub(super) fn build_tree(notes: Vec<DocumentMeta>, folders: Vec<String>) -> Vec<TreeNode> {
     let mut roots: Vec<TreeNode> = Vec::new();
 
     // Ensure all folder paths exist in the tree (including empty ones).
@@ -66,7 +66,7 @@ fn ensure_folder(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize) {
     }
 }
 
-fn insert_node(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize, meta: NoteMeta) {
+fn insert_node(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize, meta: DocumentMeta) {
     if depth == parts.len().saturating_sub(1) {
         // Leaf — a note.
         nodes.push(TreeNode::Note(meta));
@@ -98,8 +98,8 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    fn note(slug: &str, relative_path: &str) -> NoteMeta {
-        NoteMeta {
+    fn note(slug: &str, relative_path: &str) -> DocumentMeta {
+        DocumentMeta {
             slug: slug.into(),
             relative_path: relative_path.into(),
             icon: None,

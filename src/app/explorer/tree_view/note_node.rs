@@ -3,13 +3,13 @@ use super::{
 };
 use crate::app::{components::icons::Icon, ipc};
 use granit_types::resolve_note_icon;
-use granit_types::NoteMeta;
+use granit_types::DocumentMeta;
 use leptos::prelude::*;
 use web_sys::{DragEvent, MouseEvent};
 
 /// Renders a single note row in the tree, with drag, context menu, and rename support.
 #[component]
-pub(super) fn NoteNode(meta: NoteMeta, indent_style: String) -> impl IntoView {
+pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoView {
     let ctx = use_tree_ctx();
     let slug = meta.slug.clone();
 

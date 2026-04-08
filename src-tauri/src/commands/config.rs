@@ -27,9 +27,7 @@ impl serde::Serialize for ConfigError {
     }
 }
 
-pub(crate) fn restore_active_cave(
-    app: &mut tauri::App,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let store = Store::new(app);
 
     let Some(path) = store.load_persisted_active_cave()? else {

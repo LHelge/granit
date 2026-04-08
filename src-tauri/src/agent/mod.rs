@@ -1,9 +1,9 @@
 mod error;
 pub(crate) mod tools;
 
+pub(crate) use crate::commands::SharedCave;
 pub use error::AgentError;
 use rig::message::ToolCall;
-pub(crate) use crate::commands::SharedCave;
 
 use granit_types::AttachedNote;
 

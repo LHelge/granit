@@ -1,8 +1,8 @@
 use chrono::{Local, Utc};
-use granit_types::{Frontmatter, RenderedNote};
+use granit_types::{Frontmatter, RenderedDocument};
 use pulldown_cmark::{html, Event, LinkType, Options, Parser, Tag, TagEnd};
 
-/// Render a full markdown document to a [`RenderedNote`].
+/// Render a full markdown document to a [`RenderedDocument`].
 ///
 /// `title` is the note's slug (filename without `.md`) — displayed as a page
 /// header outside the rendered body area.
@@ -18,7 +18,7 @@ pub fn render_note<'lookup>(
     raw: &str,
     title: &str,
     lookup: impl Fn(&str) -> Option<&'lookup str>,
-) -> RenderedNote {
+) -> RenderedDocument {
     let (frontmatter, body) = extract_frontmatter(raw);
     let (html, outgoing_links) = render_with_wiki_links(body, lookup, true);
     let fmt = |d: chrono::DateTime<Utc>| {
@@ -28,7 +28,7 @@ pub fn render_note<'lookup>(
     };
     let created_display = frontmatter.as_ref().and_then(|f| f.created_at).map(fmt);
     let modified_display = frontmatter.as_ref().and_then(|f| f.modified_at).map(fmt);
-    RenderedNote {
+    RenderedDocument {
         title: title.to_string(),
         html,
         frontmatter,

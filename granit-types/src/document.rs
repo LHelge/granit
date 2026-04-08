@@ -19,38 +19,38 @@ pub struct Frontmatter {
     pub favorite: Option<bool>,
 }
 
-/// Result of rendering a markdown note: rendered HTML plus extracted metadata.
+/// Result of rendering a markdown document: rendered HTML plus extracted metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RenderedNote {
-    /// Title derived from the note's filename (slug), for display as a page header.
+pub struct RenderedDocument {
+    /// Title derived from the document's filename (slug), for display as a page header.
     pub title: String,
     /// HTML rendered from the markdown body (frontmatter stripped).
     pub html: String,
     /// Parsed frontmatter, if present.
     pub frontmatter: Option<Frontmatter>,
-    /// Slugs of outgoing wiki-links (`[[note-name]]`) found in the note.
+    /// Slugs of outgoing wiki-links (`[[note-name]]`) found in the document.
     pub outgoing_links: Vec<String>,
-    /// Notes that link to this note via resolved wiki-links.
+    /// Documents that link to this one via resolved wiki-links.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub backlinks: Vec<NoteMeta>,
+    pub backlinks: Vec<DocumentMeta>,
     /// Formatted created_at in local time (e.g. "2026-03-27 14:05:00"), if present.
     pub created_display: Option<String>,
     /// Formatted modified_at in local time (e.g. "2026-03-27 14:05:00"), if present.
     pub modified_display: Option<String>,
 }
 
-/// Metadata for a note in the cave.
+/// Metadata for a document (note or template) in the cave.
 ///
-/// Intentionally kept separate from [`Note`] (full content). `list_notes`
-/// returns many `NoteMeta` at once for the sidebar/tree — sending full body
-/// content for every note would be expensive in both I/O and IPC payload size,
-/// and grows linearly with cave size. Frontmatter is parsed (just the small
-/// header block) to populate fields like `icon`; the body is discarded.
+/// Intentionally kept separate from [`Document`] (full content). `list_notes`
+/// returns many `DocumentMeta` at once for the sidebar/tree — sending full body
+/// content for every document would be expensive in both I/O and IPC payload
+/// size, and grows linearly with cave size. Frontmatter is parsed (just the
+/// small header block) to populate fields like `icon`; the body is discarded.
 ///
-/// Use [`Note`] when the editor needs the body, or [`RenderedNote`] when the
-/// renderer needs HTML + full frontmatter.
+/// Use [`Document`] when the editor needs the body, or [`RenderedDocument`]
+/// when the renderer needs HTML + full frontmatter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NoteMeta {
+pub struct DocumentMeta {
     /// Filename without extension (e.g., "my-note").
     pub slug: String,
     /// Relative path from cave root (e.g., "subfolder/my-note.md").
@@ -58,34 +58,15 @@ pub struct NoteMeta {
     /// Optional icon ID in PascalCase without vendor prefix (e.g., "Pencil"), from frontmatter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Optional favorite flag from frontmatter.
+    /// Optional favorite flag from frontmatter. Always `None` for templates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favorite: Option<bool>,
 }
 
-/// Full note content returned when reading a note.
+/// Full document content (note or template) returned when reading.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Note {
-    pub meta: NoteMeta,
-    pub content: String,
-}
-
-/// Metadata for a template stored under `.granit/templates`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TemplateMeta {
-    /// Filename without extension (e.g., "daily").
-    pub slug: String,
-    /// Relative path inside the templates store (e.g., "daily.md").
-    pub relative_path: String,
-    /// Optional icon ID in PascalCase without vendor prefix (e.g., "Pencil"), from frontmatter.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
-}
-
-/// Full template content returned when reading a template.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Template {
-    pub meta: TemplateMeta,
+pub struct Document {
+    pub meta: DocumentMeta,
     pub content: String,
 }
 
