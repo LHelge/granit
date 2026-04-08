@@ -4,13 +4,10 @@ use crate::markdown::Markdown;
 use granit_types::TodoList;
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
-    let guard = state.lock_cave();
-    let cave = guard.as_ref();
     let md = Markdown::new(content);
-    match cave {
-        Some(cave) => md.render_with_links(|s| cave.lookup_slug(s)),
-        None => md.render_html(),
-    }
+    state
+        .with_cave(|cave| Ok(md.render_with_links(|s| cave.lookup_slug(s))))
+        .unwrap_or_else(|_| md.render_html())
 }
 
 #[tauri::command]

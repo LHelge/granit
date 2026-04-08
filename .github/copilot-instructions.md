@@ -188,25 +188,26 @@ use icondata_lu;
 
 ### Release Process
 
-Versions must stay in sync across three places:
+Versions must stay in sync across two places:
 
 | File | Field |
 |------|-------|
-| `Cargo.toml` (root) | `version` |
-| `src-tauri/Cargo.toml` | `version` |
+| `Cargo.toml` (root) | `[workspace.package] version` |
 | `src-tauri/tauri.conf.json` | `version` |
+
+All Cargo crates (`granit-ui`, `granit`, `granit-types`) inherit `version.workspace = true` from the root `[workspace.package]`, so only the root `Cargo.toml` needs updating.
 
 The git tag **must** match the version in these files exactly (e.g. version `1.2.3` → tag `v1.2.3`).
 
 Steps to cut a release:
 
 ```sh
-# 1. Bump version in all three files to X.Y.Z — edit them, then verify:
-grep -E '^version' Cargo.toml src-tauri/Cargo.toml
+# 1. Bump version in both files to X.Y.Z — edit them, then verify:
+grep -E '^version' Cargo.toml
 grep '"version"' src-tauri/tauri.conf.json
 
 # 2. Commit the version bump
-git add Cargo.toml src-tauri/Cargo.toml src-tauri/tauri.conf.json
+git add Cargo.toml src-tauri/tauri.conf.json
 git commit -m "chore: bump version to X.Y.Z"
 
 # 3. Tag exactly matching the version
