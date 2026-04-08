@@ -32,7 +32,7 @@ fn selection_preview(selected: &str) -> String {
 }
 
 fn freeze_attached_note(
-    active_note: Option<granit_types::Note>,
+    active_note: Option<granit_types::Document>,
     selected: Option<String>,
 ) -> Option<AttachedNote> {
     let note = active_note?;

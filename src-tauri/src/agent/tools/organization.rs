@@ -3,7 +3,7 @@ use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{SharedCave, with_shared_cave};
+use super::{with_shared_cave, SharedCave};
 use crate::cave::CaveError;
 
 // ── move_note ──────────────────────────────────────────────────────

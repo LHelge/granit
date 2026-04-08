@@ -16,11 +16,11 @@ pub struct AppError {
 #[derive(Clone, Copy)]
 pub struct AppCtx {
     pub config: RwSignal<granit_types::AppConfig>,
-    pub notes: RwSignal<Vec<granit_types::NoteMeta>>,
-    pub templates: RwSignal<Vec<granit_types::TemplateMeta>>,
+    pub notes: RwSignal<Vec<granit_types::DocumentMeta>>,
+    pub templates: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub folders: RwSignal<Vec<String>>,
-    pub active_note: RwSignal<Option<granit_types::Note>>,
-    pub active_template: RwSignal<Option<granit_types::Template>>,
+    pub active_note: RwSignal<Option<granit_types::Document>>,
+    pub active_template: RwSignal<Option<granit_types::Document>>,
     pub selected_note_text: RwSignal<Option<String>>,
     pub is_mac: bool,
     errors: RwSignal<Vec<AppError>>,
@@ -99,12 +99,12 @@ impl AppCtx {
         let _ = root.set_attribute("data-theme", name);
     }
 
-    pub fn set_active_note_document(&self, note: granit_types::Note) {
+    pub fn set_active_note_document(&self, note: granit_types::Document) {
         self.active_template.set(None);
         self.active_note.set(Some(note));
     }
 
-    pub fn set_active_template_document(&self, template: granit_types::Template) {
+    pub fn set_active_template_document(&self, template: granit_types::Document) {
         self.active_note.set(None);
         self.active_template.set(Some(template));
         self.selected_note_text.set(None);

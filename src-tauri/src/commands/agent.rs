@@ -77,5 +77,3 @@ pub(crate) fn clear_chat(state: tauri::State<'_, AppState>) -> Result<(), AgentE
 pub(crate) fn list_tools() -> Vec<granit_types::ToolInfo> {
     agent::tools::tool_info_list()
 }
-
-

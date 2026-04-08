@@ -2,7 +2,7 @@ use std::path::{Component, Path};
 
 use super::CaveError;
 
-pub use granit_types::{Note, NoteMeta, Template, TemplateMeta};
+pub use granit_types::{Document, DocumentMeta, RenderedDocument};
 
 /// Build note metadata including frontmatter-derived fields from a file on disk.
 ///
@@ -12,7 +12,7 @@ pub use granit_types::{Note, NoteMeta, Template, TemplateMeta};
 pub(crate) fn note_meta_with_frontmatter(
     relative_path: &Path,
     abs_path: &std::path::Path,
-) -> NoteMeta {
+) -> DocumentMeta {
     let mut meta = note_meta_from_relative_path(relative_path);
     if let Ok(raw) = std::fs::read_to_string(abs_path) {
         meta.icon = crate::markdown::read_frontmatter_icon(&raw);
@@ -21,11 +21,11 @@ pub(crate) fn note_meta_with_frontmatter(
     meta
 }
 
-/// Build note metadata from a relative path (e.g. `Path::new("folder/note.md")`).
+/// Build document metadata from a relative path (e.g. `Path::new("folder/note.md")`).
 ///
-/// `NoteMeta.relative_path` is always stored with forward slashes so it is
+/// `DocumentMeta.relative_path` is always stored with forward slashes so it is
 /// consistent across platforms when sent over IPC.
-pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> NoteMeta {
+pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta {
     let slug = relative_path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -39,7 +39,7 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> NoteMeta {
         })
         .collect::<Vec<_>>()
         .join("/");
-    NoteMeta {
+    DocumentMeta {
         slug,
         relative_path: path_str,
         icon: None,
@@ -48,7 +48,9 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> NoteMeta {
 }
 
 /// Build template metadata including the icon from a file on disk.
-pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> TemplateMeta {
+///
+/// `favorite` is always `None` for templates.
+pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> DocumentMeta {
     let mut meta = template_meta_from_path(abs_path);
     if let Ok(raw) = std::fs::read_to_string(abs_path) {
         meta.icon = crate::markdown::read_frontmatter_icon(&raw);
@@ -57,7 +59,9 @@ pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> TemplateMet
 }
 
 /// Build template metadata from a template file path.
-pub(crate) fn template_meta_from_path(path: &Path) -> TemplateMeta {
+///
+/// `favorite` is always `None` for templates.
+pub(crate) fn template_meta_from_path(path: &Path) -> DocumentMeta {
     let slug = path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -66,10 +70,11 @@ pub(crate) fn template_meta_from_path(path: &Path) -> TemplateMeta {
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    TemplateMeta {
+    DocumentMeta {
         slug,
         relative_path,
         icon: None,
+        favorite: None,
     }
 }
 
@@ -95,7 +100,6 @@ pub(crate) fn validate_name(name: &str) -> Result<(), CaveError> {
 /// Validate a relative folder path using `Path::components()`.
 ///
 /// Rejects traversal (`..`), current-dir (`.`), root, and hidden components.
-#[allow(dead_code)]
 pub(crate) fn validate_folder_path(path: &Path) -> Result<(), CaveError> {
     let mut has_components = false;
     for component in path.components() {
@@ -168,6 +172,7 @@ mod tests {
         let meta = note_meta_from_relative_path(Path::new("foo.md"));
         assert_eq!(meta.slug, "foo");
         assert_eq!(meta.relative_path, "foo.md");
+        assert!(meta.favorite.is_none());
     }
 
     #[test]
@@ -175,6 +180,13 @@ mod tests {
         let meta = note_meta_from_relative_path(Path::new("folder/sub/bar.md"));
         assert_eq!(meta.slug, "bar");
         assert_eq!(meta.relative_path, "folder/sub/bar.md");
+    }
+
+    #[test]
+    fn test_template_meta_from_path_has_no_favorite() {
+        let meta = template_meta_from_path(Path::new("daily.md"));
+        assert_eq!(meta.slug, "daily");
+        assert!(meta.favorite.is_none());
     }
 
     #[test]

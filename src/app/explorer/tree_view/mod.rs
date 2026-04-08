@@ -10,7 +10,7 @@ use crate::app::{
 };
 use context_menu::TreeContextMenu;
 use folder_node::FolderNode;
-use granit_types::{Note, NoteMeta};
+use granit_types::{Document, DocumentMeta};
 use leptos::prelude::*;
 use note_node::NoteNode;
 use tree_model::{build_tree, TreeNode};
@@ -22,9 +22,9 @@ use web_sys::{DragEvent, MouseEvent};
 /// so child components can `use_context::<TreeCtx>()` instead of prop drilling.
 #[derive(Clone, Copy)]
 pub(super) struct TreeCtx {
-    pub notes: RwSignal<Vec<NoteMeta>>,
+    pub notes: RwSignal<Vec<DocumentMeta>>,
     pub folders: RwSignal<Vec<String>>,
-    pub active_note: RwSignal<Option<Note>>,
+    pub active_note: RwSignal<Option<Document>>,
     app: crate::app::AppCtx,
     pub context_menu: RwSignal<Option<ContextMenu>>,
     pub drag_payload: RwSignal<Option<DragPayload>>,
