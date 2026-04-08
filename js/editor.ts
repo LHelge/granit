@@ -5,7 +5,7 @@ import {
     highlightActiveLine,
     ViewUpdate,
 } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, Compartment, StateField } from "@codemirror/state";
 import {
     defaultKeymap,
     indentWithTab,
@@ -14,8 +14,11 @@ import {
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
+    autocompletion,
     closeBrackets,
     closeBracketsKeymap,
+    CompletionContext,
+    CompletionResult,
 } from "@codemirror/autocomplete";
 import {
     indentOnInput,
@@ -85,6 +88,35 @@ const granitTheme = EditorView.theme({
     },
 });
 
+// Tooltip styles must use baseTheme because CM6 renders tooltips at the
+// document body level, outside the editor's scoped DOM subtree.
+const granitTooltipTheme = EditorView.baseTheme({
+    ".cm-tooltip.cm-tooltip-autocomplete": {
+        backgroundColor: "var(--color-base-200)",
+        border: "1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent)",
+        borderRadius: "0.5rem",
+        boxShadow: "0 4px 12px color-mix(in oklch, var(--color-neutral) 30%, transparent)",
+        overflow: "hidden",
+    },
+    ".cm-tooltip-autocomplete > ul": {
+        fontFamily: "inherit",
+        fontSize: "0.875rem",
+    },
+    ".cm-tooltip-autocomplete > ul > li": {
+        padding: "0.25rem 0.75rem",
+        color: "var(--color-base-content)",
+    },
+    ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+        backgroundColor: "color-mix(in oklch, var(--color-primary) 20%, transparent)",
+        color: "var(--color-base-content)",
+    },
+    ".cm-completionMatchedText": {
+        textDecoration: "none",
+        fontWeight: "600",
+        color: "var(--color-primary)",
+    },
+});
+
 // ── URL paste extension ────────────────────────────────────────────
 
 function isUrl(text: string): boolean {
@@ -115,12 +147,52 @@ const urlPasteExtension = EditorView.domEventHandlers({
     },
 });
 
+// ── Wiki-link autocompletion ──────────────────────────────────────
+
+// A StateField that holds the current list of slugs available for completion.
+// Reconfigured via a Compartment whenever the slug list changes.
+const slugsField = StateField.define<string[]>({
+    create: () => [],
+    update: (value) => value,
+});
+
+function slugsExtension(slugs: string[]) {
+    return slugsField.init(() => slugs);
+}
+
+function wikiLinkCompletionSource(context: CompletionContext): CompletionResult | null {
+    // Match `[[` followed by any non-`]` characters up to the cursor
+    const match = context.matchBefore(/\[\[[^\]]*$/);
+    if (!match) return null;
+
+    const typed = match.text.slice(2);
+    const slugs = context.state.field(slugsField);
+
+    return {
+        from: match.from + 2, // complete only the slug part (after `[[`)
+        options: slugs.map((slug) => ({
+            label: slug,
+            apply: (view, completion, from, to) => {
+                // closeBrackets may have already inserted `]]` after the cursor.
+                // Extend `to` to overwrite them so we don't end up with `]]]]`.
+                const docTo = view.state.doc.sliceString(to, to + 2) === "]]" ? to + 2 : to;
+                view.dispatch({
+                    changes: { from, to: docTo, insert: `${completion.label}]]` },
+                    selection: { anchor: from + completion.label.length + 2 },
+                });
+            },
+        })),
+        filter: typed.length > 0, // use CM6 built-in fuzzy filter once typing starts
+    };
+}
+
 // ── Editor instances ───────────────────────────────────────────────
 
 interface EditorInstance {
     view: EditorView;
     fontCompartment: Compartment;
     readOnlyCompartment: Compartment;
+    slugsCompartment: Compartment;
     onChange: ((content: string) => void) | null;
     onSelectionChange: ((selectedText: string) => void) | null;
 }
@@ -143,6 +215,7 @@ export interface CreateConfig {
     content?: string;
     fontFamily?: string;
     fontSize?: string;
+    slugs?: string[];
     onChange?: (content: string) => void;
     onSelectionChange?: (selectedText: string) => void;
 }
@@ -153,6 +226,7 @@ export function create(
 ): number {
     const fontCompartment = new Compartment();
     const readOnlyCompartment = new Compartment();
+    const slugsCompartment = new Compartment();
 
     const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
         const inst = instances.get(handle);
@@ -173,11 +247,14 @@ export function create(
         doc: config.content ?? "",
         extensions: [
             granitTheme,
+            granitTooltipTheme,
             syntaxHighlighting(granitHighlightStyle),
             fontCompartment.of(
                 fontExtension(config.fontFamily ?? "", config.fontSize ?? "")
             ),
             readOnlyCompartment.of(EditorState.readOnly.of(false)),
+            slugsCompartment.of(slugsExtension(config.slugs ?? [])),
+            autocompletion({ override: [wikiLinkCompletionSource] }),
             markdown(),
             closeBrackets(),
             bracketMatching(),
@@ -203,6 +280,7 @@ export function create(
         view,
         fontCompartment,
         readOnlyCompartment,
+        slugsCompartment,
         onChange: config.onChange ?? null,
         onSelectionChange: config.onSelectionChange ?? null,
     });
@@ -261,6 +339,14 @@ export function setReadOnly(handle: number, readOnly: boolean): void {
         effects: inst.readOnlyCompartment.reconfigure(
             EditorState.readOnly.of(readOnly)
         ),
+    });
+}
+
+export function setSlugs(handle: number, slugs: string[]): void {
+    const inst = instances.get(handle);
+    if (!inst) return;
+    inst.view.dispatch({
+        effects: inst.slugsCompartment.reconfigure(slugsExtension(slugs)),
     });
 }
 
