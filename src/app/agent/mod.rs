@@ -201,13 +201,13 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                 messages_container=messages_container
             />
 
-            // Input area — textarea above, model selector + send below
-            <div>
+            // Input area — chat bubble styled, model selector + send inside
+            <div class="chat chat-end gap-0 pl-3 pb-3">
                 <form
-                    class="p-2"
+                    class="w-full"
                     on:submit=on_submit
                 >
-                    <div class="rounded-box border border-neutral/60 bg-neutral text-neutral-content overflow-hidden">
+                    <div class="chat-bubble chat-bubble-neutral w-full p-0 text-left">
                         <Show when=move || !attached_notes.get().is_empty() || active_note.get().is_some()>
                             <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-1.5">
                                 <For

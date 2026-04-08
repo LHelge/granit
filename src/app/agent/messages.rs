@@ -95,9 +95,9 @@ pub(super) fn MessageList(
                         let is_user = dm.message.role == ChatRole::User;
                         let chat_class = if is_user { "chat chat-end" } else { "chat chat-start" };
                         let bubble_class = if is_user {
-                            "chat-bubble chat-bubble-neutral prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                            "chat-bubble chat-bubble-neutral prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words"
                         } else {
-                            "chat-bubble prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words overflow-hidden"
+                            "chat-bubble prose prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 break-words"
                         };
                         view! {
                             <div class=chat_class>

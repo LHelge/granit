@@ -60,13 +60,21 @@ pub fn create(
         .collect();
 
     let config = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&config, &"content".into(), &wasm_bindgen::JsValue::from_str(content));
+    let _ = js_sys::Reflect::set(
+        &config,
+        &"content".into(),
+        &wasm_bindgen::JsValue::from_str(content),
+    );
     let _ = js_sys::Reflect::set(
         &config,
         &"fontFamily".into(),
         &wasm_bindgen::JsValue::from_str(font_family),
     );
-    let _ = js_sys::Reflect::set(&config, &"fontSize".into(), &wasm_bindgen::JsValue::from_str(font_size));
+    let _ = js_sys::Reflect::set(
+        &config,
+        &"fontSize".into(),
+        &wasm_bindgen::JsValue::from_str(font_size),
+    );
     let _ = js_sys::Reflect::set(&config, &"slugs".into(), &js_slugs.into());
     let _ = js_sys::Reflect::set(&config, &"onChange".into(), on_change_cb.as_ref());
     let _ = js_sys::Reflect::set(&config, &"onSelectionChange".into(), on_sel_cb.as_ref());
