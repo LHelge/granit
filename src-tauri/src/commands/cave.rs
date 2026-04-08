@@ -1,14 +1,15 @@
 use super::AppState;
 use crate::cave::{CaveError, ContentMatch, Document, DocumentMeta, RenderedDocument};
-use crate::markdown;
+use crate::markdown::Markdown;
 use granit_types::TodoList;
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let guard = state.lock_cave();
     let cave = guard.as_ref();
+    let md = Markdown::new(content);
     match cave {
-        Some(cave) => markdown::render_markdown_with_links(content, |s| cave.lookup_slug(s)),
-        None => markdown::render_html(content),
+        Some(cave) => md.render_with_links(|s| cave.lookup_slug(s)),
+        None => md.render_html(),
     }
 }
 
@@ -244,7 +245,7 @@ pub(crate) fn render_note(
     state.with_cave(|cave| {
         let slug = cave.resolve_slug(&name)?;
         let raw = cave.read_note_raw(&slug)?;
-        let mut rendered = markdown::render_note(&raw, &slug, |s| cave.lookup_slug(s));
+        let mut rendered = Markdown::new(&raw).render(&slug, |s| cave.lookup_slug(s));
         rendered.backlinks = cave.backlink_note_metas(&slug)?;
         Ok(rendered)
     })
@@ -257,7 +258,7 @@ pub(crate) fn render_template(
 ) -> Result<RenderedDocument, CaveError> {
     state.with_cave(|cave| {
         let raw = cave.read_template_raw(&name)?;
-        Ok(markdown::render_note(&raw, &name, |s| cave.lookup_slug(s)))
+        Ok(Markdown::new(&raw).render(&name, |s| cave.lookup_slug(s)))
     })
 }
 

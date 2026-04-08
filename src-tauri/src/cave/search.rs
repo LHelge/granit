@@ -21,7 +21,7 @@ impl Cave {
                 }
             }
             let raw = std::fs::read_to_string(abs_path)?;
-            let body = crate::markdown::strip_frontmatter(&raw);
+            let body = crate::markdown::Markdown::new(&raw).body();
             let snippets: Vec<String> = body
                 .lines()
                 .filter(|line| line.to_lowercase().contains(&query_lower))

@@ -15,8 +15,9 @@ pub(crate) fn note_meta_with_frontmatter(
 ) -> DocumentMeta {
     let mut meta = note_meta_from_relative_path(relative_path);
     if let Ok(raw) = std::fs::read_to_string(abs_path) {
-        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
-        meta.favorite = crate::markdown::read_frontmatter_favorite(&raw);
+        let md = crate::markdown::Markdown::new(&raw);
+        meta.icon = md.icon();
+        meta.favorite = md.favorite();
     }
     meta
 }
@@ -53,7 +54,7 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta
 pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> DocumentMeta {
     let mut meta = template_meta_from_path(abs_path);
     if let Ok(raw) = std::fs::read_to_string(abs_path) {
-        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
+        meta.icon = crate::markdown::Markdown::new(&raw).icon();
     }
     meta
 }

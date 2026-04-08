@@ -31,7 +31,7 @@ impl Cave {
         };
 
         let final_path = templates_dir.join(&filename);
-        let initial_content = crate::markdown::initial_content(&slug);
+        let initial_content = crate::markdown::Markdown::new_note();
         std::fs::write(&final_path, &initial_content)?;
         self.templates.insert(slug, final_path.clone());
 
@@ -58,9 +58,10 @@ impl Cave {
             .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
 
         let raw = std::fs::read_to_string(abs_path)?;
-        let body = crate::markdown::strip_frontmatter(&raw).to_string();
+        let md = crate::markdown::Markdown::new(&raw);
+        let body = md.body().to_string();
         let mut meta = template_meta_from_path(abs_path);
-        meta.icon = crate::markdown::read_frontmatter_icon(&raw);
+        meta.icon = md.icon();
         Ok(Document {
             meta,
             content: body,
@@ -86,11 +87,10 @@ impl Cave {
             .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
 
         let existing_raw = std::fs::read_to_string(abs_path)?;
-        let updated =
-            crate::markdown::rebuild_with_frontmatter(&existing_raw, content, None, None, None);
+        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
         std::fs::write(abs_path, updated.as_str())?;
         let mut meta = template_meta_from_path(abs_path);
-        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        meta.icon = crate::markdown::Markdown::new(&updated).icon();
         Ok(meta)
     }
 
@@ -180,8 +180,7 @@ impl Cave {
         };
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
-        let updated =
-            crate::markdown::rebuild_with_frontmatter(&existing_raw, content, tags, icon, None);
+        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, None);
         if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
@@ -200,7 +199,7 @@ impl Cave {
         }
 
         let mut meta = template_meta_from_path(&final_abs);
-        meta.icon = crate::markdown::read_frontmatter_icon(&updated);
+        meta.icon = crate::markdown::Markdown::new(&updated).icon();
         Ok(meta)
     }
 
@@ -208,7 +207,7 @@ impl Cave {
 
     pub(crate) fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {
         let raw = self.read_template_raw(slug)?;
-        Ok(crate::markdown::strip_frontmatter(&raw).to_string())
+        Ok(crate::markdown::Markdown::new(&raw).body().to_string())
     }
 
     pub(crate) fn parse_daily_note_slug(slug: &str) -> Option<NaiveDate> {
@@ -261,7 +260,7 @@ impl Cave {
         };
 
         let raw = self.read_template_raw(template_slug)?;
-        Ok(crate::markdown::read_frontmatter_icon(&raw))
+        Ok(crate::markdown::Markdown::new(&raw).icon())
     }
 
     pub(crate) fn initial_tags_for_new_note(
@@ -273,7 +272,7 @@ impl Cave {
         };
 
         let raw = self.read_template_raw(template_slug)?;
-        Ok(crate::markdown::read_frontmatter_tags(&raw))
+        Ok(crate::markdown::Markdown::new(&raw).tags())
     }
 
     /// Open or create today's daily note in the given folder.
@@ -306,7 +305,7 @@ impl Cave {
                 .and_then(|slug| self.initial_tags_for_new_note(Some(slug)).ok())
                 .unwrap_or_default();
             let final_path = abs_folder.join(format!("{today}.md"));
-            let initial_content = crate::markdown::initial_content_with_body(
+            let initial_content = crate::markdown::Markdown::new_note_with_body(
                 &body,
                 tags,
                 Some("Calendar".to_string()),
