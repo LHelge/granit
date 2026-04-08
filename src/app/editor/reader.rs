@@ -134,8 +134,10 @@ pub(super) fn Reader() -> impl IntoView {
             .ok()
             .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
             {
-                let _ = document
-                    .remove_event_listener_with_callback("selectionchange", handler.unchecked_ref());
+                let _ = document.remove_event_listener_with_callback(
+                    "selectionchange",
+                    handler.unchecked_ref(),
+                );
                 let _ = js_sys::Reflect::delete_property(
                     &document,
                     &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
