@@ -27,26 +27,43 @@ impl serde::Serialize for ConfigError {
     }
 }
 
-pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let store = Store::new(app);
+#[derive(Debug, PartialEq)]
+enum RestoreOutcome {
+    NothingStored,
+    InvalidPath,
+    Restored,
+}
 
-    let Some(path) = store.load_persisted_active_cave()? else {
-        // No path stored, nothing to restore, just return
-        return Ok(());
+fn restore_cave_logic(
+    path: Option<PathBuf>,
+    state: &AppState,
+) -> Result<RestoreOutcome, CaveError> {
+    let Some(path) = path else {
+        return Ok(RestoreOutcome::NothingStored);
     };
 
     if !path.is_dir() {
-        // Stored path is invalid, clear it and return
-        store.clear_persisted_active_cave()?;
-        return Ok(());
+        return Ok(RestoreOutcome::InvalidPath);
     }
 
-    let state = app.state::<AppState>();
     let cave = Cave::new(path);
-    cave.ensure_config().map_err(|err| err.to_string())?;
+    cave.ensure_config()?;
     let config = cave.load_config()?;
     *state.lock_config() = config;
     state.set_cave(Some(cave));
+
+    Ok(RestoreOutcome::Restored)
+}
+
+pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let store = Store::new(app);
+    let path = store.load_persisted_active_cave()?;
+    let state = app.state::<AppState>();
+
+    let outcome = restore_cave_logic(path, &state)?;
+    if outcome == RestoreOutcome::InvalidPath {
+        store.clear_persisted_active_cave()?;
+    }
 
     Ok(())
 }
@@ -459,5 +476,45 @@ mod tests {
             saved.agent.selected_model.as_deref(),
             Some("claude-sonnet-4-6")
         );
+    }
+
+    #[test]
+    fn test_restore_cave_logic_no_stored_key_leaves_state_unchanged() {
+        let state = test_app_state();
+
+        let outcome = restore_cave_logic(None, &state).unwrap();
+
+        assert_eq!(outcome, RestoreOutcome::NothingStored);
+        assert!(state.lock_cave().is_none());
+    }
+
+    #[test]
+    fn test_restore_cave_logic_non_directory_path_returns_invalid_path() {
+        let state = test_app_state();
+        let path = PathBuf::from("/this/path/does/not/exist");
+
+        let outcome = restore_cave_logic(Some(path), &state).unwrap();
+
+        assert_eq!(outcome, RestoreOutcome::InvalidPath);
+        assert!(state.lock_cave().is_none());
+    }
+
+    #[test]
+    fn test_restore_cave_logic_valid_dir_loads_cave_and_config_into_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = test_app_state();
+
+        // Write a custom config to the cave so we can verify it gets loaded.
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        let mut expected_config = cave.load_config().unwrap();
+        expected_config.theme = "dracula".into();
+        cave.save_config(&expected_config).unwrap();
+
+        let outcome = restore_cave_logic(Some(dir.path().to_path_buf()), &state).unwrap();
+
+        assert_eq!(outcome, RestoreOutcome::Restored);
+        assert_eq!(state.active_cave_path(), Some(dir.path().to_path_buf()));
+        assert_eq!(state.lock_config().theme, "dracula");
     }
 }
