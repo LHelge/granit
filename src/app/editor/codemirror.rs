@@ -23,6 +23,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = setReadOnly)]
     fn cm_set_read_only(handle: u32, read_only: bool);
 
+    #[wasm_bindgen(js_namespace = GranitEditor, js_name = setSlugs)]
+    fn cm_set_slugs(handle: u32, slugs: js_sys::Array);
+
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = destroy)]
     fn cm_destroy(handle: u32);
 }
@@ -44,20 +47,27 @@ pub fn create(
     content: &str,
     font_family: &str,
     font_size: &str,
+    slugs: &[String],
     on_change: impl Fn(String) + 'static,
     on_selection_change: impl Fn(String) + 'static,
 ) -> EditorHandle {
     let on_change_cb = Closure::wrap(Box::new(on_change) as Box<dyn Fn(String)>);
     let on_sel_cb = Closure::wrap(Box::new(on_selection_change) as Box<dyn Fn(String)>);
 
+    let js_slugs: js_sys::Array = slugs
+        .iter()
+        .map(|s| wasm_bindgen::JsValue::from_str(s))
+        .collect();
+
     let config = js_sys::Object::new();
-    let _ = js_sys::Reflect::set(&config, &"content".into(), &JsValue::from_str(content));
+    let _ = js_sys::Reflect::set(&config, &"content".into(), &wasm_bindgen::JsValue::from_str(content));
     let _ = js_sys::Reflect::set(
         &config,
         &"fontFamily".into(),
-        &JsValue::from_str(font_family),
+        &wasm_bindgen::JsValue::from_str(font_family),
     );
-    let _ = js_sys::Reflect::set(&config, &"fontSize".into(), &JsValue::from_str(font_size));
+    let _ = js_sys::Reflect::set(&config, &"fontSize".into(), &wasm_bindgen::JsValue::from_str(font_size));
+    let _ = js_sys::Reflect::set(&config, &"slugs".into(), &js_slugs.into());
     let _ = js_sys::Reflect::set(&config, &"onChange".into(), on_change_cb.as_ref());
     let _ = js_sys::Reflect::set(&config, &"onSelectionChange".into(), on_sel_cb.as_ref());
 
@@ -95,6 +105,15 @@ pub fn set_font(handle: EditorHandle, family: &str, size: &str) {
 #[allow(dead_code)]
 pub fn set_read_only(handle: EditorHandle, read_only: bool) {
     cm_set_read_only(handle.0, read_only);
+}
+
+/// Update the slug list for wiki-link autocompletion.
+pub fn set_slugs(handle: EditorHandle, slugs: &[String]) {
+    let js_slugs: js_sys::Array = slugs
+        .iter()
+        .map(|s| wasm_bindgen::JsValue::from_str(s))
+        .collect();
+    cm_set_slugs(handle.0, js_slugs);
 }
 
 /// Destroy the editor instance and free resources.

@@ -103,12 +103,19 @@ pub(super) fn Writer() -> impl IntoView {
         let html_el: &web_sys::HtmlElement = el.as_ref();
         let config = ctx.config.get_untracked();
         let content = ctx.content.get_untracked();
+        let slugs: Vec<String> = ctx
+            .notes
+            .get_untracked()
+            .into_iter()
+            .map(|m| m.slug)
+            .collect();
 
         let h = codemirror::create(
             html_el,
             &content,
             &config.markdown_font.font_family,
             &config.markdown_font.font_size.to_string(),
+            &slugs,
             // onChange — user edits
             move |new_content: String| {
                 internal_version.with_value(|c| c.set(c.get().wrapping_add(1)));
@@ -126,6 +133,16 @@ pub(super) fn Writer() -> impl IntoView {
         );
 
         editor_handle.with_value(|cell| cell.set(Some(h)));
+    });
+
+    // Keep the slug list up to date when notes are added/removed/renamed.
+    Effect::new(move || {
+        let slugs: Vec<String> = ctx.notes.get().into_iter().map(|m| m.slug).collect();
+        editor_handle.with_value(|cell| {
+            if let Some(h) = cell.get() {
+                codemirror::set_slugs(h, &slugs);
+            }
+        });
     });
 
     // Destroy the CM6 editor on unmount.
