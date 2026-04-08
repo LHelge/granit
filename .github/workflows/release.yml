@@ -20,16 +20,12 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-            tailwindcss_binary: tailwindcss-macos-arm64
           - platform: macos-latest
             args: '--target x86_64-apple-darwin'
-            tailwindcss_binary: tailwindcss-macos-arm64
           - platform: ubuntu-22.04
             args: ''
-            tailwindcss_binary: tailwindcss-linux-x64
           - platform: windows-latest
             args: ''
-            tailwindcss_binary: tailwindcss-windows-x64.exe
 
     runs-on: ${{ matrix.platform }}
 
@@ -55,22 +51,14 @@ jobs:
         with:
           version: latest
 
-      - name: Install tailwindcss (macOS/Linux)
-        if: runner.os != 'Windows'
-        run: |
-          curl -sLO "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${{ matrix.tailwindcss_binary }}"
-          chmod +x "${{ matrix.tailwindcss_binary }}"
-          sudo mv "${{ matrix.tailwindcss_binary }}" /usr/local/bin/tailwindcss
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-      - name: Install tailwindcss (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/tailwindlabs/tailwindcss/releases/latest/download/${{ matrix.tailwindcss_binary }}" -OutFile tailwindcss.exe
-          $binDir = "$env:USERPROFILE\.local\bin"
-          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-          Move-Item tailwindcss.exe "$binDir\tailwindcss.exe"
-          echo "$binDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Install npm dependencies
+        run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:

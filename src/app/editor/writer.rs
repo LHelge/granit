@@ -1,11 +1,8 @@
-use super::{
-    frontmatter::FrontmatterEditor,
-    text_editing::{self, EditResult, TextareaState},
-    use_editor_ctx, EditorCtx,
-};
+use super::{codemirror, frontmatter::FrontmatterEditor, use_editor_ctx};
 use crate::app::components::{icon_picker::IconPicker, icons::Icon};
 use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
+use std::cell::Cell;
 use wasm_bindgen::JsCast;
 
 fn request_animation_frame(f: impl FnOnce() + 'static) {
@@ -15,93 +12,19 @@ fn request_animation_frame(f: impl FnOnce() + 'static) {
         .request_animation_frame(cb.as_ref().unchecked_ref());
 }
 
-// ── DOM helpers ────────────────────────────────────────────────────
-
-/// Create a `TextareaState` from a DOM textarea element,
-/// converting UTF-16 selection offsets to char offsets.
-fn textarea_state(textarea: &web_sys::HtmlTextAreaElement) -> TextareaState {
-    let value = textarea.value();
-    let start = textarea.selection_start().ok().flatten().unwrap_or(0) as usize;
-    let end = textarea.selection_end().ok().flatten().unwrap_or(0) as usize;
-    TextareaState::from_utf16(value, start, end)
-}
-
-fn sync_selected_text(textarea: &web_sys::HtmlTextAreaElement, ctx: EditorCtx) {
-    let selected = textarea_state(textarea)
-        .selected_text()
-        .filter(|text| !text.trim().is_empty());
-    ctx.app.selected_note_text.set(selected);
-}
-
-/// Apply an `EditResult` to the DOM textarea and sync the content signal.
-fn apply_result(textarea: &web_sys::HtmlTextAreaElement, result: &EditResult, ctx: EditorCtx) {
-    textarea.set_value(&result.value);
-    let _ = textarea.set_selection_range(result.cursor_start_utf16(), result.cursor_end_utf16());
-    ctx.content.set(textarea.value());
-    sync_selected_text(textarea, ctx);
-}
-
-// ── Paste handler ──────────────────────────────────────────────────
-
-fn handle_paste(
-    ev: web_sys::ClipboardEvent,
-    content_ref: NodeRef<leptos::html::Textarea>,
-    ctx: EditorCtx,
-) {
-    let Some(el) = content_ref.get() else { return };
-    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-    let s = textarea_state(textarea);
-
-    let Some(data) = ev.clipboard_data() else {
-        return;
-    };
-    let Ok(clip_text) = data.get_data("text/plain") else {
-        return;
-    };
-    let clip_trimmed = clip_text.trim();
-    if !text_editing::is_url(clip_trimmed) {
-        return;
-    }
-
-    ev.prevent_default();
-    let result = s.paste_url(clip_trimmed);
-    apply_result(textarea, &result, ctx);
-}
-
-// ── Main keydown dispatcher ────────────────────────────────────────
-
-fn handle_content_keydown(
-    ev: leptos::ev::KeyboardEvent,
-    content_ref: NodeRef<leptos::html::Textarea>,
-    ctx: EditorCtx,
-) {
-    let Some(el) = content_ref.get() else { return };
-    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-    let s = textarea_state(textarea);
-
-    let result = match ev.key().as_str() {
-        "[" => Some(s.bracket('[', ']')),
-        "(" => Some(s.bracket('(', ')')),
-        "]" => s.skip_close(']'),
-        ")" => s.skip_close(')'),
-        "*" | "_" | "`" | "~" => Some(s.formatting_char(ev.key().chars().next().unwrap())),
-        "Enter" => s.enter(),
-        "Tab" => s.tab(ev.shift_key()),
-        _ => None,
-    };
-
-    if let Some(r) = result {
-        ev.prevent_default();
-        apply_result(textarea, &r, ctx);
-    }
-}
-
-/// Raw markdown editor with title input and content textarea.
+/// Raw markdown editor with title input and CodeMirror 6 content editor.
 #[component]
 pub(super) fn Writer() -> impl IntoView {
     let ctx = use_editor_ctx();
     let title_ref = NodeRef::<leptos::html::Input>::new();
-    let content_ref = NodeRef::<leptos::html::Textarea>::new();
+    let container_ref = NodeRef::<leptos::html::Div>::new();
+
+    // Shared handle to the CM6 editor instance.
+    let editor_handle = StoredValue::new_local(Cell::new(None::<codemirror::EditorHandle>));
+
+    // Track the content version to detect external (note-switch) changes
+    // vs internal (user-typing) changes. Incremented on each onChange from CM6.
+    let internal_version = StoredValue::new_local(Cell::new(0u64));
 
     // Focus and select the title input when requested.
     Effect::new(move || {
@@ -117,17 +40,102 @@ pub(super) fn Writer() -> impl IntoView {
         }
     });
 
-    // Focus the content textarea when requested.
+    // Focus the CM6 editor when requested.
     Effect::new(move || {
         if ctx.focus_content.get() {
             ctx.focus_content.set(false);
             request_animation_frame(move || {
-                if let Some(el) = content_ref.get() {
-                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                    let _ = textarea.focus();
+                editor_handle.with_value(|cell| {
+                    if let Some(h) = cell.get() {
+                        codemirror::focus(h);
+                    }
+                });
+            });
+        }
+    });
+
+    // Sync external content changes (note switches) into the CM6 editor.
+    // The mod.rs effect sets ctx.content on note switch; we detect that here
+    // by comparing against the internal version counter. When content changes
+    // without the internal version bumping, it's an external change.
+    let prev_content = StoredValue::new_local(Cell::new(0u64));
+    Effect::new(move || {
+        let content = ctx.content.get();
+        let current_iv = internal_version.with_value(|c| c.get());
+        let prev_iv = prev_content.with_value(|c| c.get());
+
+        // If version hasn't changed since we last ran, this is an external update
+        if current_iv == prev_iv {
+            editor_handle.with_value(|cell| {
+                if let Some(h) = cell.get() {
+                    codemirror::set_content(h, &content);
                 }
             });
         }
+        prev_content.with_value(|c| c.set(current_iv));
+    });
+
+    // Sync font changes into the CM6 editor.
+    Effect::new(move || {
+        let config = ctx.config.get();
+        editor_handle.with_value(|cell| {
+            if let Some(h) = cell.get() {
+                codemirror::set_font(
+                    h,
+                    &config.markdown_font.font_family,
+                    &config.markdown_font.font_size.to_string(),
+                );
+            }
+        });
+    });
+
+    // Mount the CM6 editor once the container div is available.
+    Effect::new(move || {
+        let Some(el) = container_ref.get() else {
+            return;
+        };
+
+        // Only create once
+        if editor_handle.with_value(|c| c.get()).is_some() {
+            return;
+        }
+
+        let html_el: &web_sys::HtmlElement = el.as_ref();
+        let config = ctx.config.get_untracked();
+        let content = ctx.content.get_untracked();
+
+        let h = codemirror::create(
+            html_el,
+            &content,
+            &config.markdown_font.font_family,
+            &config.markdown_font.font_size.to_string(),
+            // onChange — user edits
+            move |new_content: String| {
+                internal_version.with_value(|c| c.set(c.get().wrapping_add(1)));
+                ctx.content.set(new_content);
+            },
+            // onSelectionChange — track selected text for agent panel
+            move |selected: String| {
+                let text = if selected.trim().is_empty() {
+                    None
+                } else {
+                    Some(selected)
+                };
+                ctx.app.selected_note_text.set(text);
+            },
+        );
+
+        editor_handle.with_value(|cell| cell.set(Some(h)));
+    });
+
+    // Destroy the CM6 editor on unmount.
+    on_cleanup(move || {
+        editor_handle.with_value(|cell| {
+            if let Some(h) = cell.get() {
+                codemirror::destroy(h);
+                cell.set(None);
+            }
+        });
     });
 
     view! {
@@ -171,49 +179,19 @@ pub(super) fn Writer() -> impl IntoView {
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                     if ev.key() == "Enter" {
                         ev.prevent_default();
-                        if let Some(el) = content_ref.get() {
-                            let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                            let _ = textarea.focus();
-                        }
+                        editor_handle.with_value(|cell| {
+                            if let Some(h) = cell.get() {
+                                codemirror::focus(h);
+                            }
+                        });
                     }
                 }
             />
         </div>
         <FrontmatterEditor />
-        <textarea
-            node_ref=content_ref
-            class="not-prose w-full flex-1 bg-transparent text-base-content/70 resize-none outline-none leading-relaxed"
-            placeholder="Start writing..."
-            style:font-family=move || ctx.config.get().markdown_font.font_family
-            style:font-size=move || format!("{}px", ctx.config.get().markdown_font.font_size)
-            prop:value=move || ctx.content.get()
-            on:input=move |_| {
-                if let Some(el) = content_ref.get() {
-                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                    ctx.content.set(textarea.value());
-                    sync_selected_text(textarea, ctx);
-                }
-            }
-            on:select=move |_| {
-                if let Some(el) = content_ref.get() {
-                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                    sync_selected_text(textarea, ctx);
-                }
-            }
-            on:keyup=move |_| {
-                if let Some(el) = content_ref.get() {
-                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                    sync_selected_text(textarea, ctx);
-                }
-            }
-            on:mouseup=move |_| {
-                if let Some(el) = content_ref.get() {
-                    let textarea: &web_sys::HtmlTextAreaElement = el.as_ref();
-                    sync_selected_text(textarea, ctx);
-                }
-            }
-            on:keydown=move |ev| handle_content_keydown(ev, content_ref, ctx)
-            on:paste=move |ev| handle_paste(ev, content_ref, ctx)
+        <div
+            node_ref=container_ref
+            class="not-prose w-full flex-1 min-h-0 overflow-hidden"
         />
     }
 }
