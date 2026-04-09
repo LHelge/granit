@@ -121,6 +121,21 @@ pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Document,
 }
 
 #[tauri::command]
+pub(crate) fn open_daily_note_for_date(
+    date: String,
+    state: tauri::State<AppState>,
+) -> Result<Document, CaveError> {
+    let config = state.lock_config().clone();
+    state.with_cave(|cave| {
+        cave.open_daily_note_for_date(
+            &date,
+            &config.daily_note_folder,
+            config.daily_note_template_slug.as_deref(),
+        )
+    })
+}
+
+#[tauri::command]
 pub(crate) fn save_note(
     name: String,
     content: String,

@@ -1,3 +1,6 @@
+// Register Cally web component custom elements (<calendar-date>, <calendar-month>)
+import "cally";
+
 import {
     EditorView,
     keymap,

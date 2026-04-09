@@ -1,3 +1,4 @@
+mod calendar;
 mod cave_selector;
 mod favorites;
 mod search;
@@ -7,6 +8,7 @@ mod todo;
 pub(crate) mod tree_view;
 
 use crate::app::{components::icons::Icon, AppCtx};
+use calendar::Calendar;
 use cave_selector::CaveSelector;
 use favorites::Favorites;
 use leptos::prelude::*;
@@ -98,6 +100,7 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                         when=has_cave
                         fallback=|| view! { <p class="p-2 text-sm text-base-content/35 italic">"No cave open"</p> }
                     >
+                        <Calendar />
                         <TreeView />
                     </Show>
                 </Show>

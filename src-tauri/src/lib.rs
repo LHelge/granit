@@ -36,6 +36,7 @@ pub fn run() {
             read_note,
             read_template,
             open_daily_note,
+            open_daily_note_for_date,
             save_note,
             save_template,
             delete_note,
