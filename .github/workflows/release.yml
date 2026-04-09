@@ -20,11 +20,7 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-          - platform: ubuntu-22.04
-            args: ''
-          - platform: windows-latest
+          - platform: ubuntu-latest
             args: ''
 
     runs-on: ${{ matrix.platform }}
@@ -33,7 +29,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -41,7 +37,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin,wasm32-unknown-unknown' || 'wasm32-unknown-unknown' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,wasm32-unknown-unknown' || 'wasm32-unknown-unknown' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -103,7 +99,7 @@ jobs:
 
   publish:
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
 
