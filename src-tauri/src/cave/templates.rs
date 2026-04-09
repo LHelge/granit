@@ -287,6 +287,21 @@ impl Cave {
         template_slug: Option<&str>,
     ) -> Result<Document, CaveError> {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        self.open_daily_note_for_date(&today, folder, template_slug)
+    }
+
+    /// Open or create a daily note for a specific date.
+    ///
+    /// `date` must be in `YYYY-MM-DD` format.
+    /// `folder` is a relative path from the cave root (e.g. `"Daily"` or `"Notes/Daily"`).
+    /// The folder is created if it does not yet exist.
+    /// If the note already exists it is read and returned without modification.
+    pub fn open_daily_note_for_date(
+        &mut self,
+        date: &str,
+        folder: &str,
+        template_slug: Option<&str>,
+    ) -> Result<Document, CaveError> {
         let folder_path = Path::new(folder);
 
         // Ensure the daily folder exists.
@@ -297,25 +312,25 @@ impl Cave {
         }
 
         // Create the note if it doesn't exist yet, rendering the configured template if possible.
-        if !self.notes.contains_key(today.as_str()) {
+        if !self.notes.contains_key(date) {
             let body = template_slug
-                .and_then(|slug| self.render_note_template(slug, &today).ok())
+                .and_then(|slug| self.render_note_template(slug, date).ok())
                 .unwrap_or_default();
             let tags = template_slug
                 .and_then(|slug| self.initial_tags_for_new_note(Some(slug)).ok())
                 .unwrap_or_default();
-            let final_path = abs_folder.join(format!("{today}.md"));
+            let final_path = abs_folder.join(format!("{date}.md"));
             let initial_content = crate::markdown::Markdown::new_note_with_body(
                 &body,
                 tags,
                 Some("Calendar".to_string()),
             );
             std::fs::write(&final_path, initial_content)?;
-            self.notes.insert(today.clone(), final_path);
+            self.notes.insert(date.to_string(), final_path);
             self.rebuild_backlinks();
         }
 
-        self.read_note(&today)
+        self.read_note(date)
     }
 }
 

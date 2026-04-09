@@ -179,6 +179,14 @@ pub async fn open_daily_note() -> Result<Document, String> {
     invoke_no_args("open_daily_note").await
 }
 
+pub async fn open_daily_note_for_date(date: &str) -> Result<Document, String> {
+    invoke_cmd(
+        "open_daily_note_for_date",
+        &HashMap::from([("date", date)]),
+    )
+    .await
+}
+
 pub async fn create_template(name: &str) -> Result<DocumentMeta, String> {
     invoke_cmd("create_template", &HashMap::from([("name", name)])).await
 }

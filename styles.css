@@ -442,3 +442,64 @@ input[type="number"] {
     transform: translateX(0);
   }
 }
+
+/* ── Cally calendar: highlight dates with daily notes ─────────────── */
+calendar-date.cally::part(has-note) {
+  background-color: var(--color-primary);
+  color: var(--color-primary-content);
+  border-radius: var(--radius-selector);
+}
+
+/* Hide the per-month heading (redundant with our custom slot heading) */
+calendar-date.granit-calendar calendar-month::part(heading) {
+  display: none;
+}
+
+/* Layout: center month heading between prev/next */
+calendar-date.granit-calendar::part(header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+calendar-date.granit-calendar::part(button) {
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-field);
+  padding: 0.25rem;
+  color: var(--color-base-content);
+}
+
+calendar-date.granit-calendar::part(button):hover {
+  background-color: var(--color-base-300);
+}
+
+calendar-date.granit-calendar::part(button):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Make calendar fill the sidebar width with compact sizing */
+calendar-date.granit-calendar calendar-month::part(table) {
+  width: 100%;
+  font-size: 0.75rem;
+  border-spacing: 0;
+}
+
+calendar-date.granit-calendar calendar-month::part(button) {
+  font-size: 0.75rem;
+  width: 100%;
+  padding: 0.125rem 0;
+}
+
+calendar-date.granit-calendar calendar-month::part(weeknumber) {
+  font-size: 0.625rem;
+  opacity: 0.4;
+  padding-right: 0.125rem;
+}
+
+calendar-date.granit-calendar calendar-month::part(weekday) {
+  font-size: 0.625rem;
+  padding-bottom: 0.125rem;
+}
