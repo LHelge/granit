@@ -4,9 +4,9 @@
   "version": "0.2.0",
   "identifier": "se.lhelge.granit",
   "build": {
-    "beforeDevCommand": "trunk serve",
+    "beforeDevCommand": "npm run build && trunk serve",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "trunk build",
+    "beforeBuildCommand": "npm run build && trunk build",
     "frontendDist": "../dist"
   },
   "app": {
