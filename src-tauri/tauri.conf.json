@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "granit",
+  "productName": "Granit",
   "version": "0.2.0",
   "identifier": "se.lhelge.granit",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "granit",
+        "title": "Granit",
         "width": 1200,
         "height": 800,
         "maximized": true,
