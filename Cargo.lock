@@ -4602,7 +4602,7 @@ dependencies = [
 [[package]]
 name = "rig-core"
 version = "0.34.0"
-source = "git+https://github.com/LHelge/rig.git?branch=feat-rig-1075-list-model-providers-fixes#e48a937287f63f576519e452a0e331d11d4889b9"
+source = "git+https://github.com/0xPlaygrounds/rig.git?branch=main#d285b6c1e592f94ae3c219adda14c33e41f4d628"
 dependencies = [
  "as-any",
  "async-stream",
