@@ -29,6 +29,7 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
             class="shrink-0 bg-base-200 border-r border-base-content/10 flex flex-col"
             style:width=move || format!("{}px", width.get())
         >
+            <Calendar />
             // Tab bar
             <div role="tablist" class="tabs tabs-border shrink-0 px-1">
                 <button
@@ -100,7 +101,7 @@ pub fn Explorer(set_settings_open: WriteSignal<bool>, width: ReadSignal<u16>) ->
                         when=has_cave
                         fallback=|| view! { <p class="p-2 text-sm text-base-content/35 italic">"No cave open"</p> }
                     >
-                        <Calendar />
+
                         <TreeView />
                     </Show>
                 </Show>

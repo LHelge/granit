@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
 @plugin "daisyui" {
   themes: all;
 }
@@ -455,6 +456,11 @@ calendar-date.granit-calendar calendar-month::part(heading) {
   display: none;
 }
 
+calendar-date.granit-calendar::part(container) {
+  padding: 0.25rem 0.5rem 0.375rem;
+  gap: 0.35rem;
+}
+
 /* Layout: center month heading between prev/next */
 calendar-date.granit-calendar::part(header) {
   display: flex;
@@ -467,7 +473,7 @@ calendar-date.granit-calendar::part(button) {
   background: none;
   cursor: pointer;
   border-radius: var(--radius-field);
-  padding: 0.25rem;
+  padding: 0.125rem;
   color: var(--color-base-content);
 }
 
@@ -483,23 +489,43 @@ calendar-date.granit-calendar::part(button):focus-visible {
 /* Make calendar fill the sidebar width with compact sizing */
 calendar-date.granit-calendar calendar-month::part(table) {
   width: 100%;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
+  line-height: 1.05;
   border-spacing: 0;
 }
 
+calendar-date.granit-calendar calendar-month::part(th) {
+  block-size: 0.85rem;
+  inline-size: 1.45rem;
+  padding: 0;
+}
+
+calendar-date.granit-calendar calendar-month::part(td) {
+  padding: 0;
+}
+
 calendar-date.granit-calendar calendar-month::part(button) {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   width: 100%;
-  padding: 0.125rem 0;
+  block-size: 1.3rem;
+  inline-size: 1.45rem;
+  min-height: 0;
+  padding: 0;
+}
+
+calendar-date.granit-calendar calendar-month::part(day) {
+  line-height: 1;
 }
 
 calendar-date.granit-calendar calendar-month::part(weeknumber) {
   font-size: 0.625rem;
   opacity: 0.4;
-  padding-right: 0.125rem;
+  line-height: 1;
+  padding-right: 0.0625rem;
 }
 
 calendar-date.granit-calendar calendar-month::part(weekday) {
   font-size: 0.625rem;
-  padding-bottom: 0.125rem;
+  line-height: 1;
+  padding-bottom: 0.05rem;
 }

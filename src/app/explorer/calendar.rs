@@ -126,7 +126,7 @@ pub fn Calendar() -> impl IntoView {
     });
 
     view! {
-        <div node_ref=calendar_ref class="px-1 pt-2 pb-1">
+        <div node_ref=calendar_ref class="px-1 pt-1 pb-0.5">
             <calendar-date class="cally granit-calendar w-full" show-week-numbers>
                 <svg aria-label="Previous" slot="previous" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 fill-none stroke-current stroke-2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
