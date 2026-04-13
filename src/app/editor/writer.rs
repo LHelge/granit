@@ -189,7 +189,7 @@ pub(super) fn Writer() -> impl IntoView {
             <input
                 type="text"
                 node_ref=title_ref
-                class="w-full bg-transparent text-white text-4xl font-extrabold leading-[1.111] outline-none p-0"
+                class="w-full bg-transparent text-base-content text-4xl font-extrabold leading-[1.111] outline-none p-0"
                 placeholder="Untitled"
                 prop:value=move || ctx.title_input.get()
                 on:input=move |ev| ctx.title_input.set(event_target_value(&ev))
