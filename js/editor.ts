@@ -7,8 +7,11 @@ import {
     drawSelection,
     highlightActiveLine,
     ViewUpdate,
+    ViewPlugin,
+    Decoration,
+    DecorationSet,
 } from "@codemirror/view";
-import { EditorState, Compartment, StateField } from "@codemirror/state";
+import { EditorState, Compartment, StateField, RangeSetBuilder } from "@codemirror/state";
 import {
     defaultKeymap,
     indentWithTab,
@@ -27,6 +30,7 @@ import {
     indentOnInput,
     bracketMatching,
     syntaxHighlighting,
+    syntaxTree,
     HighlightStyle,
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -63,7 +67,7 @@ const granitTheme = EditorView.theme({
     ".cm-content": {
         caretColor: "var(--color-primary)",
         padding: "0",
-        lineHeight: "1.625",
+        lineHeight: "1.5",
     },
     ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--color-primary)",
@@ -83,11 +87,33 @@ const granitTheme = EditorView.theme({
     },
     ".cm-scroller": {
         overflow: "auto",
-        fontFamily: "inherit",
-        fontSize: "inherit",
     },
     ".cm-line": {
-        padding: "0",
+        padding: "0.175em 0",
+    },
+    ".cm-md-heading1": {
+        paddingTop: "0.5em",
+        paddingBottom: "0.25em",
+    },
+    ".cm-md-heading2": {
+        paddingTop: "0.9em",
+        paddingBottom: "0.25em",
+    },
+    ".cm-md-heading3": {
+        paddingTop: "0.7em",
+        paddingBottom: "0.2em",
+    },
+    ".cm-md-heading4": {
+        paddingTop: "0.7em",
+        paddingBottom: "0.2em",
+    },
+    ".cm-md-heading5": {
+        paddingTop: "0.6em",
+        paddingBottom: "0.15em",
+    },
+    ".cm-md-heading6": {
+        paddingTop: "0.6em",
+        paddingBottom: "0.15em",
     },
 });
 
@@ -119,6 +145,50 @@ const granitTooltipTheme = EditorView.baseTheme({
         color: "var(--color-primary)",
     },
 });
+
+// ── Markdown block spacing ─────────────────────────────────────────
+
+const headingLineDecos: Record<string, Decoration> = {
+    ATXHeading1: Decoration.line({ class: "cm-md-heading1" }),
+    ATXHeading2: Decoration.line({ class: "cm-md-heading2" }),
+    ATXHeading3: Decoration.line({ class: "cm-md-heading3" }),
+    ATXHeading4: Decoration.line({ class: "cm-md-heading4" }),
+    ATXHeading5: Decoration.line({ class: "cm-md-heading5" }),
+    ATXHeading6: Decoration.line({ class: "cm-md-heading6" }),
+};
+
+function buildBlockDecorations(view: EditorView): DecorationSet {
+    const builder = new RangeSetBuilder<Decoration>();
+    const decorated = new Set<number>();
+    syntaxTree(view.state).iterate({
+        enter(node) {
+            const deco = headingLineDecos[node.name];
+            if (deco) {
+                const line = view.state.doc.lineAt(node.from);
+                if (!decorated.has(line.number)) {
+                    decorated.add(line.number);
+                    builder.add(line.from, line.from, deco);
+                }
+            }
+        },
+    });
+    return builder.finish();
+}
+
+const markdownBlockSpacing = ViewPlugin.fromClass(
+    class {
+        decorations: DecorationSet;
+        constructor(view: EditorView) {
+            this.decorations = buildBlockDecorations(view);
+        }
+        update(update: ViewUpdate) {
+            if (update.docChanged || update.viewportChanged || update.startState.tree !== syntaxTree(update.state)) {
+                this.decorations = buildBlockDecorations(update.view);
+            }
+        }
+    },
+    { decorations: (v) => v.decorations }
+);
 
 // ── URL paste extension ────────────────────────────────────────────
 
@@ -266,6 +336,7 @@ export function create(
             drawSelection(),
             highlightActiveLine(),
             EditorView.lineWrapping,
+            markdownBlockSpacing,
             urlPasteExtension,
             keymap.of([
                 ...closeBracketsKeymap,

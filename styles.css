@@ -319,46 +319,46 @@
   --tw-prose-td-borders: color-mix(in oklch, var(--color-base-content) 10%, transparent);
 }
 
-/* Tighten prose typography spacing */
+/* Tighten prose typography spacing to approximate the editor */
 .prose :where(p):not(:where(.not-prose, .not-prose *)) {
   line-height: 1.5;
-  margin-top: 0.75em;
-  margin-bottom: 0.75em;
+  margin-top: 0.35em;
+  margin-bottom: 0.35em;
 }
 
 .prose :where(h1):not(:where(.not-prose, .not-prose *)) {
   margin-top: 0;
-  margin-bottom: 0.5em;
+  margin-bottom: 0.2em;
 }
 
 .prose :where(h2):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1.25em;
-  margin-bottom: 0.5em;
+  margin-top: 0.8em;
+  margin-bottom: 0.2em;
 }
 
 .prose :where(h3):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1em;
-  margin-bottom: 0.4em;
+  margin-top: 0.6em;
+  margin-bottom: 0.15em;
 }
 
 .prose :where(h4):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 1em;
-  margin-bottom: 0.4em;
+  margin-top: 0.6em;
+  margin-bottom: 0.15em;
 }
 
 .prose :where(li):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 0.25em;
-  margin-bottom: 0.25em;
+  margin-top: 0.15em;
+  margin-bottom: 0.15em;
 }
 
 .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
 }
 
 .prose :where(blockquote):not(:where(.not-prose, .not-prose *)) {
-  margin-top: 0.75em;
-  margin-bottom: 0.75em;
+  margin-top: 0.4em;
+  margin-bottom: 0.4em;
 }
 
 /* Remove backtick decorations from inline code */
