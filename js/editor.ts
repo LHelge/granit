@@ -265,6 +265,7 @@ export function create(
             history(),
             drawSelection(),
             highlightActiveLine(),
+            EditorView.lineWrapping,
             urlPasteExtension,
             keymap.of([
                 ...closeBracketsKeymap,
