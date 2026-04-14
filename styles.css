@@ -370,13 +370,9 @@
 /* Prose link color — resolved wiki-links and regular anchors */
 .prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)) {
   color: var(--color-primary);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+  text-decoration: none;
 }
 
-.prose :where(a):not(:where(.not-prose, .not-prose *, .broken-link)):hover {
-  text-decoration-color: var(--color-primary);
-}
 
 /* Unresolved wiki-links: styled as muted links */
 /* Title bar drag region for macOS overlay style */
@@ -386,8 +382,7 @@
 
 .broken-link {
   color: color-mix(in oklch, var(--color-base-content) 40%, transparent);
-  text-decoration: underline;
-  text-decoration-style: dashed;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -461,11 +456,12 @@ calendar-date.granit-calendar::part(container) {
   gap: 0.35rem;
 }
 
-/* Layout: center month heading between prev/next */
+/* Layout: group prev/heading/next tightly in the center */
 calendar-date.granit-calendar::part(header) {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 0.25rem;
 }
 
 calendar-date.granit-calendar::part(button) {

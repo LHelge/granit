@@ -10,7 +10,6 @@ mod settings;
 
 pub(crate) use context::AppCtx;
 use leptos::prelude::*;
-use leptos::task::spawn_local;
 
 use agent::AgentPanel;
 use components::icons::Icon;
@@ -219,30 +218,6 @@ pub fn App() -> impl IntoView {
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-base-200 border-b border-base-content/10 shrink-0">
                 <div class="flex items-center gap-1">
                     <span class=format!("text-sm font-semibold tracking-wide text-base-content/70 mt-1 {title_margin}")>"Granit"</span>
-                    <Show when=move || ctx.config.get().active_cave.is_some()>
-                        <button
-                            class="btn btn-ghost btn-xs btn-square"
-                            on:click=move |_| {
-                                spawn_local(async move {
-                                    match ipc::open_daily_note().await {
-                                        Ok(note) => {
-                                            ctx.set_active_note_document(note);
-                                            if let Ok(notes) = ipc::fetch_notes().await {
-                                                ctx.notes.set(notes);
-                                            }
-                                            if let Ok(folders) = ipc::fetch_folders().await {
-                                                ctx.folders.set(folders);
-                                            }
-                                        }
-                                        Err(e) => { ctx.push_error("daily-note", e); }
-                                    }
-                                });
-                            }
-                            title="Open daily note"
-                        >
-                            <Icon icon=icondata_lu::LuCalendar width="1rem" height="1rem"/>
-                        </button>
-                    </Show>
                     <div class="tooltip tooltip-bottom" data-tip="About Granit">
                         <button
                             class="btn btn-ghost btn-xs btn-square"
