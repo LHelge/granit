@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "granit"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "font-kit",
@@ -2045,7 +2045,7 @@ dependencies = [
 
 [[package]]
 name = "granit-types"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "icondata_core",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "granit-ui"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "console_error_panic_hook",
  "gloo-timers",
