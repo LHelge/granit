@@ -1,4 +1,7 @@
-use crate::app::{ipc, AppCtx};
+use crate::app::{
+    components::icons::Icon,
+    ipc, AppCtx,
+};
 use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -34,9 +37,11 @@ pub fn Calendar() -> impl IntoView {
         let Some(wrapper) = calendar_ref.get() else {
             return;
         };
-        // The <calendar-date> is the first child of the wrapper div.
+        // The <calendar-date> is inside the wrapper div (after the Today button).
         let Some(el) = wrapper
-            .first_element_child()
+            .query_selector("calendar-date")
+            .ok()
+            .flatten()
             .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok())
         else {
             return;
@@ -89,7 +94,9 @@ pub fn Calendar() -> impl IntoView {
         // --- change event: open daily note for selected date ---
         let change_handler = Closure::wrap(Box::new(move |_: web_sys::Event| {
             let el_inner = wrapper
-                .first_element_child()
+                .query_selector("calendar-date")
+                .ok()
+                .flatten()
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
             let Some(el_inner) = el_inner else { return };
 
@@ -126,7 +133,31 @@ pub fn Calendar() -> impl IntoView {
     });
 
     view! {
-        <div node_ref=calendar_ref class="px-1 pt-1 pb-0.5">
+        <div node_ref=calendar_ref class="px-1 pt-1 pb-0.5 relative">
+            <button
+                class="absolute right-1.5 top-1 btn btn-ghost btn-xs btn-square"
+                on:click=move |_| {
+                    spawn_local(async move {
+                        match ipc::open_daily_note().await {
+                            Ok(note) => {
+                                ctx.set_active_note_document(note);
+                                if let Ok(notes) = ipc::fetch_notes().await {
+                                    ctx.notes.set(notes);
+                                }
+                                if let Ok(folders) = ipc::fetch_folders().await {
+                                    ctx.folders.set(folders);
+                                }
+                            }
+                            Err(e) => { ctx.push_error("daily-note", e); }
+                        }
+                    });
+                }
+                title="Open daily note"
+            >
+                <span class="inline-flex w-3.5 h-3.5">
+                    <Icon icon=icondata_lu::LuCalendar width="100%" height="100%"/>
+                </span>
+            </button>
             <calendar-date class="cally granit-calendar w-full" show-week-numbers>
                 <svg aria-label="Previous" slot="previous" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="w-4 h-4 fill-none stroke-current stroke-2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/>
