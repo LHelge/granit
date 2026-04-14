@@ -1,7 +1,4 @@
-use crate::app::{
-    components::icons::Icon,
-    ipc, AppCtx,
-};
+use crate::app::{components::icons::Icon, ipc, AppCtx};
 use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::{prelude::*, JsCast};
 
@@ -68,26 +65,26 @@ pub fn Calendar() -> impl IntoView {
             JsValue::from_str("")
         }) as Box<dyn Fn(JsValue) -> JsValue>);
 
-        js_sys::Reflect::set(&el, &JsValue::from_str("getDayParts"), get_day_parts.as_ref())
-            .ok();
+        js_sys::Reflect::set(
+            &el,
+            &JsValue::from_str("getDayParts"),
+            get_day_parts.as_ref(),
+        )
+        .ok();
         get_day_parts.forget();
 
         // --- focusday event: update heading when the displayed month changes ---
-        let focusday_handler =
-            Closure::wrap(Box::new(move |ev: web_sys::CustomEvent| {
-                if let Ok(date) = ev.detail().dyn_into::<js_sys::Date>() {
-                    if let Some(name) = month_name_from_js_date(&date) {
-                        set_heading.set(name);
-                    }
+        let focusday_handler = Closure::wrap(Box::new(move |ev: web_sys::CustomEvent| {
+            if let Ok(date) = ev.detail().dyn_into::<js_sys::Date>() {
+                if let Some(name) = month_name_from_js_date(&date) {
+                    set_heading.set(name);
                 }
-            }) as Box<dyn Fn(_)>);
+            }
+        }) as Box<dyn Fn(_)>);
 
         let target: &web_sys::EventTarget = el.as_ref();
         target
-            .add_event_listener_with_callback(
-                "focusday",
-                focusday_handler.as_ref().unchecked_ref(),
-            )
+            .add_event_listener_with_callback("focusday", focusday_handler.as_ref().unchecked_ref())
             .ok();
         focusday_handler.forget();
 

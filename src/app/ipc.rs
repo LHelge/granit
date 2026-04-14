@@ -180,11 +180,7 @@ pub async fn open_daily_note() -> Result<Document, String> {
 }
 
 pub async fn open_daily_note_for_date(date: &str) -> Result<Document, String> {
-    invoke_cmd(
-        "open_daily_note_for_date",
-        &HashMap::from([("date", date)]),
-    )
-    .await
+    invoke_cmd("open_daily_note_for_date", &HashMap::from([("date", date)])).await
 }
 
 pub async fn create_template(name: &str) -> Result<DocumentMeta, String> {
