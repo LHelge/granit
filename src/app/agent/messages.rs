@@ -78,7 +78,7 @@ pub(super) fn MessageList(
     view! {
         <div
             node_ref=messages_container
-            class="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 flex flex-col"
+            class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 flex flex-col"
             style:font-family=move || config.get().agent_font.font_family
             style:font-size=move || format!("{}px", config.get().agent_font.font_size)
             on:click=on_link_click
