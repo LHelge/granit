@@ -174,7 +174,10 @@ pub(crate) fn get_config(state: tauri::State<AppState>) -> Result<AppConfig, Con
 
 #[tauri::command]
 pub(crate) fn get_app_metadata() -> AppMetadata {
-    AppMetadata::from_env()
+    AppMetadata::new(
+        option_env!("GRANIT_GIT_HASH").unwrap_or("unknown"),
+        option_env!("GRANIT_GIT_DIRTY").unwrap_or("false") == "true",
+    )
 }
 
 #[tauri::command]

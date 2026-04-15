@@ -2,7 +2,10 @@ use crate::app::{components::icons::Icon, ipc, AppCtx};
 use leptos::prelude::*;
 
 #[component]
-pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
+pub fn CaveSelector(
+    set_settings_open: WriteSignal<bool>,
+    set_info_open: WriteSignal<bool>,
+) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
 
     let open_and_refresh = move |path: String| {
@@ -53,6 +56,16 @@ pub fn CaveSelector(set_settings_open: WriteSignal<bool>) -> impl IntoView {
                         <span class="inline-flex w-3.5 h-3.5 ml-1 shrink-0 text-base-content/50">
                             <Icon icon=icondata_lu::LuFolderOpen width="100%" height="100%"/>
                         </span>
+                    </button>
+                </div>
+
+                // Info icon
+                <div class="tooltip tooltip-top z-50" data-tip="About Granit">
+                    <button
+                        class="btn btn-ghost btn-xs btn-square"
+                        on:click=move |_| set_info_open.set(true)
+                    >
+                        <Icon icon=icondata_lu::LuInfo width="1rem" height="1rem"/>
                     </button>
                 </div>
 
