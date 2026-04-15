@@ -218,15 +218,6 @@ pub fn App() -> impl IntoView {
             <header data-tauri-drag-region class="titlebar flex items-center justify-between h-8 px-3 bg-base-200 border-b border-base-content/10 shrink-0">
                 <div class="flex items-center gap-1">
                     <span class=format!("text-sm font-semibold tracking-wide text-base-content/70 mt-1 {title_margin}")>"Granit"</span>
-                    <div class="tooltip tooltip-bottom" data-tip="About Granit">
-                        <button
-                            class="btn btn-ghost btn-xs btn-square"
-                            on:click=move |_| set_info_open.set(true)
-                            title="About Granit"
-                        >
-                            <Icon icon=icondata_lu::LuInfo width="1rem" height="1rem"/>
-                        </button>
-                    </div>
                 </div>
                 <div class="flex items-center gap-1">
                     <div class="tooltip tooltip-left" data-tip="Toggle sidebar">
@@ -254,6 +245,7 @@ pub fn App() -> impl IntoView {
                 <Show when=move || sidebar_visible.get()>
                     <Explorer
                         set_settings_open=set_settings_open
+                        set_info_open=set_info_open
                         width=sidebar_width
                     />
                     // Resize handle

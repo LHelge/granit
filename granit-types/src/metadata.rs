@@ -13,19 +13,15 @@ impl AppMetadata {
     const APP_NAME: &'static str = "Granit";
     const REPO_URL: &'static str = "https://github.com/LHelge/granit";
 
-    pub fn from_env() -> Self {
-        let git_commit_hash = option_env!("GRANIT_GIT_HASH")
-            .unwrap_or("unknown")
-            .chars()
-            .take(8)
-            .collect();
+    pub fn new(git_commit_hash: &str, git_dirty: bool) -> Self {
+        let git_commit_hash = git_commit_hash.chars().take(8).collect();
 
         AppMetadata {
             app_name: Self::APP_NAME.to_string(),
             repo_url: Self::REPO_URL.to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             git_commit_hash,
-            git_dirty: option_env!("GRANIT_GIT_DIRTY").unwrap_or("false") == "true",
+            git_dirty,
         }
     }
 }
