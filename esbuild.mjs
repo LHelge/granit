@@ -8,7 +8,7 @@ const opts = {
   bundle: true,
   format: "iife",
   globalName: "GranitEditor",
-  outfile: "dist/codemirror.js",
+  outfile: "build/codemirror.js",
   minify: !watch,
   sourcemap: watch ? "inline" : false,
   target: "es2020",
