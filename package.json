@@ -1,9 +1,10 @@
 {
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i styles.css -o dist/styles.css --minify",
+    "build:css": "tailwindcss -i styles.css -o build/styles.css --minify",
     "build:js": "node esbuild.mjs",
     "build": "npm run build:css && npm run build:js",
+    "watch:css": "tailwindcss -i styles.css -o build/styles.css --watch",
     "watch:js": "node esbuild.mjs --watch"
   },
   "dependencies": {
