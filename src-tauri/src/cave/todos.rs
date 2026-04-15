@@ -1,5 +1,6 @@
 use super::helpers::validate_name;
 use super::{Cave, CaveError};
+use crate::markdown::Markdown;
 use granit_types::{TodoItem, TodoList};
 
 impl Cave {
@@ -45,7 +46,7 @@ impl Cave {
 
                 if is_checked || is_unchecked {
                     // Strip the marker prefix (e.g. "- [x] " = 6 chars)
-                    let text = trimmed[6..].to_string();
+                    let text = Markdown::strip(&trimmed[6..]);
                     let item = TodoItem {
                         slug: slug.clone(),
                         relative_path: rel_str.clone(),
@@ -236,6 +237,35 @@ mod tests {
         assert_eq!(todos.completed.len(), 1);
         assert_eq!(todos.incomplete[0].line, 3);
         assert_eq!(todos.completed[0].line, 5);
+    }
+
+    #[test]
+    fn test_list_todos_strips_markdown() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "- [ ] **bold** and *italic*\n- [x] a `code` [link](http://example.com)\n",
+        )
+        .unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let todos = cave.list_todos().unwrap();
+        assert_eq!(todos.incomplete[0].text, "bold and italic");
+        assert_eq!(todos.completed[0].text, "a code link");
+    }
+
+    #[test]
+    fn test_list_todos_strips_wikilinks() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "- [ ] see [[other-note]] for details\n",
+        )
+        .unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let todos = cave.list_todos().unwrap();
+        assert_eq!(todos.incomplete[0].text, "see other-note for details");
     }
 
     // ── toggle_todo ────────────────────────────────────────────────

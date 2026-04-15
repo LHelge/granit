@@ -4,6 +4,23 @@ use pulldown_cmark::{html, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use super::Markdown;
 
+impl Markdown<'_> {
+    /// Parse a markdown string and return only the plain text content,
+    /// stripping all formatting, links, images, etc.
+    pub fn strip(md: &str) -> String {
+        let mut opts = Options::empty();
+        opts.insert(Options::ENABLE_WIKILINKS);
+        let parser = Parser::new_ext(md, opts);
+        let mut plain = String::new();
+        for event in parser {
+            if let Event::Text(text) | Event::Code(text) = event {
+                plain.push_str(&text);
+            }
+        }
+        plain
+    }
+}
+
 impl<'a> Markdown<'a> {
     /// Render this markdown document to a [`RenderedDocument`].
     ///
