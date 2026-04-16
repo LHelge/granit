@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::agent::vectordb::CaveVectorIndex;
 use crate::agent::{Agent, AgentError};
@@ -19,7 +21,7 @@ pub(crate) fn with_shared_cave<F, T>(cave: &SharedCave, f: F) -> Result<T, CaveE
 where
     F: FnOnce(&mut Cave) -> Result<T, CaveError>,
 {
-    let mut guard = cave.lock().expect("cave mutex poisoned");
+    let mut guard = cave.lock();
     let cave = guard.as_mut().ok_or(CaveError::NoCaveOpen)?;
     cave.ensure_scanned()?;
     f(cave)
@@ -44,20 +46,20 @@ impl AppState {
         }
     }
 
-    pub(super) fn lock_config(&self) -> std::sync::MutexGuard<'_, AppConfig> {
-        self.config.lock().expect("config mutex poisoned")
+    pub(super) fn lock_config(&self) -> MutexGuard<'_, AppConfig> {
+        self.config.lock()
     }
 
-    pub(super) fn lock_cave(&self) -> std::sync::MutexGuard<'_, Option<Cave>> {
-        self.cave.lock().expect("cave mutex poisoned")
+    pub(super) fn lock_cave(&self) -> MutexGuard<'_, Option<Cave>> {
+        self.cave.lock()
     }
 
     pub(super) fn shared_cave(&self) -> SharedCave {
         self.cave.clone()
     }
 
-    pub(super) fn lock_agent(&self) -> std::sync::MutexGuard<'_, Option<Agent>> {
-        self.agent.lock().expect("agent mutex poisoned")
+    pub(super) fn lock_agent(&self) -> MutexGuard<'_, Option<Agent>> {
+        self.agent.lock()
     }
 
     pub(super) fn active_cave_path(&self) -> Option<std::path::PathBuf> {
@@ -69,17 +71,11 @@ impl AppState {
     }
 
     pub(super) fn set_vector_index(&self, index: Option<CaveVectorIndex>) {
-        *self
-            .vector_index
-            .lock()
-            .expect("vector_index mutex poisoned") = index;
+        *self.vector_index.lock() = index;
     }
 
     pub(super) fn vector_index(&self) -> Option<CaveVectorIndex> {
-        self.vector_index
-            .lock()
-            .expect("vector_index mutex poisoned")
-            .clone()
+        self.vector_index.lock().clone()
     }
 
     pub(super) fn reset_agent(&self) {

@@ -79,7 +79,8 @@ impl Tool for ReadNoteTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
     fn shared_cave(cave: crate::cave::Cave) -> SharedCave {
         Arc::new(Mutex::new(Some(cave)))

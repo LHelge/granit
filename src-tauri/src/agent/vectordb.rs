@@ -83,7 +83,7 @@ impl CaveVectorIndex {
         info!("embedding model loaded in {:.1?}", t0.elapsed());
 
         let cache_path = {
-            let guard = cave.lock().expect("cave mutex poisoned");
+            let guard = cave.lock();
             let cave_ref = guard.as_ref().expect("cave must be open");
             cave_ref.path().join(".granit").join("embeddings.bin")
         };
@@ -120,7 +120,7 @@ impl CaveVectorIndex {
 
         let (slugs_with_mtimes, texts_to_embed) = {
             // Collect slug → mtime from the cave, and identify which need (re-)embedding.
-            let cave_guard = self.inner.cave.lock().expect("cave mutex poisoned");
+            let cave_guard = self.inner.cave.lock();
             let cave = cave_guard.as_ref().ok_or(AgentError::Embedding(
                 "cave not open during rebuild".to_string(),
             ))?;
@@ -228,7 +228,7 @@ impl CaveVectorIndex {
     /// Re-embed a single note after it has been saved or created.
     pub(crate) async fn update_note(&self, slug: &str) {
         let data = {
-            let cave_guard = self.inner.cave.lock().expect("cave mutex poisoned");
+            let cave_guard = self.inner.cave.lock();
             let cave = match cave_guard.as_ref() {
                 Some(c) => c,
                 None => return,
@@ -386,7 +386,7 @@ impl VectorStoreIndex for CaveVectorIndex {
         for (score, slug) in results {
             // Load note content from cave at query time.
             let content = {
-                let cave_guard = self.inner.cave.lock().expect("cave mutex poisoned");
+                let cave_guard = self.inner.cave.lock();
                 match cave_guard.as_ref() {
                     Some(cave) => cave.read_note(&slug).ok().map(|d| d.content),
                     None => None,
