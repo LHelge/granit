@@ -1,3 +1,4 @@
+use granit_types::{WebFetchConfig, WebSearchConfig};
 use html_to_markdown_rs::{convert, ConversionOptions, PreprocessingPreset};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -7,24 +8,27 @@ use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BODY_SIZE: usize = 512 * 1024; // 512 KB
-const MAX_OUTPUT_CHARS: usize = 100_000;
 
 // ── web_fetch ──────────────────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct WebFetchTool {
     client: reqwest::Client,
+    max_output_chars: usize,
 }
 
 impl WebFetchTool {
-    pub fn new() -> Self {
+    pub fn new(config: &WebFetchConfig) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("Granit/1.0")
             .timeout(TIMEOUT)
             .build()
             .expect("failed to create HTTP client");
 
-        Self { client }
+        Self {
+            client,
+            max_output_chars: config.max_output_chars,
+        }
     }
 }
 
@@ -120,8 +124,8 @@ impl Tool for WebFetchTool {
 
         let markdown = result.content.unwrap_or_default();
 
-        if markdown.len() > MAX_OUTPUT_CHARS {
-            Ok(markdown[..MAX_OUTPUT_CHARS].to_string())
+        if markdown.len() > self.max_output_chars {
+            Ok(markdown[..self.max_output_chars].to_string())
         } else {
             Ok(markdown)
         }
@@ -134,6 +138,7 @@ impl Tool for WebFetchTool {
 pub struct WebSearchTool {
     client: reqwest::Client,
     api_key: String,
+    max_results: usize,
 }
 
 #[derive(Deserialize, Debug)]
@@ -154,7 +159,7 @@ struct BraveWebResult {
 }
 
 impl WebSearchTool {
-    pub fn new(api_key: &str) -> Self {
+    pub fn new(config: &WebSearchConfig) -> Self {
         let client = reqwest::Client::builder()
             .user_agent("Granit/1.0")
             .build()
@@ -162,7 +167,8 @@ impl WebSearchTool {
 
         Self {
             client,
-            api_key: api_key.to_string(),
+            api_key: config.api_key.clone().unwrap_or_default(),
+            max_results: config.max_results,
         }
     }
 }
@@ -210,7 +216,7 @@ impl Tool for WebSearchTool {
             .client
             .get("https://api.search.brave.com/res/v1/web/search")
             .header("X-Subscription-Token", &self.api_key)
-            .query(&[("q", &args.query), ("count", &"5".to_string())])
+            .query(&[("q", &args.query), ("count", &self.max_results.to_string())])
             .send()
             .await?;
 

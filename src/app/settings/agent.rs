@@ -119,8 +119,13 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         tools.into_iter().map(|tool| {
                             let tool_name = tool.name.clone();
                             let tool_name_toggle = tool.name.clone();
+                            let tool_name_config = tool.name.clone();
+                            let tool_name_show = tool.name.clone();
                             let is_enabled = move || {
                                 !form.get().disabled_tools.contains(&tool_name)
+                            };
+                            let is_enabled_show = move || {
+                                !form.get().disabled_tools.contains(&tool_name_show)
                             };
                             let on_toggle = move |_| {
                                 let name = tool_name_toggle.clone();
@@ -132,40 +137,87 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                                     }
                                 });
                             };
+                            let inline_config = {
+                                let name = tool_name_config.clone();
+                                move || match name.as_str() {
+                                    "web_search" => view! {
+                                        <div class="ml-8 mt-1 space-y-1">
+                                            <div class="space-y-0.5">
+                                                <label class="label text-xs text-base-content/50" for="ag-ws-key">"Brave API key"</label>
+                                                <input
+                                                    id="ag-ws-key"
+                                                    type="password"
+                                                    class="input input-bordered input-sm w-full font-mono text-xs"
+                                                    placeholder="BSA-…"
+                                                    prop:value=move || form.get().web_search_api_key.clone()
+                                                    on:input=move |ev| {
+                                                        let val = event_target_value(&ev);
+                                                        form.update(|f| f.web_search_api_key = val);
+                                                    }
+                                                />
+                                            </div>
+                                            <div class="space-y-0.5">
+                                                <label class="label text-xs text-base-content/50" for="ag-ws-max">"Max results"</label>
+                                                <input
+                                                    id="ag-ws-max"
+                                                    type="number"
+                                                    min="1"
+                                                    max="20"
+                                                    class="input input-bordered input-sm w-20 font-mono text-xs"
+                                                    prop:value=move || form.get().web_search_max_results.to_string()
+                                                    on:input=move |ev| {
+                                                        if let Ok(v) = event_target_value(&ev).parse::<usize>() {
+                                                            form.update(|f| f.web_search_max_results = v);
+                                                        }
+                                                    }
+                                                />
+                                            </div>
+                                        </div>
+                                    }.into_any(),
+                                    "web_fetch" => view! {
+                                        <div class="ml-8 mt-1 space-y-0.5">
+                                            <label class="label text-xs text-base-content/50" for="ag-wf-max">"Max output (characters)"</label>
+                                            <input
+                                                id="ag-wf-max"
+                                                type="number"
+                                                min="1000"
+                                                max="1000000"
+                                                step="1000"
+                                                class="input input-bordered input-sm w-32 font-mono text-xs"
+                                                prop:value=move || form.get().web_fetch_max_output_chars.to_string()
+                                                on:input=move |ev| {
+                                                    if let Ok(v) = event_target_value(&ev).parse::<usize>() {
+                                                        form.update(|f| f.web_fetch_max_output_chars = v);
+                                                    }
+                                                }
+                                            />
+                                        </div>
+                                    }.into_any(),
+                                    _ => ().into_any(),
+                                }
+                            };
                             view! {
-                                <label class="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        class="toggle toggle-sm toggle-primary"
-                                        prop:checked=is_enabled
-                                        on:change=on_toggle
-                                    />
-                                    <div>
-                                        <span class="text-xs font-mono">{tool.name.clone()}</span>
-                                        <p class="text-xs text-base-content/40">{tool.description.clone()}</p>
-                                    </div>
-                                </label>
+                                <div>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            class="toggle toggle-sm toggle-primary"
+                                            prop:checked=is_enabled
+                                            on:change=on_toggle
+                                        />
+                                        <div>
+                                            <span class="text-xs font-mono">{tool.name.clone()}</span>
+                                            <p class="text-xs text-base-content/40">{tool.description.clone()}</p>
+                                        </div>
+                                    </label>
+                                    <Show when=is_enabled_show>
+                                        {inline_config.clone()}
+                                    </Show>
+                                </div>
                             }
                         }).collect_view().into_any()
                     }
                 }}
-            </div>
-
-            // Brave API key (for web search tool)
-            <div class="space-y-1">
-                <label class="label text-xs text-base-content/50" for="ag-brave-key">"Brave Search API key"</label>
-                <input
-                    id="ag-brave-key"
-                    type="password"
-                    class="input input-bordered input-sm w-full font-mono text-xs"
-                    placeholder="BSA-…"
-                    prop:value=move || form.get().brave_api_key.clone()
-                    on:input=move |ev| {
-                        let val = event_target_value(&ev);
-                        form.update(|f| f.brave_api_key = val);
-                    }
-                />
-                <p class="text-xs text-base-content/35">"Required for the web_search tool."</p>
             </div>
 
             <div class="divider my-1" />

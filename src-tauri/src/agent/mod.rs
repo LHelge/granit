@@ -320,6 +320,7 @@ pub(crate) async fn list_models(
         id: m.id,
         name: m.name,
     }));
+    
 
     Ok(models)
 }
@@ -460,7 +461,7 @@ pub(crate) fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::{AttachedNote, ModelInfo, ProviderConfig, ProviderEntry};
+    use granit_types::{AttachedNote, ModelInfo, ProviderConfig, ProviderEntry, ToolsConfig};
 
     fn empty_cave() -> SharedCave {
         std::sync::Arc::new(std::sync::Mutex::new(None))
@@ -480,7 +481,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
-            brave_api_key: None,
+            tool_config: ToolsConfig::default(),
         }
     }
 
@@ -493,7 +494,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
-            brave_api_key: None,
+            tool_config: ToolsConfig::default(),
         }
     }
 
@@ -521,7 +522,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
-            brave_api_key: None,
+            tool_config: ToolsConfig::default(),
         };
         let result = Agent::from_config(&config, empty_cave());
         assert!(result.is_err());

@@ -118,6 +118,60 @@ impl ProviderEntry {
     }
 }
 
+/// Configuration for the `web_search` tool (Brave Search).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSearchConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(default = "WebSearchConfig::default_max_results")]
+    pub max_results: usize,
+}
+
+impl WebSearchConfig {
+    fn default_max_results() -> usize {
+        5
+    }
+}
+
+impl Default for WebSearchConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            max_results: Self::default_max_results(),
+        }
+    }
+}
+
+/// Configuration for the `web_fetch` tool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebFetchConfig {
+    #[serde(default = "WebFetchConfig::default_max_output_chars")]
+    pub max_output_chars: usize,
+}
+
+impl WebFetchConfig {
+    fn default_max_output_chars() -> usize {
+        100_000
+    }
+}
+
+impl Default for WebFetchConfig {
+    fn default() -> Self {
+        Self {
+            max_output_chars: Self::default_max_output_chars(),
+        }
+    }
+}
+
+/// Per-tool configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolsConfig {
+    #[serde(default)]
+    pub web_search: WebSearchConfig,
+    #[serde(default)]
+    pub web_fetch: WebFetchConfig,
+}
+
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -142,9 +196,9 @@ pub struct AgentConfig {
     /// Tool names that should NOT be registered with the agent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_tools: Vec<String>,
-    /// Brave Search API key for the web_search tool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brave_api_key: Option<String>,
+    /// Per-tool configuration (API keys, limits, etc.).
+    #[serde(default)]
+    pub tool_config: ToolsConfig,
 }
 
 fn default_max_history() -> usize {
@@ -204,7 +258,7 @@ impl Default for AgentConfig {
             max_turns: default_max_turns(),
             system_prompt: None,
             disabled_tools: Vec::new(),
-            brave_api_key: None,
+            tool_config: ToolsConfig::default(),
         }
     }
 }
@@ -430,7 +484,15 @@ mod tests {
             max_turns: 5,
             system_prompt: Some("You are helpful.".into()),
             disabled_tools: vec!["delete_note".into()],
-            brave_api_key: Some("BSA-test-key".into()),
+            tool_config: ToolsConfig {
+                web_search: WebSearchConfig {
+                    api_key: Some("BSA-test-key".into()),
+                    max_results: 10,
+                },
+                web_fetch: WebFetchConfig {
+                    max_output_chars: 50_000,
+                },
+            },
         };
 
         let yaml = serde_yml::to_string(&config).unwrap();

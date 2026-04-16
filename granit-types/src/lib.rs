@@ -6,7 +6,8 @@ mod metadata;
 
 pub use agent::{
     default_system_prompt, AgentConfig, AttachedNote, ChatMessage, ChatRole, ModelInfo,
-    ProviderConfig, ProviderEntry, ProviderInfo, ToolCallInfo, ToolInfo,
+    ProviderConfig, ProviderEntry, ProviderInfo, ToolCallInfo, ToolInfo, ToolsConfig,
+    WebFetchConfig, WebSearchConfig,
 };
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use document::{
