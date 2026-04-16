@@ -7,6 +7,9 @@ use crate::app::{components::icons::Icon, ipc};
 use granit_types::{AppConfig, Document, DocumentMeta, RenderedDocument};
 use leptos::prelude::*;
 use reader::Reader;
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use writer::Writer;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,13 +23,82 @@ enum PersistedMeta {
     Template(DocumentMeta),
 }
 
-struct PersistRequest<'a> {
-    slug: &'a str,
-    name: &'a str,
-    content: &'a str,
+/// A fully-captured snapshot of editor state at the moment a save is requested.
+///
+/// All persist logic operates on snapshots instead of reading signals during
+/// async work, so that rapid switches between notes cannot cause the wrong
+/// content to be written for the wrong slug.
+#[derive(Clone)]
+struct PersistSnapshot {
+    kind: DocumentKind,
+    slug: String,
+    name: String,
+    content: String,
     tags: Option<Vec<String>>,
     icon: Option<String>,
     favorite: Option<bool>,
+    /// Whether this save was initiated explicitly (Save button / Ctrl-S).
+    /// Explicit saves toggle `saving`/`editing` state and update the active
+    /// document on success. Auto-saves do not.
+    explicit: bool,
+}
+
+impl PersistSnapshot {
+    fn doc_key(&self) -> String {
+        match self.kind {
+            DocumentKind::Note => format!("note:{}", self.slug),
+            DocumentKind::Template => format!("template:{}", self.slug),
+        }
+    }
+}
+
+/// Ordered queue of pending save snapshots.
+///
+/// Only one save is in flight at any time. When a new snapshot is enqueued
+/// for a `doc_key` that is already pending (but not yet started), the existing
+/// entry is replaced with the newer snapshot (latest-wins per document), so a
+/// burst of switches away from the same note collapses into a single write.
+/// The `explicit` flag is preserved on replacement: if either the existing or
+/// incoming snapshot is explicit, the merged entry remains explicit so UI
+/// state (`saving`, `editing`) is always finalized.
+struct SaveQueue {
+    pending: VecDeque<PersistSnapshot>,
+    in_flight: bool,
+}
+
+impl SaveQueue {
+    fn new() -> Self {
+        Self {
+            pending: VecDeque::new(),
+            in_flight: false,
+        }
+    }
+
+    /// Enqueue `snapshot` and return `true` if the caller should start
+    /// draining the queue (i.e. nothing is currently in flight).
+    fn enqueue(&mut self, mut snapshot: PersistSnapshot) -> bool {
+        let key = snapshot.doc_key();
+        if let Some(existing) = self.pending.iter_mut().find(|s| s.doc_key() == key) {
+            snapshot.explicit = snapshot.explicit || existing.explicit;
+            *existing = snapshot;
+        } else {
+            self.pending.push_back(snapshot);
+        }
+        if self.in_flight {
+            false
+        } else {
+            self.in_flight = true;
+            true
+        }
+    }
+
+    fn take_next(&mut self) -> Option<PersistSnapshot> {
+        let next = self.pending.pop_front();
+        if next.is_none() {
+            self.in_flight = false;
+        }
+        next
+    }
 }
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -82,6 +154,8 @@ pub(super) struct EditorCtx {
     pub favorite: RwSignal<Option<bool>>,
     /// Monotonic counter used to ignore stale async render results.
     render_request_id: RwSignal<u64>,
+    /// Latest-wins queue of pending saves, processed one at a time.
+    save_queue: StoredValue<Rc<RefCell<SaveQueue>>, LocalStorage>,
 }
 
 impl EditorCtx {
@@ -114,21 +188,17 @@ impl EditorCtx {
             })
     }
 
-    /// Persist a note to disk and refresh the sidebar note list.
-    async fn persist(
-        self,
-        kind: DocumentKind,
-        request: PersistRequest<'_>,
-    ) -> Result<PersistedMeta, String> {
-        match kind {
+    /// Persist a snapshot to disk and refresh the sidebar note list.
+    async fn persist(self, snapshot: &PersistSnapshot) -> Result<PersistedMeta, String> {
+        match snapshot.kind {
             DocumentKind::Note => {
                 let meta = ipc::update_note(
-                    request.slug,
-                    request.name,
-                    request.content,
-                    request.tags,
-                    request.icon,
-                    request.favorite,
+                    &snapshot.slug,
+                    &snapshot.name,
+                    &snapshot.content,
+                    snapshot.tags.clone(),
+                    snapshot.icon.clone(),
+                    snapshot.favorite,
                 )
                 .await?;
                 if let Ok(notes) = ipc::fetch_notes().await {
@@ -138,11 +208,11 @@ impl EditorCtx {
             }
             DocumentKind::Template => {
                 let meta = ipc::update_template(
-                    request.slug,
-                    request.name,
-                    request.content,
-                    request.tags,
-                    request.icon,
+                    &snapshot.slug,
+                    &snapshot.name,
+                    &snapshot.content,
+                    snapshot.tags.clone(),
+                    snapshot.icon.clone(),
                 )
                 .await?;
                 if let Ok(templates) = ipc::fetch_templates().await {
@@ -150,6 +220,67 @@ impl EditorCtx {
                 }
                 Ok(PersistedMeta::Template(meta))
             }
+        }
+    }
+
+    /// Enqueue a snapshot for persistence. If no save is currently in flight,
+    /// starts the drain loop. The loop processes snapshots one at a time and
+    /// updates reactive state based on the result and whether the snapshot
+    /// was explicit (Save button) or automatic (note switch).
+    fn enqueue_persist(self, snapshot: PersistSnapshot) {
+        let queue = self.save_queue.get_value();
+        let should_drive = queue.borrow_mut().enqueue(snapshot);
+        if !should_drive {
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            loop {
+                let next = queue.borrow_mut().take_next();
+                let Some(snapshot) = next else { break };
+                let result = self.persist(&snapshot).await;
+                self.apply_persist_result(&snapshot, result);
+            }
+        });
+    }
+
+    fn apply_persist_result(
+        self,
+        snapshot: &PersistSnapshot,
+        result: Result<PersistedMeta, String>,
+    ) {
+        match result {
+            Ok(PersistedMeta::Note(meta)) => {
+                if snapshot.explicit {
+                    self.prev_doc_key.set(Some(format!("note:{}", meta.slug)));
+                    self.app.set_active_note_document(Document {
+                        meta,
+                        content: snapshot.content.clone(),
+                    });
+                    self.editing.set(false);
+                }
+            }
+            Ok(PersistedMeta::Template(meta)) => {
+                if snapshot.explicit {
+                    self.prev_doc_key
+                        .set(Some(format!("template:{}", meta.slug)));
+                    self.app.set_active_template_document(Document {
+                        meta,
+                        content: snapshot.content.clone(),
+                    });
+                    self.editing.set(false);
+                }
+            }
+            Err(e) => {
+                let msg = if snapshot.explicit {
+                    e
+                } else {
+                    format!("Autosave failed: {e}")
+                };
+                self.error.set(Some(msg));
+            }
+        }
+        if snapshot.explicit {
+            self.saving.set(false);
         }
     }
 
@@ -188,105 +319,57 @@ impl EditorCtx {
         });
     }
 
-    /// Auto-save the current edits when switching away from a note.
-    fn auto_save(self, doc_key: String) {
-        let Some((kind, slug)) = Self::parse_doc_key(&doc_key) else {
-            return;
-        };
-        let content = self.content.get_untracked();
-        let title = self.title_input.get_untracked().trim().to_string();
-        let tags = self.tags.get_untracked();
-        let icon = self.icon.get_untracked();
-        let favorite = self.favorite.get_untracked();
+    /// Build a snapshot of the current editor state for the given document
+    /// key, reading all signals synchronously. Returns `None` if the key is
+    /// not a recognised `note:` or `template:` key.
+    fn snapshot_for(self, doc_key: &str, explicit: bool) -> Option<PersistSnapshot> {
+        let (kind, slug) = Self::parse_doc_key(doc_key)?;
         let slug = slug.to_string();
+        let title = self.title_input.get_untracked().trim().to_string();
         let name = if title.is_empty() {
             slug.clone()
         } else {
             title
         };
-        leptos::task::spawn_local(async move {
-            if let Err(e) = self
-                .persist(
-                    kind,
-                    PersistRequest {
-                        slug: &slug,
-                        name: &name,
-                        content: &content,
-                        tags: Some(tags),
-                        icon,
-                        favorite,
-                    },
-                )
-                .await
-            {
-                self.error.set(Some(format!("Autosave failed: {e}")));
-            }
-        });
+        Some(PersistSnapshot {
+            kind,
+            slug,
+            name,
+            content: self.content.get_untracked(),
+            tags: Some(self.tags.get_untracked()),
+            icon: self.icon.get_untracked(),
+            favorite: self.favorite.get_untracked(),
+            explicit,
+        })
+    }
+
+    /// Auto-save the current edits when switching away from a note.
+    ///
+    /// Must be called with the editor state still reflecting the old document
+    /// (i.e. before `ctx.content.set(new_content)` overwrites it).
+    fn auto_save(self, doc_key: String) {
+        let Some(snapshot) = self.snapshot_for(&doc_key, false) else {
+            return;
+        };
+        self.enqueue_persist(snapshot);
     }
 
     /// Save the current note (user-triggered via button).
     pub fn save(self) {
-        let Some(kind) = self.current_kind_untracked() else {
+        let Some(doc_key) = self.current_doc_key_untracked() else {
             return;
         };
-        let content = self.content.get_untracked();
-        let name = self.title_input.get_untracked().trim().to_string();
-        if name.is_empty() {
+        if self.title_input.get_untracked().trim().is_empty() {
             self.error.set(Some("Filename cannot be empty".to_string()));
             return;
         }
+        let Some(snapshot) = self.snapshot_for(&doc_key, true) else {
+            return;
+        };
 
         self.saving.set(true);
         self.error.set(None);
-        let old_slug = match kind {
-            DocumentKind::Note => self
-                .active_note
-                .get_untracked()
-                .map(|note| note.meta.slug)
-                .unwrap_or_default(),
-            DocumentKind::Template => self
-                .active_template
-                .get_untracked()
-                .map(|template| template.meta.slug)
-                .unwrap_or_default(),
-        };
-        let tags = self.tags.get_untracked();
-        let icon = self.icon.get_untracked();
-        let favorite = self.favorite.get_untracked();
-
-        leptos::task::spawn_local(async move {
-            match self
-                .persist(
-                    kind,
-                    PersistRequest {
-                        slug: &old_slug,
-                        name: &name,
-                        content: &content,
-                        tags: Some(tags),
-                        icon,
-                        favorite,
-                    },
-                )
-                .await
-            {
-                Ok(PersistedMeta::Note(meta)) => {
-                    self.prev_doc_key
-                        .set(Some(format!("note:{}", meta.slug.clone())));
-                    self.app
-                        .set_active_note_document(Document { meta, content });
-                    self.editing.set(false);
-                }
-                Ok(PersistedMeta::Template(meta)) => {
-                    self.prev_doc_key
-                        .set(Some(format!("template:{}", meta.slug.clone())));
-                    self.app
-                        .set_active_template_document(Document { meta, content });
-                    self.editing.set(false);
-                }
-                Err(e) => self.error.set(Some(e)),
-            }
-            self.saving.set(false);
-        });
+        self.enqueue_persist(snapshot);
     }
 
     /// Toggle between edit and preview mode.
@@ -363,16 +446,21 @@ pub fn Editor() -> impl IntoView {
         icon: RwSignal::new(None),
         favorite: RwSignal::new(None),
         render_request_id: RwSignal::new(0),
+        save_queue: StoredValue::new_local(Rc::new(RefCell::new(SaveQueue::new()))),
     };
     provide_context(ctx);
 
     // Detect real note switches: auto-save previous, render new note.
+    //
+    // Concurrency note: auto-save snapshots the current editor state
+    // synchronously and enqueues it on the save queue (see `SaveQueue`), so
+    // rapid switches and explicit saves cannot interleave and write the wrong
+    // content to the wrong slug.
     Effect::new(move || {
         let new_note = ctx.active_note.get();
         let new_template = ctx.active_template.get();
         let old_key = ctx.prev_doc_key.get_untracked();
         let was_editing = ctx.editing.get_untracked();
-        let is_saving = ctx.saving.get_untracked();
 
         let new_key = if let Some(template) = new_template.as_ref() {
             Some(format!("template:{}", template.meta.slug))
@@ -381,7 +469,7 @@ pub fn Editor() -> impl IntoView {
                 .as_ref()
                 .map(|note| format!("note:{}", note.meta.slug))
         };
-        let is_switch = old_key != new_key && !is_saving;
+        let is_switch = old_key != new_key;
 
         if is_switch {
             // Auto-save the previous note when switching away in edit mode

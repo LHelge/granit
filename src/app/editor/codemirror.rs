@@ -1,6 +1,8 @@
 //! Wasm-bindgen bindings to the `window.GranitEditor` JavaScript API
 //! provided by `dist/codemirror.js` (built from `js/editor.ts`).
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -34,14 +36,28 @@ extern "C" {
 #[derive(Clone, Copy)]
 pub struct EditorHandle(u32);
 
+/// Per-instance closures owned by the Rust side. The JS side holds
+/// references to these via the config object; we keep the owning
+/// [`Closure`] values alive here and drop them in [`destroy`] so each
+/// note switch no longer leaks two `Box<dyn Fn(String)>` allocations.
+struct EditorClosures {
+    _on_change: Closure<dyn Fn(String)>,
+    _on_selection: Closure<dyn Fn(String)>,
+}
+
+thread_local! {
+    static CLOSURE_REGISTRY: RefCell<HashMap<u32, EditorClosures>> =
+        RefCell::new(HashMap::new());
+}
+
 /// Create a new CodeMirror editor inside `element`.
 ///
 /// `on_change` fires when the document content changes (user edits).
 /// `on_selection_change` fires when the selection changes, with the
 /// currently selected text (empty string if no selection).
 ///
-/// Both callbacks are leaked (via `Closure::into_js_value`) so they
-/// live for the lifetime of the editor. Call `destroy()` to clean up.
+/// The callbacks are stored in a per-handle registry and released when
+/// [`destroy`] is called.
 pub fn create(
     element: &web_sys::HtmlElement,
     content: &str,
@@ -81,9 +97,16 @@ pub fn create(
 
     let handle = cm_create(element, &config.into());
 
-    // Leak closures — they live until `destroy()` is called.
-    on_change_cb.forget();
-    on_sel_cb.forget();
+    // Keep the closures alive for the lifetime of this editor instance.
+    CLOSURE_REGISTRY.with(|reg| {
+        reg.borrow_mut().insert(
+            handle,
+            EditorClosures {
+                _on_change: on_change_cb,
+                _on_selection: on_sel_cb,
+            },
+        );
+    });
 
     EditorHandle(handle)
 }
@@ -127,4 +150,7 @@ pub fn set_slugs(handle: EditorHandle, slugs: &[String]) {
 /// Destroy the editor instance and free resources.
 pub fn destroy(handle: EditorHandle) {
     cm_destroy(handle.0);
+    CLOSURE_REGISTRY.with(|reg| {
+        reg.borrow_mut().remove(&handle.0);
+    });
 }

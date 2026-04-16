@@ -4,6 +4,8 @@ pub enum AgentError {
     Build(String),
     #[error("Streaming error: {0}")]
     Stream(String),
+    #[error("Streaming timed out: no response for {0} seconds")]
+    StreamTimeout(u64),
     #[error("Agent not initialized — open a cave first")]
     NotInitialized,
     #[error("No providers configured")]

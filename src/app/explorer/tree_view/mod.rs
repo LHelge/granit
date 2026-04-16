@@ -13,10 +13,60 @@ use folder_node::FolderNode;
 use granit_types::{Document, DocumentMeta};
 use leptos::prelude::*;
 use note_node::NoteNode;
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use tree_model::{build_tree, TreeNode};
 use web_sys::{DragEvent, MouseEvent};
 
 // ── Shared state via context ───────────────────────────────────────
+
+/// A pending tree mutation that must be serialized against other tree ops
+/// so rapid drag-and-drop events cannot race their backend effects or
+/// the subsequent listing refresh.
+#[derive(Clone, Debug)]
+enum TreeOp {
+    MoveNote { slug: String, dest: Option<String> },
+    MoveFolder { src: String, dest: Option<String> },
+}
+
+/// FIFO queue that guarantees at most one tree op is in flight at a time.
+/// Ops are executed in submission order; after the queue drains, a single
+/// refresh is triggered by the last op.
+struct TreeOpQueue {
+    pending: VecDeque<TreeOp>,
+    in_flight: bool,
+}
+
+impl TreeOpQueue {
+    fn new() -> Self {
+        Self {
+            pending: VecDeque::new(),
+            in_flight: false,
+        }
+    }
+
+    /// Push an op. Returns `true` if the caller should start the drain loop.
+    fn enqueue(&mut self, op: TreeOp) -> bool {
+        self.pending.push_back(op);
+        if self.in_flight {
+            false
+        } else {
+            self.in_flight = true;
+            true
+        }
+    }
+
+    fn take_next(&mut self) -> Option<TreeOp> {
+        match self.pending.pop_front() {
+            Some(op) => Some(op),
+            None => {
+                self.in_flight = false;
+                None
+            }
+        }
+    }
+}
 
 /// Shared reactive state for the entire tree, provided via Leptos context
 /// so child components can `use_context::<TreeCtx>()` instead of prop drilling.
@@ -30,6 +80,8 @@ pub(super) struct TreeCtx {
     pub drag_payload: RwSignal<Option<DragPayload>>,
     pub renaming: RwSignal<Option<RenameTarget>>,
     pub open_in_edit: RwSignal<EditOpen>,
+    /// Serializes tree mutations (moves) so drops cannot race each other.
+    op_queue: StoredValue<Rc<RefCell<TreeOpQueue>>, LocalStorage>,
 }
 
 impl TreeCtx {
@@ -40,12 +92,37 @@ impl TreeCtx {
 
     /// Process a drop event targeted at `dest_folder` (None = cave root).
     pub fn handle_drop(self, payload: DragPayload, dest_folder: Option<String>) {
-        match payload {
-            DragPayload::Note(slug) => {
-                leptos::task::spawn_local(async move {
-                    if let Err(e) = ipc::move_note(&slug, dest_folder.as_deref()).await {
+        let op = match payload {
+            DragPayload::Note(slug) => TreeOp::MoveNote {
+                slug,
+                dest: dest_folder,
+            },
+            DragPayload::Folder(src_path) => TreeOp::MoveFolder {
+                src: src_path,
+                dest: dest_folder,
+            },
+        };
+        let should_drive = self.op_queue.with_value(|q| q.borrow_mut().enqueue(op));
+        if should_drive {
+            leptos::task::spawn_local(async move {
+                self.drain_ops().await;
+            });
+        }
+    }
+
+    /// Drain loop: execute queued ops one at a time, then refresh once
+    /// after the queue empties.
+    async fn drain_ops(self) {
+        loop {
+            let next = self.op_queue.with_value(|q| q.borrow_mut().take_next());
+            let Some(op) = next else {
+                break;
+            };
+            match op {
+                TreeOp::MoveNote { slug, dest } => {
+                    if let Err(e) = ipc::move_note(&slug, dest.as_deref()).await {
                         self.push_error(format!("Failed to move note: {e}"));
-                        return;
+                        continue;
                     }
                     if self
                         .active_note
@@ -57,19 +134,17 @@ impl TreeCtx {
                             self.app.set_active_note_document(note);
                         }
                     }
-                    self.refresh_async().await;
-                });
-            }
-            DragPayload::Folder(src_path) => {
-                leptos::task::spawn_local(async move {
-                    if let Err(e) = ipc::move_folder(&src_path, dest_folder.as_deref()).await {
+                }
+                TreeOp::MoveFolder { src, dest } => {
+                    if let Err(e) = ipc::move_folder(&src, dest.as_deref()).await {
                         self.push_error(format!("Failed to move folder: {e}"));
-                        return;
+                        continue;
                     }
-                    self.refresh_async().await;
-                });
+                }
             }
         }
+        // Single refresh after the queue drains; avoids N refreshes for N drops.
+        self.refresh_async().await;
     }
 
     /// Async version of refresh (for use inside spawn_local blocks).
@@ -164,6 +239,7 @@ pub fn TreeView() -> impl IntoView {
         drag_payload: RwSignal::new(None),
         renaming: RwSignal::new(None),
         open_in_edit: expect_context::<OpenInEdit>().0,
+        op_queue: StoredValue::new_local(Rc::new(RefCell::new(TreeOpQueue::new()))),
     };
     provide_context(ctx);
 

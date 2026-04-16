@@ -320,7 +320,6 @@ pub(crate) async fn list_models(
         id: m.id,
         name: m.name,
     }));
-    
 
     Ok(models)
 }
@@ -374,9 +373,18 @@ pub struct AgentStream {
 }
 
 impl AgentStream {
+    /// Maximum time to wait between successive stream items before giving up.
+    /// Chosen to be generous enough for slow tool calls and long inference
+    /// turns while still bounding a stuck connection.
+    const ITEM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
     /// Consume the stream, collecting the full response text.
     /// Calls `on_chunk` for each text chunk received, and `on_tool` for
     /// tool call / tool result items.
+    ///
+    /// Each wait for the next item is bounded by [`Self::ITEM_TIMEOUT`]; if
+    /// the provider produces nothing in that window the stream is aborted
+    /// with [`AgentError::StreamTimeout`].
     pub async fn collect_with(
         &mut self,
         mut on_chunk: impl FnMut(&str),
@@ -386,7 +394,13 @@ impl AgentStream {
 
         let mut full_response = String::new();
         loop {
-            match self.next().await {
+            let next = match tokio::time::timeout(Self::ITEM_TIMEOUT, self.next()).await {
+                Ok(item) => item,
+                Err(_) => {
+                    return Err(AgentError::StreamTimeout(Self::ITEM_TIMEOUT.as_secs()));
+                }
+            };
+            match next {
                 Some(Ok(AgentStreamItem::Text(text))) => {
                     full_response.push_str(&text);
                     on_chunk(&text);
