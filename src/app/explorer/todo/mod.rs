@@ -37,14 +37,10 @@ pub fn Todo() -> impl IntoView {
 
     // Re-fetch when cave contents change (agent tools, file saves, etc.)
     Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
-            let _handle = ipc::listen_event_simple("cave:notes-changed", move || {
-                if ctx.config.get_untracked().active_cave.is_some() {
-                    refresh();
-                }
-            })
-            .await;
-            std::future::pending::<()>().await;
+        ipc::spawn_event_listener_simple(granit_types::CAVE_NOTES_CHANGED, move || {
+            if ctx.config.get_untracked().active_cave.is_some() {
+                refresh();
+            }
         });
     });
 

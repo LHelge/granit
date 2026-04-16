@@ -38,6 +38,7 @@ html-to-markdown-rs = "3.1.0"
 tauri-plugin-store = "2.4.2"
 tera = "1.20.1"
 atomic-write-file = { version = "0.3", features = ["unnamed-tmpfile"] }
+parking_lot = "0.12"
 
 [dev-dependencies]
 tempfile = "3.27.0"

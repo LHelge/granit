@@ -2021,6 +2021,7 @@ dependencies = [
  "futures",
  "granit-types",
  "html-to-markdown-rs",
+ "parking_lot",
  "pulldown-cmark",
  "reqwest",
  "rig-core",

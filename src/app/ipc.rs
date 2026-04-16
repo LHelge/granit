@@ -365,3 +365,18 @@ async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<Eve
 pub async fn listen_event_simple(event: &str, cb: impl Fn() + 'static) -> Option<EventHandle> {
     listen_event(event, move |_| cb()).await
 }
+
+/// Register a Tauri event listener and keep the [`EventHandle`] alive
+/// for the current reactive owner's lifetime.
+///
+/// The standard pattern — spawning a `'static` future that holds the
+/// handle and then suspends on `pending()` — is awkward to repeat. This
+/// helper consolidates it. Cancellation of the Leptos Effect on
+/// component unmount drops the future, which drops the handle, which
+/// triggers the Tauri unlisten.
+pub fn spawn_event_listener_simple(event: &'static str, cb: impl Fn() + 'static) {
+    leptos::task::spawn_local(async move {
+        let _handle = listen_event_simple(event, cb).await;
+        std::future::pending::<()>().await;
+    });
+}
