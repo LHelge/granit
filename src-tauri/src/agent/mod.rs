@@ -320,7 +320,6 @@ pub(crate) async fn list_models(
         id: m.id,
         name: m.name,
     }));
-    
 
     Ok(models)
 }
