@@ -217,6 +217,21 @@ impl AgentConfig {
         }]
     }
 
+    /// Return the currently selected [`ProviderEntry`], or `None` if
+    /// `selected_provider` is out of range. Prefer this over direct
+    /// indexing or `.get(selected_provider)` at call sites.
+    pub fn selected_provider(&self) -> Option<&ProviderEntry> {
+        self.providers.get(self.selected_provider)
+    }
+
+    /// Return the selected provider's index alongside the entry, or
+    /// `None` if out of range.
+    pub fn selected_provider_indexed(&self) -> Option<(usize, &ProviderEntry)> {
+        self.providers
+            .get(self.selected_provider)
+            .map(|e| (self.selected_provider, e))
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.providers.is_empty() {
             return Err("At least one provider must be configured".to_string());
@@ -284,14 +299,6 @@ impl ModelInfo {
     pub fn display_name(&self) -> &str {
         self.name.as_deref().unwrap_or(&self.id)
     }
-}
-
-/// Summary of a configured provider, for frontend display.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProviderInfo {
-    pub index: usize,
-    pub display_name: String,
-    pub provider_type: String,
 }
 
 /// A single message in the agent chat history.

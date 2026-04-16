@@ -61,7 +61,7 @@ pub fn App() -> impl IntoView {
     // root so the listener is always alive regardless of panel visibility.
     Effect::new(move |_| {
         leptos::task::spawn_local(async move {
-            let _handle = ipc::listen_event_simple("cave:notes-changed", move || {
+            let _handle = ipc::listen_event_simple(granit_types::CAVE_NOTES_CHANGED, move || {
                 leptos::task::spawn_local(async move {
                     if let Ok(notes) = ipc::fetch_notes().await {
                         if let Some(active) = ctx.active_note.get_untracked() {

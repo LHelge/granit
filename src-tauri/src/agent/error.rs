@@ -1,4 +1,4 @@
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("Failed to build agent: {0}")]
     Build(String),
@@ -14,6 +14,42 @@ pub enum AgentError {
     ProviderIndexOutOfRange(usize),
     #[error("Failed to list models: {0}")]
     ModelListing(String),
+}
+
+impl AgentError {
+    /// Stable, machine-readable code sent over IPC.
+    pub fn code(&self) -> &'static str {
+        match self {
+            AgentError::Build(_) => "AgentBuild",
+            AgentError::Stream(_) => "AgentStream",
+            AgentError::StreamTimeout(_) => "AgentStreamTimeout",
+            AgentError::NotInitialized => "AgentNotInitialized",
+            AgentError::NoProviders => "AgentNoProviders",
+            AgentError::ProviderIndexOutOfRange(_) => "AgentProviderIndexOutOfRange",
+            AgentError::ModelListing(_) => "AgentModelListing",
+        }
+    }
+}
+
+impl From<AgentError> for granit_types::IpcError {
+    fn from(e: AgentError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
+impl From<&AgentError> for granit_types::IpcError {
+    fn from(e: &AgentError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
+impl serde::Serialize for AgentError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        granit_types::IpcError::from(self).serialize(serializer)
+    }
 }
 
 impl From<rig::http_client::Error> for AgentError {

@@ -82,8 +82,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         let cfg = config.get();
         let provider = cfg
             .agent
-            .providers
-            .get(cfg.agent.selected_provider)
+            .selected_provider()
             .map(|e| e.provider.provider_type().to_string())
             .unwrap_or_default();
         let model = cfg.agent.selected_model.clone().unwrap_or_default();
@@ -119,10 +118,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
         let cfg = config.get();
         (
             cfg.agent.selected_provider,
-            cfg.agent
-                .providers
-                .get(cfg.agent.selected_provider)
-                .cloned(),
+            cfg.agent.selected_provider().cloned(),
         )
     });
 
@@ -156,7 +152,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             let html = ipc::render_markdown(&msg).await.ok();
             messages.update(|m| m.push(DisplayItem::message(ChatMessage::user(msg.clone()), html)));
             if let Err(e) = ipc::send_message(&msg, attached_notes).await {
-                stream_error.set(Some(e));
+                stream_error.set(Some(e.to_string()));
                 is_streaming.set(false);
             }
         });

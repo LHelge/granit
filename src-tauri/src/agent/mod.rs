@@ -85,9 +85,11 @@ impl Agent {
         if config.providers.is_empty() {
             return Err(AgentError::NoProviders);
         }
-        let entry = config.providers.get(config.selected_provider).ok_or(
-            AgentError::ProviderIndexOutOfRange(config.selected_provider),
-        )?;
+        let entry = config
+            .selected_provider()
+            .ok_or(AgentError::ProviderIndexOutOfRange(
+                config.selected_provider,
+            ))?;
 
         if config.max_history == 0 {
             return Err(AgentError::Build(

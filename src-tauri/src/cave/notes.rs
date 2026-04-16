@@ -94,27 +94,6 @@ impl Cave {
         Ok(std::fs::read_to_string(abs_path)?)
     }
 
-    /// Save new content to an existing note (looked up by slug).
-    pub fn save_note(&mut self, slug: &str, content: &str) -> Result<DocumentMeta, CaveError> {
-        validate_name(slug)?;
-        let abs_path = self
-            .notes
-            .get(slug)
-            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
-            .clone();
-
-        let existing_raw = std::fs::read_to_string(&abs_path)?;
-        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
-        write_atomic(&abs_path, updated.as_str())?;
-        self.rebuild_backlinks();
-        let rel = self.relative_path(&abs_path);
-        let mut meta = note_meta_from_relative_path(&rel);
-        let updated_md = crate::markdown::Markdown::new(&updated);
-        meta.icon = updated_md.icon();
-        meta.favorite = updated_md.favorite();
-        Ok(meta)
-    }
-
     /// Update only a note's icon while preserving the current body and tags.
     pub fn set_note_icon(
         &self,
@@ -429,7 +408,8 @@ mod tests {
         let note = cave.read_note("hello").unwrap();
         assert!(note.content.is_empty() || !note.content.contains("---"));
 
-        cave.save_note("hello", "# Updated\nBody").unwrap();
+        cave.update_note("hello", "hello", "# Updated\nBody", None, None, None)
+            .unwrap();
         let note = cave.read_note("hello").unwrap();
         assert!(note.content.contains("# Updated"));
         assert_eq!(note.meta.slug, "hello");
@@ -751,7 +731,9 @@ mod tests {
         std::fs::write(dir.path().join("test.md"), "# Old\n").unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let meta = cave.save_note("test", "# New Title\nNew body").unwrap();
+        let meta = cave
+            .update_note("test", "test", "# New Title\nNew body", None, None, None)
+            .unwrap();
         assert_eq!(meta.slug, "test");
 
         let content = std::fs::read_to_string(dir.path().join("test.md")).unwrap();
@@ -763,7 +745,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let err = cave.save_note("missing", "content").unwrap_err();
+        let err = cave
+            .update_note("missing", "missing", "content", None, None, None)
+            .unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
 
@@ -772,7 +756,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        let err = cave.save_note("../escape", "content").unwrap_err();
+        let err = cave
+            .update_note("../escape", "../escape", "content", None, None, None)
+            .unwrap_err();
         assert!(matches!(err, CaveError::InvalidName(_)));
     }
 
@@ -1180,7 +1166,8 @@ mod tests {
 
         assert!(cave.backlink_slugs("target").unwrap().is_empty());
 
-        cave.save_note("source", "[[target]]\n").unwrap();
+        cave.update_note("source", "source", "[[target]]\n", None, None, None)
+            .unwrap();
 
         assert_eq!(
             cave.backlink_slugs("target").unwrap(),

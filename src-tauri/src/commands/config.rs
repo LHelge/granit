@@ -18,12 +18,35 @@ pub(crate) enum ConfigError {
     Validation(String),
 }
 
+impl ConfigError {
+    /// Stable, machine-readable code sent over IPC.
+    pub fn code(&self) -> &'static str {
+        match self {
+            ConfigError::Io(_) => "ConfigIo",
+            ConfigError::Yaml(_) => "ConfigYaml",
+            ConfigError::Validation(_) => "ConfigValidation",
+        }
+    }
+}
+
+impl From<ConfigError> for granit_types::IpcError {
+    fn from(e: ConfigError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
+impl From<&ConfigError> for granit_types::IpcError {
+    fn from(e: &ConfigError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
 impl serde::Serialize for ConfigError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        granit_types::IpcError::from(self).serialize(serializer)
     }
 }
 
@@ -107,21 +130,6 @@ fn save_sidebar_state_for_state(
     Ok(())
 }
 
-fn list_providers_for_state(state: &AppState) -> Vec<granit_types::ProviderInfo> {
-    let config = state.lock_config();
-    config
-        .agent
-        .providers
-        .iter()
-        .enumerate()
-        .map(|(i, entry): (usize, _)| granit_types::ProviderInfo {
-            index: i,
-            display_name: entry.display_name(),
-            provider_type: entry.provider.provider_type().to_string(),
-        })
-        .collect()
-}
-
 fn select_provider_for_state(state: &AppState, index: usize) -> Result<AppConfig, ConfigError> {
     let response = {
         let mut config = state.lock_config();
@@ -147,8 +155,7 @@ fn current_provider_for_model_listing(state: &AppState) -> Result<ProviderConfig
     }
     let entry = config
         .agent
-        .providers
-        .get(config.agent.selected_provider)
+        .selected_provider()
         .ok_or(AgentError::ProviderIndexOutOfRange(
             config.agent.selected_provider,
         ))?;
@@ -228,13 +235,7 @@ pub(crate) fn open_cave(
 }
 
 #[tauri::command]
-pub(crate) fn list_providers(
-    state: tauri::State<AppState>,
-) -> Result<Vec<granit_types::ProviderInfo>, ConfigError> {
-    Ok(list_providers_for_state(state.inner()))
-}
 
-#[tauri::command]
 pub(crate) fn select_provider(
     index: usize,
     state: tauri::State<AppState>,
@@ -383,21 +384,6 @@ mod tests {
         let saved = state.lock_cave().as_ref().unwrap().load_config().unwrap();
         assert_eq!(saved.sidebar, sidebar);
         assert_eq!(saved.agent_panel, agent_panel);
-    }
-
-    #[test]
-    fn test_list_providers_for_state_returns_display_names_and_types() {
-        let state = test_app_state();
-        state.lock_config().agent = multi_provider_agent_config();
-
-        let providers = list_providers_for_state(&state);
-
-        assert_eq!(providers.len(), 2);
-        assert_eq!(providers[0].index, 0);
-        assert_eq!(providers[0].display_name, "Local");
-        assert_eq!(providers[0].provider_type, "ollama");
-        assert_eq!(providers[1].display_name, "Anthropic");
-        assert_eq!(providers[1].provider_type, "anthropic");
     }
 
     #[test]

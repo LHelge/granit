@@ -23,6 +23,8 @@ impl Cave {
                 if !self.templates.contains_key(&candidate_slug) {
                     break (candidate_file, candidate_slug);
                 }
+
+                // Claude is worried that I'll create more then 4 billion untitled notes, but just in case, let's not overflow u32.
                 n = n
                     .checked_add(1)
                     .ok_or_else(|| CaveError::SlugExhausted("untitled".into()))?;
@@ -81,22 +83,6 @@ impl Cave {
         Ok(std::fs::read_to_string(abs_path)?)
     }
 
-    /// Save new content to an existing template (looked up by slug).
-    pub fn save_template(&self, slug: &str, content: &str) -> Result<DocumentMeta, CaveError> {
-        validate_name(slug)?;
-        let abs_path = self
-            .templates
-            .get(slug)
-            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
-
-        let existing_raw = std::fs::read_to_string(abs_path)?;
-        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
-        write_atomic(abs_path, updated.as_str())?;
-        let mut meta = template_meta_from_path(abs_path);
-        meta.icon = crate::markdown::Markdown::new(&updated).icon();
-        Ok(meta)
-    }
-
     /// Delete a template by slug.
     pub fn delete_template(&mut self, slug: &str) -> Result<(), CaveError> {
         validate_name(slug)?;
@@ -109,42 +95,6 @@ impl Cave {
         std::fs::remove_file(&abs_path)?;
         self.templates.remove(slug);
         Ok(())
-    }
-
-    /// Rename an existing template in-place within `.granit/templates`.
-    pub fn rename_template(
-        &mut self,
-        old_slug: &str,
-        new_name: &str,
-    ) -> Result<DocumentMeta, CaveError> {
-        validate_name(old_slug)?;
-        validate_name(new_name)?;
-
-        if old_slug == new_name {
-            return self.read_template(old_slug).map(|template| template.meta);
-        }
-
-        let old_abs = self
-            .templates
-            .get(old_slug)
-            .ok_or_else(|| CaveError::TemplateNotFound(old_slug.to_string()))?
-            .clone();
-
-        let new_filename = ensure_md_extension(new_name);
-        let new_abs = old_abs
-            .parent()
-            .unwrap_or(Path::new(""))
-            .join(&new_filename);
-
-        if self.templates.contains_key(new_name) {
-            return Err(CaveError::TemplateAlreadyExists(new_filename));
-        }
-
-        std::fs::rename(&old_abs, &new_abs)?;
-        self.templates.remove(old_slug);
-        self.templates.insert(new_name.to_string(), new_abs.clone());
-
-        Ok(template_meta_with_icon(&new_abs))
     }
 
     /// Update a template's filename, content, and optionally tags and icon in one operation.

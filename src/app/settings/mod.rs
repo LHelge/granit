@@ -324,7 +324,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                     config.set(new_config);
                     set_open.set(false);
                 }
-                Err(e) => set_save_error.set(Some(e)),
+                Err(e) => set_save_error.set(Some(e.to_string())),
             }
             set_saving.set(false);
         });

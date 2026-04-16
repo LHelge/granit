@@ -1,6 +1,9 @@
 use super::AppState;
 use crate::agent::{self, AgentError};
-use granit_types::AttachedNote;
+use granit_types::{
+    AttachedNote, AGENT_STREAM_CHUNK, AGENT_STREAM_DONE, AGENT_STREAM_ERROR, AGENT_TOOL_CALL,
+    CAVE_NOTES_CHANGED,
+};
 
 #[tauri::command]
 pub(crate) async fn send_message(
@@ -30,21 +33,21 @@ pub(crate) async fn send_message(
     let response = stream
         .collect_with(
             |text| {
-                let _ = app.emit("agent:stream-chunk", text);
+                let _ = app.emit(AGENT_STREAM_CHUNK, text);
             },
             |item| match item {
                 agent::AgentStreamItem::ToolCall(info) => {
-                    let _ = app_handle.emit("agent:tool-call", &info);
+                    let _ = app_handle.emit(AGENT_TOOL_CALL, &info);
                 }
                 agent::AgentStreamItem::ToolResult => {
-                    let _ = app_handle.emit("cave:notes-changed", ());
+                    let _ = app_handle.emit(CAVE_NOTES_CHANGED, ());
                 }
                 _ => {}
             },
         )
         .await
         .inspect_err(|e| {
-            let _ = app.emit("agent:stream-error", e.to_string());
+            let _ = app.emit(AGENT_STREAM_ERROR, e.to_string());
         })?;
 
     {
@@ -59,8 +62,8 @@ pub(crate) async fn send_message(
         }
     }
 
-    let _ = app.emit("agent:stream-done", ());
-    let _ = app.emit("cave:notes-changed", ());
+    let _ = app.emit(AGENT_STREAM_DONE, ());
+    let _ = app.emit(CAVE_NOTES_CHANGED, ());
     Ok(())
 }
 

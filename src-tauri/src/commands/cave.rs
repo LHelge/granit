@@ -1,7 +1,7 @@
 use super::AppState;
 use crate::cave::{CaveError, ContentMatch, Document, DocumentMeta, RenderedDocument};
 use crate::markdown::Markdown;
-use granit_types::{TagMap, TodoList};
+use granit_types::{TagMap, TodoList, CAVE_NOTES_CHANGED};
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let md = Markdown::new(content);
@@ -136,43 +136,12 @@ pub(crate) fn open_daily_note_for_date(
 }
 
 #[tauri::command]
-pub(crate) fn save_note(
-    name: String,
-    content: String,
-    app: tauri::AppHandle,
-    state: tauri::State<AppState>,
-) -> Result<DocumentMeta, CaveError> {
-    use tauri::Emitter;
-    let meta = state.with_cave(|cave| cave.save_note(&name, &content))?;
-    let _ = app.emit("cave:notes-changed", ());
-    Ok(meta)
-}
-
-#[tauri::command]
-pub(crate) fn save_template(
-    name: String,
-    content: String,
-    state: tauri::State<AppState>,
-) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.save_template(&name, &content))
-}
-
-#[tauri::command]
 pub(crate) fn rename_note(
     old_name: String,
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
     state.with_cave(|cave| cave.rename_note(&old_name, &new_name))
-}
-
-#[tauri::command]
-pub(crate) fn rename_template(
-    old_name: String,
-    new_name: String,
-    state: tauri::State<AppState>,
-) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.rename_template(&old_name, &new_name))
 }
 
 #[tauri::command]
@@ -190,7 +159,7 @@ pub(crate) fn update_note(
     use tauri::Emitter;
     let meta = state
         .with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))?;
-    let _ = app.emit("cave:notes-changed", ());
+    let _ = app.emit(CAVE_NOTES_CHANGED, ());
     Ok(meta)
 }
 
@@ -247,7 +216,7 @@ pub(crate) fn toggle_todo(
 ) -> Result<(), CaveError> {
     use tauri::Emitter;
     state.with_cave(|cave| cave.toggle_todo(&slug, line))?;
-    let _ = app.emit("cave:notes-changed", ());
+    let _ = app.emit(CAVE_NOTES_CHANGED, ());
     Ok(())
 }
 
@@ -260,7 +229,7 @@ pub(crate) fn toggle_todo_by_index(
 ) -> Result<(), CaveError> {
     use tauri::Emitter;
     state.with_cave(|cave| cave.toggle_todo_by_index(&slug, index))?;
-    let _ = app.emit("cave:notes-changed", ());
+    let _ = app.emit(CAVE_NOTES_CHANGED, ());
     Ok(())
 }
 

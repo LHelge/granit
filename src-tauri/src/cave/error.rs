@@ -61,11 +61,46 @@ impl From<tera::Error> for CaveError {
     }
 }
 
+impl CaveError {
+    /// Stable, machine-readable code sent over IPC. Must not change casually
+    /// — the frontend branches on these strings.
+    pub fn code(&self) -> &'static str {
+        match self {
+            CaveError::NoCaveOpen => "NoCaveOpen",
+            CaveError::NotFound(_) => "NotFound",
+            CaveError::TemplateNotFound(_) => "TemplateNotFound",
+            CaveError::AlreadyExists(_) => "AlreadyExists",
+            CaveError::TemplateAlreadyExists(_) => "TemplateAlreadyExists",
+            CaveError::DuplicateSlug { .. } => "DuplicateSlug",
+            CaveError::DuplicateTemplateSlug { .. } => "DuplicateTemplateSlug",
+            CaveError::InvalidName(_) => "InvalidName",
+            CaveError::SlugExhausted(_) => "SlugExhausted",
+            CaveError::EditNotFound => "EditNotFound",
+            CaveError::InvalidTodoLine(_) => "InvalidTodoLine",
+            CaveError::Io(_) => "Io",
+            CaveError::Yaml(_) => "Yaml",
+            CaveError::TemplateRender(_) => "TemplateRender",
+        }
+    }
+}
+
+impl From<CaveError> for granit_types::IpcError {
+    fn from(e: CaveError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
+impl From<&CaveError> for granit_types::IpcError {
+    fn from(e: &CaveError) -> Self {
+        granit_types::IpcError::new(e.code(), e.to_string())
+    }
+}
+
 impl serde::Serialize for CaveError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        granit_types::IpcError::from(self).serialize(serializer)
     }
 }
