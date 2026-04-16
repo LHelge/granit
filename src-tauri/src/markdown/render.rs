@@ -1,6 +1,6 @@
 use chrono::{Local, Utc};
 use granit_types::RenderedDocument;
-use pulldown_cmark::{html, Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{html, BlockQuoteKind, Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use super::Markdown;
 
@@ -8,7 +8,7 @@ impl Markdown<'_> {
     /// Parse a markdown string and return only the plain text content,
     /// stripping all formatting, links, images, etc.
     pub fn strip(md: &str) -> String {
-        let mut opts = Options::empty();
+        let mut opts = base_options();
         opts.insert(Options::ENABLE_WIKILINKS);
         let parser = Parser::new_ext(md, opts);
         let mut plain = String::new();
@@ -92,6 +92,7 @@ fn base_options() -> Options {
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_GFM);
     options
 }
 
@@ -118,8 +119,18 @@ fn render_core(
     let parser = Parser::new_ext(markdown, options);
     let mut outgoing_links = Vec::new();
     let mut in_broken_link = false;
+    let mut alert_kind: Option<BlockQuoteKind> = None;
 
     let events = parser.flat_map(|event| match event {
+        // ── Blockquote alerts ────────────────────────────────────────
+        Event::Start(Tag::BlockQuote(Some(kind))) => {
+            alert_kind = Some(kind);
+            vec![Event::InlineHtml(alert_open_html(kind).into())]
+        }
+        Event::End(TagEnd::BlockQuote(_)) if alert_kind.is_some() => {
+            alert_kind = None;
+            vec![Event::InlineHtml("</div>".into())]
+        }
         // Resolve wiki-links against the cave
         Event::Start(Tag::Link {
             link_type: LinkType::WikiLink { .. },
@@ -203,6 +214,45 @@ fn sanitize_html_event_vec(raw: pulldown_cmark::CowStr) -> Vec<Event> {
         Event::Text(raw),
         Event::End(TagEnd::CodeBlock),
     ]
+}
+
+/// Emit the opening HTML for a GitHub-style blockquote alert.
+fn alert_open_html(kind: BlockQuoteKind) -> String {
+    let (class, label, icon) = alert_meta(kind);
+    format!(
+        r#"<div class="markdown-alert {class}"><p class="markdown-alert-title">{icon} {label}</p>"#,
+    )
+}
+
+/// Return (CSS class, display label, inline SVG icon) for each alert type.
+fn alert_meta(kind: BlockQuoteKind) -> (&'static str, &'static str, &'static str) {
+    match kind {
+        BlockQuoteKind::Note => (
+            "markdown-alert-note",
+            "Note",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>"#,
+        ),
+        BlockQuoteKind::Tip => (
+            "markdown-alert-tip",
+            "Tip",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>"#,
+        ),
+        BlockQuoteKind::Important => (
+            "markdown-alert-important",
+            "Important",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>"#,
+        ),
+        BlockQuoteKind::Warning => (
+            "markdown-alert-warning",
+            "Warning",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>"#,
+        ),
+        BlockQuoteKind::Caution => (
+            "markdown-alert-caution",
+            "Caution",
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>"#,
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -597,5 +647,101 @@ mod tests {
         assert_eq!(result.title, "plain-note");
         assert!(result.frontmatter.is_none());
         assert!(result.html.contains("<h1>"));
+    }
+
+    // ── Blockquote alerts ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_alert_note() {
+        let html = Markdown::new("> [!NOTE]\n> Some useful info.").render_html();
+        assert!(
+            html.contains("markdown-alert-note"),
+            "should have note class: {html}"
+        );
+        assert!(html.contains("Note"), "should have Note label: {html}");
+        assert!(
+            html.contains("Some useful info."),
+            "should have content: {html}"
+        );
+    }
+
+    #[test]
+    fn test_alert_tip() {
+        let html = Markdown::new("> [!TIP]\n> A helpful tip.").render_html();
+        assert!(
+            html.contains("markdown-alert-tip"),
+            "should have tip class: {html}"
+        );
+        assert!(html.contains("Tip"), "should have Tip label: {html}");
+    }
+
+    #[test]
+    fn test_alert_important() {
+        let html = Markdown::new("> [!IMPORTANT]\n> Critical info.").render_html();
+        assert!(
+            html.contains("markdown-alert-important"),
+            "should have important class: {html}"
+        );
+        assert!(
+            html.contains("Important"),
+            "should have Important label: {html}"
+        );
+    }
+
+    #[test]
+    fn test_alert_warning() {
+        let html = Markdown::new("> [!WARNING]\n> Be careful.").render_html();
+        assert!(
+            html.contains("markdown-alert-warning"),
+            "should have warning class: {html}"
+        );
+        assert!(
+            html.contains("Warning"),
+            "should have Warning label: {html}"
+        );
+    }
+
+    #[test]
+    fn test_alert_caution() {
+        let html = Markdown::new("> [!CAUTION]\n> Dangerous action.").render_html();
+        assert!(
+            html.contains("markdown-alert-caution"),
+            "should have caution class: {html}"
+        );
+        assert!(
+            html.contains("Caution"),
+            "should have Caution label: {html}"
+        );
+    }
+
+    #[test]
+    fn test_regular_blockquote_unchanged() {
+        let html = Markdown::new("> Just a regular quote.").render_html();
+        assert!(
+            html.contains("<blockquote>"),
+            "regular blockquote should use <blockquote>: {html}"
+        );
+        assert!(
+            !html.contains("markdown-alert"),
+            "regular blockquote should not have alert class: {html}"
+        );
+    }
+
+    #[test]
+    fn test_alert_with_nested_content() {
+        let input = "> [!NOTE]\n> Some text with **bold** and `code`.\n>\n> - item 1\n> - item 2";
+        let html = Markdown::new(input).render_html();
+        assert!(
+            html.contains("markdown-alert-note"),
+            "should have note class: {html}"
+        );
+        assert!(
+            html.contains("<strong>bold</strong>"),
+            "should render bold inside alert: {html}"
+        );
+        assert!(
+            html.contains("<code>code</code>"),
+            "should render code inside alert: {html}"
+        );
     }
 }
