@@ -261,7 +261,7 @@ pub(crate) fn select_model(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::AgentConfig;
+    use granit_types::{AgentConfig, ToolsConfig};
 
     fn test_app_state() -> AppState {
         AppState::new(AppConfig::default())
@@ -306,7 +306,7 @@ mod tests {
             max_turns: 10,
             system_prompt: None,
             disabled_tools: Vec::new(),
-            brave_api_key: None,
+            tool_config: ToolsConfig::default(),
         }
     }
 

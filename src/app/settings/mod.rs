@@ -7,7 +7,10 @@ mod theme;
 use crate::app::components::modal::Modal;
 use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
-use granit_types::{AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo};
+use granit_types::{
+    AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo, ToolsConfig,
+    WebFetchConfig, WebSearchConfig,
+};
 use leptos::prelude::*;
 use markdown::MarkdownSettings;
 use notes::NotesSettings;
@@ -132,7 +135,9 @@ pub(super) struct SettingsForm {
     pub max_turns: usize,
     pub system_prompt: String,
     pub disabled_tools: Vec<String>,
-    pub brave_api_key: String,
+    pub web_search_api_key: String,
+    pub web_search_max_results: usize,
+    pub web_fetch_max_output_chars: usize,
     // Theme
     pub theme: String,
     // Available tools (loaded async, read-only after init)
@@ -166,7 +171,15 @@ impl SettingsForm {
                 .clone()
                 .unwrap_or_else(granit_types::default_system_prompt),
             disabled_tools: config.agent.disabled_tools.clone(),
-            brave_api_key: config.agent.brave_api_key.clone().unwrap_or_default(),
+            web_search_api_key: config
+                .agent
+                .tool_config
+                .web_search
+                .api_key
+                .clone()
+                .unwrap_or_default(),
+            web_search_max_results: config.agent.tool_config.web_search.max_results,
+            web_fetch_max_output_chars: config.agent.tool_config.web_fetch.max_output_chars,
             theme: config.theme.clone(),
             available_tools: Vec::new(),
             system_fonts: Vec::new(),
@@ -272,10 +285,19 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             } else {
                 Some(f.system_prompt)
             };
-            let brave_api_key = if f.brave_api_key.trim().is_empty() {
+            let web_search_api_key = if f.web_search_api_key.trim().is_empty() {
                 None
             } else {
-                Some(f.brave_api_key)
+                Some(f.web_search_api_key)
+            };
+            let tool_config = ToolsConfig {
+                web_search: WebSearchConfig {
+                    api_key: web_search_api_key,
+                    max_results: f.web_search_max_results,
+                },
+                web_fetch: WebFetchConfig {
+                    max_output_chars: f.web_fetch_max_output_chars,
+                },
             };
             let agent = AgentConfig {
                 providers,
@@ -285,7 +307,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 max_turns: f.max_turns,
                 system_prompt,
                 disabled_tools: f.disabled_tools,
-                brave_api_key,
+                tool_config,
             };
             let mut next_config = config.get_untracked();
             next_config.agent = agent;
