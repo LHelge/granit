@@ -259,6 +259,43 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
     };
 }
 
+// ── Blockquote alert autocompletion ───────────────────────────────
+
+const alertTypes = [
+    { label: "[!NOTE]", detail: "Useful information that users should know" },
+    { label: "[!TIP]", detail: "Helpful advice for doing things better or more easily" },
+    { label: "[!IMPORTANT]", detail: "Key information users need to know to achieve their goal" },
+    { label: "[!WARNING]", detail: "Urgent info that needs immediate user attention" },
+    { label: "[!CAUTION]", detail: "Advises about risks or negative outcomes of certain actions" },
+];
+
+function alertCompletionSource(context: CompletionContext): CompletionResult | null {
+    // Match `> [!` (with optional leading whitespace) up to the cursor on the current line
+    const line = context.state.doc.lineAt(context.pos);
+    const lineTextBefore = line.text.slice(0, context.pos - line.from);
+    const m = lineTextBefore.match(/^>\s*\[!(\w*)$/);
+    if (!m) return null;
+
+    const from = context.pos - m[1].length - 2; // start from `[!`
+
+    return {
+        from,
+        options: alertTypes.map((t) => ({
+            label: t.label,
+            detail: t.detail,
+            apply: (view, completion, from, to) => {
+                // Insert the tag and add a newline with `> ` prefix for content
+                const insert = `${completion.label}\n> `;
+                view.dispatch({
+                    changes: { from, to, insert },
+                    selection: { anchor: from + insert.length },
+                });
+            },
+        })),
+        filter: m[1].length > 0,
+    };
+}
+
 // ── Editor instances ───────────────────────────────────────────────
 
 interface EditorInstance {
@@ -327,7 +364,7 @@ export function create(
             ),
             readOnlyCompartment.of(EditorState.readOnly.of(false)),
             slugsCompartment.of(slugsExtension(config.slugs ?? [])),
-            autocompletion({ override: [wikiLinkCompletionSource] }),
+            autocompletion({ override: [wikiLinkCompletionSource, alertCompletionSource] }),
             markdown(),
             closeBrackets(),
             bracketMatching(),
