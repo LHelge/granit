@@ -1,5 +1,6 @@
 use super::helpers::{
     ensure_md_extension, template_meta_from_path, template_meta_with_icon, validate_name,
+    write_atomic, write_new,
 };
 use super::{Cave, CaveError};
 use chrono::{Datelike, NaiveDate};
@@ -22,7 +23,9 @@ impl Cave {
                 if !self.templates.contains_key(&candidate_slug) {
                     break (candidate_file, candidate_slug);
                 }
-                n += 1;
+                n = n
+                    .checked_add(1)
+                    .ok_or_else(|| CaveError::SlugExhausted("untitled".into()))?;
             }
         } else if self.templates.contains_key(name) {
             return Err(CaveError::TemplateAlreadyExists(base_filename));
@@ -32,7 +35,7 @@ impl Cave {
 
         let final_path = templates_dir.join(&filename);
         let initial_content = crate::markdown::Markdown::new_note();
-        std::fs::write(&final_path, &initial_content)?;
+        write_new(&final_path, &initial_content)?;
         self.templates.insert(slug, final_path.clone());
 
         Ok(template_meta_from_path(&final_path))
@@ -88,7 +91,7 @@ impl Cave {
 
         let existing_raw = std::fs::read_to_string(abs_path)?;
         let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
-        std::fs::write(abs_path, updated.as_str())?;
+        write_atomic(abs_path, updated.as_str())?;
         let mut meta = template_meta_from_path(abs_path);
         meta.icon = crate::markdown::Markdown::new(&updated).icon();
         Ok(meta)
@@ -181,7 +184,7 @@ impl Cave {
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
         let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, None);
-        if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
+        if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
                     return Err(CaveError::Io(format!(
@@ -325,7 +328,7 @@ impl Cave {
                 tags,
                 Some("Calendar".to_string()),
             );
-            std::fs::write(&final_path, initial_content)?;
+            write_new(&final_path, initial_content)?;
             self.notes.insert(date.to_string(), final_path);
             self.rebuild_backlinks();
         }

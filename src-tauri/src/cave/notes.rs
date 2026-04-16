@@ -1,5 +1,6 @@
 use super::helpers::{
     ensure_md_extension, note_meta_from_relative_path, note_meta_with_frontmatter, validate_name,
+    write_atomic, write_new,
 };
 use super::{Cave, CaveError};
 use granit_types::{Document, DocumentMeta};
@@ -41,7 +42,7 @@ impl Cave {
         let tags = self.initial_tags_for_new_note(effective_template_slug.as_deref())?;
         let icon = self.initial_icon_for_new_note(effective_template_slug.as_deref())?;
         let initial_content = crate::markdown::Markdown::new_note_with_body(&body, tags, icon);
-        std::fs::write(&final_path, &initial_content)?;
+        write_new(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
         self.rebuild_backlinks();
 
@@ -104,7 +105,7 @@ impl Cave {
 
         let existing_raw = std::fs::read_to_string(&abs_path)?;
         let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
-        std::fs::write(&abs_path, updated.as_str())?;
+        write_atomic(&abs_path, updated.as_str())?;
         self.rebuild_backlinks();
         let rel = self.relative_path(&abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
@@ -130,7 +131,7 @@ impl Cave {
         let existing_body = crate::markdown::Markdown::new(&existing_raw).body();
         let updated =
             crate::markdown::Markdown::rebuild(&existing_raw, existing_body, None, icon, None);
-        std::fs::write(abs_path, &updated)?;
+        write_atomic(abs_path, &updated)?;
 
         let rel = self.relative_path(abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
@@ -162,7 +163,7 @@ impl Cave {
         }
         let new_body = body.replacen(old_text, new_text, 1);
         let new_content = crate::markdown::Markdown::rebuild(&raw, &new_body, None, None, None);
-        std::fs::write(&abs_path, &new_content)?;
+        write_atomic(&abs_path, &new_content)?;
         self.rebuild_backlinks();
 
         let rel = self.relative_path(&abs_path);
@@ -321,7 +322,7 @@ impl Cave {
         let existing_raw = std::fs::read_to_string(&final_abs)?;
         let updated =
             crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, favorite);
-        if let Err(e) = std::fs::write(&final_abs, updated.as_str()) {
+        if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {

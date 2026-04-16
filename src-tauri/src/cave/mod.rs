@@ -109,7 +109,7 @@ impl Cave {
         let mut stored = config.clone();
         stored.active_cave = None;
         let yaml = serde_yml::to_string(&stored)?;
-        std::fs::write(self.config_path(), yaml)?;
+        helpers::write_atomic(&self.config_path(), yaml)?;
         Ok(())
     }
 
@@ -302,7 +302,9 @@ impl Cave {
                 if !self.notes.contains_key(&candidate_slug) {
                     return Ok((format!("{candidate_slug}.md"), candidate_slug));
                 }
-                n += 1;
+                n = n
+                    .checked_add(1)
+                    .ok_or_else(|| CaveError::SlugExhausted("untitled".into()))?;
             }
         } else if self.notes.contains_key(name) {
             Err(CaveError::AlreadyExists(base_filename))

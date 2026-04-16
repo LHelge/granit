@@ -161,29 +161,17 @@ pub(super) fn Reader() -> impl IntoView {
         {
             ev.prevent_default();
 
-            // ev.current_target() is the div with on:click — i.e. the rendered
-            // markdown container.  Count checkboxes within it to find the index.
-            let index = ev
-                .current_target()
-                .and_then(|ct| ct.dyn_into::<web_sys::Element>().ok())
-                .and_then(|container| {
-                    container
-                        .query_selector_all("input[type='checkbox']")
-                        .ok()
-                        .and_then(|list| {
-                            let cb_node: &web_sys::Node = checkbox.as_ref();
-                            let len = list.length();
-                            for i in 0..len {
-                                if let Some(node) = list.item(i) {
-                                    if &node == cb_node {
-                                        return Some(i as usize);
-                                    }
-                                }
-                            }
-                            None
-                        })
-                })
-                .unwrap_or(0);
+            // The backend renderer emits `data-index="N"` on each interactive
+            // checkbox. Prefer that stable index over DOM-order counting,
+            // which would break if disabled or nested checkboxes are present.
+            let index = checkbox
+                .get_attribute("data-index")
+                .and_then(|s| s.parse::<usize>().ok());
+            let Some(index) = index else {
+                // Missing or malformed index means we cannot safely locate
+                // the todo line; ignore the click.
+                return;
+            };
 
             if let Some(slug) = ctx.active_note.get_untracked().map(|n| n.meta.slug.clone()) {
                 let ctx_inner = ctx;
