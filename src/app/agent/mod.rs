@@ -216,21 +216,21 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                                         let removal_slug = slug.clone();
                                         let selection_preview = note.selected.as_deref().map(selection_preview);
                                         view! {
-                                            <div class="flex max-w-full items-center gap-1 rounded-md border border-info/35 bg-info/10 px-1.5 py-0.75 text-xs text-neutral-content">
+                                            <div class="flex max-w-full items-center gap-1 rounded-md border border-info/35 bg-info/10 px-1.5 py-0.75 text-xs text-base-content">
                                                 <span class="inline-flex w-3.5 h-3.5 shrink-0 text-accent">
                                                     <Icon icon=icondata_lu::LuFileText width="100%" height="100%"/>
                                                 </span>
                                                 <span class="min-w-0 flex flex-1 items-baseline gap-1 overflow-hidden">
                                                     <span class="truncate font-medium">{slug}</span>
                                                     {selection_preview.map(|text| view! {
-                                                        <span class="truncate text-xs italic text-neutral-content/45">
+                                                        <span class="truncate text-xs italic text-base-content/45">
                                                             {format!("\"{}\"", text)}
                                                         </span>
                                                     })}
                                                 </span>
                                                 <button
                                                     type="button"
-                                                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-content/65 transition-colors hover:bg-neutral-content/10 hover:text-neutral-content disabled:cursor-not-allowed disabled:opacity-35"
+                                                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-base-content/65 transition-colors hover:bg-base-content/10 hover:text-base-content disabled:cursor-not-allowed disabled:opacity-35"
                                                     title="Remove attached note"
                                                     prop:disabled=move || is_streaming.get()
                                                     on:click=move |_| {
@@ -254,7 +254,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                                     let icon = note.meta.icon.clone();
                                     let slug = note.meta.slug.clone();
                                     Some(view! {
-                                        <div class="flex max-w-full items-center gap-1 rounded-md border border-neutral-content/15 bg-neutral-content/5 px-1.5 py-0.75 text-xs text-neutral-content/80">
+                                        <div class="flex max-w-full items-center gap-1 rounded-md border border-base-content/15 bg-base-content/5 px-1.5 py-0.75 text-xs text-base-content/80">
                                             <span class="inline-flex w-3.5 h-3.5 shrink-0 text-accent">
                                                 {if let Some(icon_id) = icon {
                                                     view! {
@@ -269,7 +269,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                                             <span class="min-w-0 truncate font-medium">{slug.clone()}</span>
                                             <button
                                                 type="button"
-                                                class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-content/65 transition-colors hover:bg-neutral-content/10 hover:text-neutral-content disabled:cursor-not-allowed disabled:opacity-35"
+                                                class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-base-content/65 transition-colors hover:bg-base-content/10 hover:text-base-content disabled:cursor-not-allowed disabled:opacity-35"
                                                 title="Attach current note"
                                                 prop:disabled=move || is_streaming.get()
                                                 on:mousedown=move |ev| {
@@ -302,7 +302,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         <textarea
                             style:font-family=move || config.get().agent_font.font_family
                             style:font-size=move || format!("{}px", config.get().agent_font.font_size)
-                            class="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-neutral-content outline-none disabled:opacity-50 placeholder:text-neutral-content/35"
+                            class="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-base-content outline-none disabled:opacity-50 placeholder:text-base-content/35"
                             rows="4"
                             placeholder="Message..."
                             prop:value=move || input.get()
@@ -323,7 +323,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                         />
 
                         // Footer row inside the same frame
-                        <div class="flex items-center gap-1.5 px-2.5 py-2 text-neutral-content">
+                        <div class="flex items-center gap-1.5 px-2.5 py-2 text-base-content">
                             <ModelSelector
                                 models=models
                                 models_loading=models_loading
@@ -332,7 +332,7 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                             <div class="flex-1" />
                             <button
                                 type="submit"
-                                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-content/60 transition-colors hover:bg-neutral-content/10 hover:text-neutral-content disabled:cursor-not-allowed disabled:opacity-35"
+                                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-base-content/60 transition-colors hover:bg-base-content/10 hover:text-base-content disabled:cursor-not-allowed disabled:opacity-35"
                                 title="Send message"
                                 prop:disabled=move || is_streaming.get() || !has_model.get()
                             >

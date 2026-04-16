@@ -101,6 +101,14 @@ cargo fmt --all
 cargo clippy --all-targets --all-features
 ```
 
+### Git Hooks
+
+A pre-commit hook that runs `fmt --check`, `clippy -D warnings`, and the `granit-types` test suite lives at `.githooks/pre-commit`. Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ### Recommended IDE Setup
 
 [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).

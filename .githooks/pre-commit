@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-commit hook for granit. Enable with:
+#
+#   git config core.hooksPath .githooks
+#
+# Runs rustfmt check, clippy (deny warnings), and the granit-types test
+# suite. Tauri-side tests are skipped here because they require the
+# full backend build and are covered by CI.
+set -euo pipefail
+
+echo "[pre-commit] cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
+echo "[pre-commit] cargo clippy -p granit-types --all-targets -- -D warnings"
+cargo clippy -p granit-types --all-targets -- -D warnings
+
+echo "[pre-commit] cargo clippy -p granit --all-targets -- -D warnings"
+cargo clippy -p granit --all-targets -- -D warnings
+
+echo "[pre-commit] cargo test -p granit-types"
+cargo test -p granit-types --quiet

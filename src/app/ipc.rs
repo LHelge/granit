@@ -47,24 +47,58 @@ fn serialize_err(e: impl std::fmt::Display) -> IpcError {
     IpcError::new("IpcSerialize", e.to_string())
 }
 
+/// Default timeout for all Tauri invoke calls. Commands that legitimately
+/// run longer (e.g. agent streaming) use their own event-based flow and
+/// do not go through these helpers.
+const IPC_TIMEOUT_MS: u32 = 30_000;
+
+/// Race a future against an IPC timeout. On timeout, returns an
+/// [`IpcError`] with code `IpcTimeout`.
+async fn with_timeout<T, F>(cmd: &str, fut: F) -> Result<T, IpcError>
+where
+    F: std::future::Future<Output = Result<T, IpcError>>,
+{
+    use futures::future::{select, Either};
+    use gloo_timers::future::TimeoutFuture;
+
+    let fut = std::pin::pin!(fut);
+    let timeout = TimeoutFuture::new(IPC_TIMEOUT_MS);
+    match select(fut, timeout).await {
+        Either::Left((res, _)) => res,
+        Either::Right(_) => Err(IpcError::new(
+            "IpcTimeout",
+            format!("IPC command '{cmd}' timed out after {IPC_TIMEOUT_MS}ms"),
+        )),
+    }
+}
+
 /// Invoke a Tauri command with typed args and a typed return value.
 async fn invoke_cmd<A: Serialize, R: DeserializeOwned>(cmd: &str, args: &A) -> Result<R, IpcError> {
-    let args = serde_wasm_bindgen::to_value(args).map_err(serialize_err)?;
-    let val = invoke(cmd, args).await.map_err(js_err_to_ipc)?;
-    serde_wasm_bindgen::from_value(val).map_err(serialize_err)
+    with_timeout(cmd, async {
+        let args = serde_wasm_bindgen::to_value(args).map_err(serialize_err)?;
+        let val = invoke(cmd, args).await.map_err(js_err_to_ipc)?;
+        serde_wasm_bindgen::from_value(val).map_err(serialize_err)
+    })
+    .await
 }
 
 /// Invoke a Tauri command with no args and a typed return value.
 async fn invoke_no_args<R: DeserializeOwned>(cmd: &str) -> Result<R, IpcError> {
-    let val = invoke(cmd, JsValue::NULL).await.map_err(js_err_to_ipc)?;
-    serde_wasm_bindgen::from_value(val).map_err(serialize_err)
+    with_timeout(cmd, async {
+        let val = invoke(cmd, JsValue::NULL).await.map_err(js_err_to_ipc)?;
+        serde_wasm_bindgen::from_value(val).map_err(serialize_err)
+    })
+    .await
 }
 
 /// Invoke a Tauri command with typed args and no return value.
 async fn invoke_unit<A: Serialize>(cmd: &str, args: &A) -> Result<(), IpcError> {
-    let args = serde_wasm_bindgen::to_value(args).map_err(serialize_err)?;
-    invoke(cmd, args).await.map_err(js_err_to_ipc)?;
-    Ok(())
+    with_timeout(cmd, async {
+        let args = serde_wasm_bindgen::to_value(args).map_err(serialize_err)?;
+        invoke(cmd, args).await.map_err(js_err_to_ipc)?;
+        Ok(())
+    })
+    .await
 }
 
 // ── ipc! macro ─────────────────────────────────────────────────────

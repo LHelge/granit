@@ -498,6 +498,29 @@ mod tests {
         assert_eq!(m3.slug, "untitled-3");
     }
 
+    /// TOCTOU guard: if a file for the target slug appears on disk
+    /// between slug resolution and the write, `create_note` must not
+    /// overwrite it. `write_new` uses `create_new(true)` under the hood.
+    #[test]
+    fn test_create_note_refuses_overwrite_of_external_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // An external process writes the target file *after* the cave
+        // scanned but *before* we ask it to create a note with that name.
+        std::fs::write(dir.path().join("external.md"), "external content").unwrap();
+
+        let err = cave.create_note("external", None, None).unwrap_err();
+        assert!(
+            matches!(err, CaveError::Io(_) | CaveError::AlreadyExists(_)),
+            "expected Io or AlreadyExists, got {err:?}"
+        );
+
+        // External content must be preserved.
+        let contents = std::fs::read_to_string(dir.path().join("external.md")).unwrap();
+        assert_eq!(contents, "external content");
+    }
+
     #[test]
     fn test_create_note_uses_explicit_template_body() {
         let dir = tempfile::tempdir().unwrap();

@@ -100,7 +100,7 @@ pub fn ModelSelector(
         <div class="relative" node_ref=trigger_ref>
             <button
                 type="button"
-                class="flex min-w-0 max-w-[14rem] items-center gap-1.5 rounded px-1.5 py-1 text-xs text-neutral-content/70 transition-colors hover:bg-neutral-content/10 hover:text-neutral-content disabled:cursor-not-allowed disabled:opacity-50"
+                class="flex min-w-0 max-w-[14rem] items-center gap-1.5 rounded px-1.5 py-1 text-xs text-base-content/70 transition-colors hover:bg-base-content/10 hover:text-base-content disabled:cursor-not-allowed disabled:opacity-50"
                 prop:disabled=move || disabled.get() || models_loading.get()
                 on:click=move |_| {
                     let will_open = !dropdown_open.get_untracked();
@@ -113,7 +113,7 @@ pub fn ModelSelector(
                 <span
                     class="truncate"
                     class=("italic", move || !has_selection())
-                    class=("text-neutral-content/40", move || !has_selection())
+                    class=("text-base-content/40", move || !has_selection())
                 >
                     {move || if models_loading.get() {
                         view! { <span class="loading loading-spinner loading-xs" /> }.into_any()
@@ -122,7 +122,7 @@ pub fn ModelSelector(
                     }}
                 </span>
                 <span
-                    class="inline-flex w-3 h-3 shrink-0 text-neutral-content/55 transition-transform"
+                    class="inline-flex w-3 h-3 shrink-0 text-base-content/55 transition-transform"
                     class:rotate-180=move || dropdown_open.get()
                 >
                     <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>

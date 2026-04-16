@@ -27,6 +27,7 @@ web-sys = { version = "0.3.91", features = [
 ] }
 granit-types = { path = "granit-types" }
 gloo-timers = { version = "0.4.0", features = ["futures"] }
+futures = { version = "0.3", default-features = false, features = ["std"] }
 serde_json = "1.0.149"
 leptos_icons = "0.7.1"
 icondata_lu = "0.1.0"
