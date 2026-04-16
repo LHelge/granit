@@ -4,90 +4,23 @@ applyTo: "src-tauri/**"
 
 # Tauri Backend
 
-Instructions for working in the Tauri 2 backend (`src-tauri/`).
+Instructions for `src-tauri/`.
 
-## Command Pattern
+## Core Rules
 
-Every Tauri command follows this structure:
+- Keep Tauri command handlers thin. Put logic in modules under `commands/`, `cave/`, `markdown/`, and `agent/`.
+- Use typed `thiserror` enums that serialize cleanly across IPC. Do not use `anyhow`.
+- Prefer direct module tests over testing through the Tauri command layer.
+- Keep `lib.rs` focused on builder setup, plugin registration, and command wiring.
 
-```rust
-#[tauri::command]
-fn command_name(arg: ArgType) -> Result<ReturnType, MyError> {
-    // Delegate to a module function — keep the handler thin
-    module::do_work(arg)
-}
-```
+## Backend State
 
-Register in the builder:
-```rust
-.invoke_handler(tauri::generate_handler![command_name])
-```
-
-## Error Handling
-
-Define typed errors with `thiserror` per module. Implement `serde::Serialize` so Tauri can return them to the frontend:
-
-```rust
-#[derive(Debug, thiserror::Error, serde::Serialize)]
-pub enum CaveError {
-    #[error("Cave not found: {0}")]
-    NotFound(String),
-    #[error("IO error: {0}")]
-    Io(String),
-}
-
-// Convert std::io::Error → CaveError
-impl From<std::io::Error> for CaveError {
-    fn from(e: std::io::Error) -> Self {
-        CaveError::Io(e.to_string())
-    }
-}
-```
-
-## State Management
-
-Use `tauri::State<T>` for shared backend state (e.g., current cave, agent config). Wrap mutable state in `Mutex` or `RwLock`:
-
-```rust
-struct AppState {
-    cave: RwLock<Option<Cave>>,
-}
-```
-
-Current Granit backend state uses `Mutex<AppConfig>`, a shared `Arc<Mutex<Option<Cave>>>`, and `Mutex<Option<Agent>>`.
+- The backend owns app state.
+- Current shared state includes `AppConfig`, the active cave handle, and the cached agent.
 
 ## Config Reality
 
-The current config implementation is global-only:
-
-- `~/.config/granit/config.yml` is the source of truth
-- `AppConfig::ensure_cave()` only ensures the cave has a `.granit/` directory for app metadata
-
-## Testing
-
-Every new module should include a `#[cfg(test)]` block. Test the module functions directly — not through the Tauri command layer:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_function_name() {
-        // Use tempdir for file system tests
-    }
-}
-```
-
-## Module Organization
-
-Keep `lib.rs` thin — it only wires up commands and plugins. Domain logic goes in dedicated modules:
-
-```
-src-tauri/src/
-  lib.rs        — Builder, command registration
-  main.rs       — Entry point
-  cave/         — Cave operations (open, list, read, write)
-  markdown/     — pulldown-cmark parsing, frontmatter, wiki-links
-  agent/        — rig-core agent, tools, vector DB
-```
+- `<cave>/.granit/config.yml` is the persisted config source of truth.
+- `<cave>/.granit/templates/` stores cave-local templates.
+- `active_cave` is runtime-only and must not be serialized into cave YAML.
+- The last open cave path is persisted separately via `tauri-plugin-store`.

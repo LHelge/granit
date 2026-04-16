@@ -1,236 +1,86 @@
 # Granit — Copilot Instructions
 
-Granit is a minimal, opinionated desktop note-taking app built for personal use. It manages a "cave" — a directory of markdown files — with an integrated AI agent.
-
-## Tech Stack
-
-- **Backend**: Tauri 2 (Rust) — single source of truth for all data and logic
-- **Frontend**: Leptos 0.8 (Rust → WASM, CSR mode) compiled with Trunk
-- **Editor**: CodeMirror 6 (TypeScript) — markdown editing with syntax highlighting, bracket pairing, list continuation, undo/redo. Built via esbuild, interop via `window.GranitEditor` global.
-- **Styling**: Tailwind CSS 4 + DaisyUI 5 (npm packages; utility classes and DaisyUI component classes in `view!` macros; see `.github/instructions/daisyui.instructions.md`)
-- **JS Build**: npm + esbuild — builds CodeMirror bundle (`dist/codemirror.js`) and CSS (`dist/styles.css`). Trunk pre_build hook runs `npm run build`.
-- **Markdown**: `pulldown-cmark` in the backend — frontend receives rendered HTML
-- **AI Agent**: `rig-core` with configurable LLM providers (Ollama, Anthropic, Mistral, Prisma)
-- **Error handling**: `thiserror` for typed error enums
-- **Serialization**: `serde` + `serde_json` (backend), `serde-wasm-bindgen` (frontend IPC)
+Granit is a minimal desktop note-taking app built around a local markdown "cave" and a backend-owned state model.
 
 ## Architecture
 
-```
-src/            — Leptos frontend (WASM)
-  main.rs       — WASM entry point
-  app/
-    mod.rs      — Root component and layout wiring
-    context.rs  — App-wide reactive state and error helpers
-    ipc.rs       — Tauri IPC wrapper layer
-    agent/       — Agent panel UI, streaming, provider/model selectors
-    editor/      — Writer (CodeMirror 6), reader, frontmatter, CM6 bindings
-    explorer/    — Cave selector, tree view, search, todo tabs
-    settings/    — Settings modal and sections
-    components/  — Shared UI helpers and icon wrappers
-js/             — TypeScript sources (CodeMirror 6 wrapper)
-  editor.ts     — CM6 setup, theme, extensions, window.GranitEditor API
-src-tauri/src/  — Tauri backend (native Rust)
-  lib.rs        — Tauri commands, app builder, plugin registration
-  main.rs       — Desktop entry point
-  agent/        — rig-core agent and tools
-  cave/         — Cave operations
-  markdown/     — Frontmatter parsing + HTML rendering
-```
+- Backend: Tauri 2 + Rust. It is the single source of truth for state, file I/O, markdown rendering, cave operations, and agent behavior.
+- Frontend: Leptos 0.8 CSR in `src/`. Treat it as a thin IPC view layer.
+- Editor: CodeMirror 6 in `js/editor.ts`, bundled to `build/codemirror.js` and exposed as `window.GranitEditor`.
+- Styling: Tailwind CSS 4 + DaisyUI 5. Use utility classes and DaisyUI classes directly in `view!` macros.
+- Shared types: `granit-types/` contains config, document, agent, and IPC payload types.
 
-### Data Flow
+Key areas:
+- `src/app/agent/` — chat UI and streaming
+- `src/app/editor/` — writer, reader, frontmatter, CodeMirror bindings
+- `src/app/explorer/` — calendar, tree, search, todo, tags, favorites, templates
+- `src-tauri/src/commands/` — Tauri command handlers and app state
+- `src-tauri/src/cave/` — cave operations
+- `src-tauri/src/markdown/` — frontmatter parsing and HTML rendering
 
-All state lives in the backend. The frontend is a thin view layer.
+## Core Rules
 
-1. Frontend calls `invoke("command_name", args)` via Tauri IPC
-2. Backend processes the command (file I/O, markdown parsing, agent calls)
-3. Backend returns serialized result
-4. Frontend updates reactive signals with the response
+- Keep logic in the backend when possible. If the frontend needs derived data, add a backend command instead of duplicating logic.
+- One `#[tauri::command]` per operation. Keep handlers thin and delegate into modules.
+- Use typed errors with `thiserror`. Do not use `anyhow`.
+- All code, comments, and documentation should be in English.
+- Build only what is needed now. No plugin system, sync layer, or speculative abstractions.
 
-Never duplicate logic between frontend and backend. If the frontend needs derived data, add a backend command.
+## Cave Model
 
-### Cave Concept
+- A cave is a user-selected directory containing markdown notes plus a `.granit/` directory.
+- Notes are identified by filename stem only. Do not assume a frontmatter `title` field exists.
+- Wiki-links resolve by filename across the whole cave, not by relative path.
+- Note filenames are globally unique across a cave.
+- `.granit/config.yml` stores cave-local settings.
+- `.granit/templates/` stores cave-local note templates.
+- `active_cave` is runtime-only and must not be serialized into cave YAML.
+- The last open cave path is persisted separately via `tauri-plugin-store`.
 
-A **cave** is any directory on disk selected via the native folder picker. It contains:
-- Nested subdirectories (folders as organizational hierarchy)
-- `.md` files with optional YAML frontmatter (`tags`, timestamps, optional `icon`)
-- Wiki-style `[[links]]` resolved by **filename** (not path) across the entire cave
+## Markdown and Editor
 
-One cave is open at a time. The user can switch caves explicitly, and Granit only remembers the currently active cave between launches.
+- Markdown is rendered in the backend with `pulldown-cmark`.
+- Frontmatter is parsed separately from the markdown body.
+- Raw HTML must be sanitized before reaching the webview.
+- Reader mode renders backend HTML; edit mode uses CodeMirror.
+- Task list checkboxes are interactive in the note reader and disabled in agent-rendered markdown.
 
-The filename stem is the note identity and displayed title. Do not assume a frontmatter `title` field exists.
+## AI Agent
 
-### Configuration
+- Agent logic lives entirely in the backend.
+- Supported providers are Ollama, Anthropic, Mistral, and Prisma.
+- Tools cover notes, folders, templates, daily notes, todos, search, web fetch, and web search.
 
-The current implementation uses **per-cave config files** plus a small store-backed runtime key.
+## Frontend Notes
 
-```
-<cave>/
-  .granit/
-    config.yml             — Cave-scoped settings, theme, fonts, and agent/provider config
-```
+- Use Leptos signals and the existing IPC wrapper layer in `src/app/ipc.rs`.
+- Prefer DaisyUI component classes before hand-rolled equivalents.
+- The user is strong on Rust backend work and less experienced with Leptos/Tailwind/DaisyUI. Be more explicit for frontend changes.
 
-- Provider API keys currently live inside the serialized cave-local `.granit/config.yml` via `AgentConfig`.
-- `active_cave` must not be serialized into cave YAML; it is restored separately from Tauri store plugin key-value storage.
-- `serde_yml` is used for YAML (de)serialization and `tauri-plugin-store` is used for persisted active-cave state.
+## Icons
 
-### Markdown Processing
-
-- `pulldown-cmark` parses markdown on the backend
-- YAML frontmatter is stripped before rendering and parsed separately for metadata
-- Wiki-links (`[[note-name]]`) are resolved to the matching `.md` file by filename
-- Raw HTML is sanitized before it reaches the frontend webview
-- Task list checkboxes are rendered as checkbox inputs; interactive in the reader and disabled in agent-rendered markdown
-- Backend returns rendered HTML to the frontend for display
-
-### Editor
-
-Two modes toggled by the user:
-- **Edit mode**: CodeMirror 6 markdown editor with syntax highlighting, bracket pairing, list continuation, indent/outdent, undo/redo, and URL-to-link paste
-- **Read mode**: Rendered HTML preview (read-only)
-
-The CM6 editor is built in TypeScript (`js/editor.ts`), bundled by esbuild into `dist/codemirror.js`, and exposed as `window.GranitEditor`. Rust wasm-bindgen bindings in `src/app/editor/codemirror.rs` call this API. The CM6 theme uses DaisyUI CSS custom properties so it auto-adapts to theme changes.
-
-The long-term goal is an Obsidian-style live preview (WYSIWYM), but the architecture should support swapping the editor component later.
-
-### AI Agent
-
-Built with `rig-core` in the backend. Features:
-- Side panel chat UI (similar to Copilot in VS Code)
-- Streaming responses over Tauri events
-- Configurable providers and models (Ollama, Anthropic, Mistral, Prisma)
-- Tooling for notes, folders, daily notes, todo checkboxes, note search, content search, web fetch, and web search
-- Tool enable/disable controls and configurable system prompt / history limits
-
-Agent logic lives entirely in the backend. The frontend only renders the chat UI and streams responses via IPC.
+- Icons use `leptos_icons` + `icondata_lu`.
+- `Icon` has no `class` prop. Put sizing, color, spacing, and rotation on a wrapper element.
+- `ProviderIcon` remains in `src/app/components/icons.rs` for provider brand assets.
 
 ## Development
 
-### Build & Run
+Common commands:
 
 ```sh
-npm ci                             # Install JS dependencies (first time / CI)
-cd src-tauri && cargo tauri dev    # Full app (launches Trunk + Tauri)
-trunk serve                        # Frontend only (port 1420)
-cargo test -p granit               # Backend unit tests
-cargo test -p granit-types         # Shared types tests
-wasm-pack test --headless --firefox # Frontend WASM tests
-```
- 
-### Workflow
-
-- **Branches**: Work on feature branches. Never commit directly to `main`.
-- **Commits**: Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
-- **Pull requests**: Use `gh pr create` (GitHub CLI) to open PRs.
-- **Before committing anything**: Ensure formatting, linting, and all tests pass. Run `npm ci`, `cargo fmt --all`, `cargo clippy --workspace --all-targets --all-features`, `cargo test -p granit`, `cargo test -p granit-types`, and `wasm-pack test --headless --firefox` before creating a commit.
-- **Dependencies**: Use `cargo add <crate>` to add new dependencies (ensures latest version). Never hand-edit `Cargo.toml` dependency lines.
-- **Planning**: Use the Bears task tracker skill for breaking down features into epics and sub-tasks.
-
-### Conventions
-
-- **Language**: All code, comments, and documentation in English.
-- **Errors**: Define typed error enums with `thiserror`. No `anyhow`. Return `Result<T, MyError>` from commands.
-- **Tauri commands**: One `#[tauri::command]` per operation. Keep handlers thin — delegate to modules.
-- **Frontend**: Leptos reactive signals (`signal()`, `RwSignal`). Tailwind CSS + DaisyUI 5 component classes. Minimal JavaScript interop.
-- **Testing**: Unit tests in the backend (`#[cfg(test)]` modules). Test cave operations, markdown parsing, and agent tools. No E2E tests yet.
-- **Naming**: Snake_case for Rust. Kebab-case for filenames. Cave note filenames are user-controlled.
-- **No over-engineering**: This is a personal tool. Build what's needed now. No plugin system, no sync, no abstractions for hypothetical features.
-
-### Developer Experience
-
-- The user is experienced with Rust backend development — keep backend explanations concise.
-- The user is less experienced with frontend/Leptos/Tailwind/DaisyUI — provide more guidance, examples, and explanations for frontend changes.
-
-### Icons
-
-Icons use `leptos_icons` + `icondata_lu` (Lucide). SVGs are embedded in WASM at compile time — no CDN or font files.
-
-**Import:**
-```rust
-use crate::app::components::icons::Icon; // re-exports leptos_icons::Icon
-use icondata_lu;
+npm ci
+npm run build
+cd src-tauri && cargo tauri dev
+cargo test -p granit
+cargo test -p granit-types
+wasm-pack test --headless --firefox
 ```
 
-**`Icon` has no `class` prop** — only `width`, `height`, and `style`.
+Before committing, run formatting, clippy, and the relevant tests.
 
-- Fixed-size, no color/spacing needed:
-  ```rust
-  <Icon icon=icondata_lu::LuPencil width="1rem" height="1rem"/>
-  ```
-- Color, shrink, or spacing via Tailwind — wrap in a span:
-  ```rust
-  <span class="inline-flex w-4 h-4 shrink-0 text-stone-400">
-      <Icon icon=icondata_lu::LuFolder width="100%" height="100%"/>
-  </span>
-  ```
-- Reactive rotation (e.g. chevrons in dropdowns):
-  ```rust
-  <span class="inline-flex w-3 h-3 transition-transform" class:rotate-180=move || open.get()>
-      <Icon icon=icondata_lu::LuChevronDown width="100%" height="100%"/>
-  </span>
-  ```
+## Not Yet
 
-**Tailwind size reference:** `w-3`=0.75rem, `w-3.5`=0.875rem, `w-4`=1rem, `w-5`=1.25rem
-
-`ProviderIcon` (custom brand logos from `/public/`) remains in `src/app/components/icons.rs`.
-
-### Key Crates
-
-| Crate | Purpose |
-|-------|---------|
-| `tauri` 2 | Desktop app framework, IPC, windowing |
-| `leptos` 0.8 | Frontend UI (CSR/WASM) |
-| `leptos_icons` | Inline SVG icon renderer |
-| `icondata_lu` | Lucide icon data constants |
-| `pulldown-cmark` | Markdown → HTML |
-| `rig-core` | AI agent framework |
-| `thiserror` | Typed error derivation |
-| `serde` / `serde_json` | Serialization |
-| `serde-wasm-bindgen` | Frontend ↔ JS value conversion |
-| `serde_yml` | YAML config (de)serialization |
-| `tauri-plugin-store` | Persisted active-cave key-value storage |
-| `reqwest` | Web fetch / search tool HTTP client |
-
-### Release Process
-
-Versions must stay in sync across two places:
-
-| File | Field |
-|------|-------|
-| `Cargo.toml` (root) | `[workspace.package] version` |
-| `src-tauri/tauri.conf.json` | `version` |
-
-All Cargo crates (`granit-ui`, `granit`, `granit-types`) inherit `version.workspace = true` from the root `[workspace.package]`, so only the root `Cargo.toml` needs updating.
-
-The git tag **must** match the version in these files exactly (e.g. version `1.2.3` → tag `v1.2.3`).
-
-Steps to cut a release:
-
-```sh
-# 1. Bump version in both files to X.Y.Z — edit them, then verify:
-grep -E '^version' Cargo.toml
-grep '"version"' src-tauri/tauri.conf.json
-
-# 2. Commit the version bump
-git add Cargo.toml src-tauri/tauri.conf.json
-git commit -m "chore: bump version to X.Y.Z"
-
-# 3. Tag exactly matching the version
-git tag vX.Y.Z
-
-# 4. Push branch and tag
-git push && git push --tags
-```
-
-Pushing the tag triggers `.github/workflows/release.yml`:
-1. CI checks (fmt, clippy, tests) run first
-2. On success, cross-platform Tauri builds run (macOS arm64/x86_64, Linux x86_64, Windows x86_64)
-3. A **draft** GitHub Release is created with all artifacts attached
-4. Review and publish the draft release on GitHub when ready
-
-### Deferred Features (Not Yet — Don't Build)
-
-- File watching / live reload on external changes
+- File watching / external change reload
 - Obsidian-style live preview editor
 - Backlinks panel
-- Sync (caves are local-only; user manages sync externally)
+- Sync
