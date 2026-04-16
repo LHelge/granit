@@ -60,28 +60,22 @@ pub fn App() -> impl IntoView {
     // refresh notes, folders, and the active note. Registered at the app
     // root so the listener is always alive regardless of panel visibility.
     Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
-            let _handle = ipc::listen_event_simple("cave:notes-changed", move || {
-                leptos::task::spawn_local(async move {
-                    if let Ok(notes) = ipc::fetch_notes().await {
-                        if let Some(active) = ctx.active_note.get_untracked() {
-                            if !notes.iter().any(|n| n.slug == active.meta.slug) {
-                                ctx.clear_active_document();
-                            } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
-                                ctx.set_active_note_document(note);
-                            }
+        ipc::spawn_event_listener_simple("cave:notes-changed", move || {
+            leptos::task::spawn_local(async move {
+                if let Ok(notes) = ipc::fetch_notes().await {
+                    if let Some(active) = ctx.active_note.get_untracked() {
+                        if !notes.iter().any(|n| n.slug == active.meta.slug) {
+                            ctx.clear_active_document();
+                        } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
+                            ctx.set_active_note_document(note);
                         }
-                        ctx.notes.set(notes);
                     }
-                    if let Ok(folders) = ipc::fetch_folders().await {
-                        ctx.folders.set(folders);
-                    }
-                });
-            })
-            .await;
-
-            // Keep handle alive forever (app root never unmounts).
-            std::future::pending::<()>().await;
+                    ctx.notes.set(notes);
+                }
+                if let Ok(folders) = ipc::fetch_folders().await {
+                    ctx.folders.set(folders);
+                }
+            });
         });
     });
 

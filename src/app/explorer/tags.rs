@@ -32,14 +32,10 @@ pub fn Tags() -> impl IntoView {
 
     // Re-fetch when cave contents change
     Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
-            let _handle = ipc::listen_event_simple("cave:notes-changed", move || {
-                if ctx.config.get_untracked().active_cave.is_some() {
-                    refresh();
-                }
-            })
-            .await;
-            std::future::pending::<()>().await;
+        ipc::spawn_event_listener_simple("cave:notes-changed", move || {
+            if ctx.config.get_untracked().active_cave.is_some() {
+                refresh();
+            }
         });
     });
 

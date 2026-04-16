@@ -533,7 +533,7 @@ mod tests {
     };
 
     fn empty_cave() -> SharedCave {
-        std::sync::Arc::new(std::sync::Mutex::new(None))
+        std::sync::Arc::new(parking_lot::Mutex::new(None))
     }
 
     fn ollama_config(base_url: Option<&str>) -> AgentConfig {

@@ -42,6 +42,7 @@ fastembed = "5"
 rkyv = { version = "0.8", features = ["alloc"] }
 tauri-plugin-log = "2"
 atomic-write-file = { version = "0.3", features = ["unnamed-tmpfile"] }
+parking_lot = "0.12"
 
 [dev-dependencies]
 tempfile = "3.27.0"
