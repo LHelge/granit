@@ -4,6 +4,53 @@ use super::CaveError;
 
 pub use granit_types::{Document, DocumentMeta, RenderedDocument};
 
+/// Write `bytes` to `path` atomically.
+///
+/// Delegates to [`atomic_write_file`], which creates a hidden sibling
+/// temporary file (`.<name>.XXXXXX`), fsyncs it, and renames over the
+/// target. On Linux with the `unnamed-tmpfile` feature the temp file is
+/// `O_TMPFILE`, so a crash before commit leaves no leftover files.
+/// On POSIX the rename is atomic; on Windows the crate uses the
+/// platform's atomic replace primitive.
+///
+/// Using the hidden-dotfile tmp convention means a crashed commit also
+/// cannot be picked up by the cave scanner (which skips dotfiles and
+/// files without a `.md` extension).
+pub(crate) fn write_atomic(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut file = atomic_write_file::AtomicWriteFile::open(path)?;
+    file.write_all(bytes.as_ref())?;
+    file.commit()?;
+    Ok(())
+}
+
+/// Create `path` with `bytes`, failing if it already exists.
+///
+/// Uses `OpenOptions::create_new(true)` so the existence check and claim are
+/// atomic at the filesystem level, closing the TOCTOU window that a separate
+/// `exists()` check would leave open. Contents are fsynced before returning.
+pub(crate) fn write_new(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let result = (|| -> std::io::Result<()> {
+        file.write_all(bytes.as_ref())?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(e) = result {
+        // Best effort: remove the partial file we just created.
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(e);
+    }
+    Ok(())
+}
+
 /// Build note metadata including frontmatter-derived fields from a file on disk.
 ///
 /// Reads frontmatter from `abs_path` to populate fields like `icon` and
@@ -203,5 +250,36 @@ mod tests {
         assert!(validate_folder_path(Path::new("..")).is_err());
         assert!(validate_folder_path(Path::new("a/../b")).is_err());
         assert!(validate_folder_path(Path::new(".hidden")).is_err());
+    }
+
+    #[test]
+    fn test_write_atomic_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("note.md");
+        write_atomic(&target, b"hello").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn test_write_atomic_overwrites_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("note.md");
+        std::fs::write(&target, "old").unwrap();
+        write_atomic(&target, b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+    }
+
+    #[test]
+    fn test_write_atomic_leaves_no_tmp_files_on_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("note.md");
+        write_atomic(&target, b"payload").unwrap();
+        let entries: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        // Only the committed file should remain; no sibling temp/dotfiles.
+        assert_eq!(entries, vec!["note.md".to_string()]);
     }
 }

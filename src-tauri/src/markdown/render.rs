@@ -120,6 +120,10 @@ fn render_core(
     let mut outgoing_links = Vec::new();
     let mut in_broken_link = false;
     let mut alert_kind: Option<BlockQuoteKind> = None;
+    // Stable per-checkbox index emitted as `data-index` so the frontend can
+    // identify the toggled todo without relying on DOM-order counting
+    // (which breaks when the renderer emits disabled or nested checkboxes).
+    let mut checkbox_index: usize = 0;
 
     let events = parser.flat_map(|event| match event {
         // ── Blockquote alerts ────────────────────────────────────────
@@ -163,11 +167,17 @@ fn render_core(
         // Emit styled checkboxes; interactive in the note reader, disabled in
         // agent responses where toggling todos is not supported.
         Event::TaskListMarker(checked) => {
+            let idx = checkbox_index;
+            checkbox_index += 1;
             vec![Event::InlineHtml(match (interactive_checkboxes, checked) {
-                (true, true) => {
-                    r#"<input type="checkbox" class="checkbox checkbox-sm" checked>"#.into()
-                }
-                (true, false) => r#"<input type="checkbox" class="checkbox checkbox-sm">"#.into(),
+                (true, true) => format!(
+                    r#"<input type="checkbox" class="checkbox checkbox-sm" data-index="{idx}" checked>"#
+                )
+                .into(),
+                (true, false) => format!(
+                    r#"<input type="checkbox" class="checkbox checkbox-sm" data-index="{idx}">"#
+                )
+                .into(),
                 (false, true) => {
                     r#"<input type="checkbox" class="checkbox checkbox-sm" checked disabled>"#
                         .into()

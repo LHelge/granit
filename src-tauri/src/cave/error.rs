@@ -24,6 +24,9 @@ pub enum CaveError {
     #[error("Invalid note name: {0}")]
     InvalidName(String),
 
+    #[error("Exhausted slug range for base name: {0}")]
+    SlugExhausted(String),
+
     #[error("Text to replace not found in note")]
     EditNotFound,
 
