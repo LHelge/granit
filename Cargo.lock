@@ -2034,6 +2034,7 @@ dependencies = [
  "chrono",
  "icondata_core",
  "icondata_lu",
+ "icondata_mdi",
  "serde",
  "serde_json",
  "serde_yml",
@@ -2048,6 +2049,7 @@ dependencies = [
  "granit-types",
  "icondata_core",
  "icondata_lu",
+ "icondata_mdi",
  "js-sys",
  "leptos",
  "leptos_icons",
@@ -2417,6 +2419,15 @@ name = "icondata_lu"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f25663a6cc5371e9e33c98bab870f4aa2fd68c88853f1467c8fccfaf112782b1"
+dependencies = [
+ "icondata_core",
+]
+
+[[package]]
+name = "icondata_mdi"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9517acba09219ff7caebd797b2db68f09b3621c6bc848fe9894f2d30e4f6cdb"
 dependencies = [
  "icondata_core",
 ]

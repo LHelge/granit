@@ -12,7 +12,9 @@ pub struct NoteIconEntry {
     pub icon: &'static IconData,
 }
 
-/// Curated subset of Lucide icons suitable for note labelling.
+/// Curated subset of icons suitable for note labelling. Currently the Lucide and Material design icon sets, 
+/// but could be expanded in the future with custom icons or other libraries. For a list of all availible icons:
+/// [icondata](https://carloskiki.github.io/icondata/)
 ///
 /// This is the single source of truth for the icon catalog. To add an icon:
 /// 1. Add a new `NoteIconEntry` row here.
@@ -82,11 +84,13 @@ pub static NOTE_ICONS: &[NoteIconEntry] = &[
     NoteIconEntry { id: "Handshake",      label: "Handshake",       tags: "agreement partnership deal",             icon: icondata_lu::LuHandshake      },
     NoteIconEntry { id: "Headphones",     label: "Headphones",      tags: "audio music listen",                     icon: icondata_lu::LuHeadphones     },
     NoteIconEntry { id: "Heart",          label: "Heart",           tags: "personal love favourite",                icon: icondata_lu::LuHeart          },
+    NoteIconEntry { id: "Hiragana",       label: "Hiragana",        tags: "japanese language character",            icon: icondata_mdi::MdiSyllabaryHiragana},
     NoteIconEntry { id: "Hotel",          label: "Hotel",           tags: "travel accommodation stay",              icon: icondata_lu::LuHotel          },
     NoteIconEntry { id: "House",          label: "House",           tags: "home personal",                          icon: icondata_lu::LuHouse          },
     NoteIconEntry { id: "IceCreamCone",   label: "Ice cream",       tags: "food dessert sweet",                     icon: icondata_lu::LuIceCreamCone   },
     NoteIconEntry { id: "Image",          label: "Image",           tags: "photo picture visual media",             icon: icondata_lu::LuImage          },
     NoteIconEntry { id: "Infinity",       label: "Infinity",        tags: "forever endless loop",                   icon: icondata_lu::LuInfinity       },
+    NoteIconEntry { id: "JapaneseYen",    label: "Japanese yen",    tags: "money currency japan finance",           icon: icondata_lu::LuJapaneseYen    },
     NoteIconEntry { id: "KeyRound",       label: "Key",             tags: "access secret password",                 icon: icondata_lu::LuKeyRound       },
     NoteIconEntry { id: "Keyboard",       label: "Keyboard",        tags: "typing input computer",                  icon: icondata_lu::LuKeyboard       },
     NoteIconEntry { id: "Laptop",         label: "Laptop",          tags: "computer work device",                   icon: icondata_lu::LuLaptop         },
@@ -102,6 +106,7 @@ pub static NOTE_ICONS: &[NoteIconEntry] = &[
     NoteIconEntry { id: "Monitor",        label: "Monitor",         tags: "screen display computer",                icon: icondata_lu::LuMonitor        },
     NoteIconEntry { id: "Music",          label: "Music",           tags: "audio song playlist",                    icon: icondata_lu::LuMusic          },
     NoteIconEntry { id: "Network",        label: "Network",         tags: "connection topology infrastructure",     icon: icondata_lu::LuNetwork        },
+    NoteIconEntry { id: "Package",        label: "Package",         tags: "box container shipping",                 icon: icondata_lu::LuPackage        },
     NoteIconEntry { id: "Paperclip",      label: "Paperclip",       tags: "attachment file document",               icon: icondata_lu::LuPaperclip      },
     NoteIconEntry { id: "PartyPopper",    label: "Party",           tags: "celebration event fun",                  icon: icondata_lu::LuPartyPopper    },
     NoteIconEntry { id: "Pencil",         label: "Pencil",          tags: "write draft edit",                       icon: icondata_lu::LuPencil         },
@@ -113,6 +118,8 @@ pub static NOTE_ICONS: &[NoteIconEntry] = &[
     NoteIconEntry { id: "Rocket",         label: "Rocket",          tags: "project launch startup",                 icon: icondata_lu::LuRocket         },
     NoteIconEntry { id: "Save",           label: "Save",            tags: "disk storage persist file",              icon: icondata_lu::LuSave           },
     NoteIconEntry { id: "School",         label: "School",          tags: "education learning institution",         icon: icondata_lu::LuSchool         },
+    NoteIconEntry { id: "Scooter",        label: "Scooter",         tags: "vehicle transport ride",                 icon: icondata_mdi::MdiScooter        },
+    NoteIconEntry { id: "ScooterElectric",label: "Scooter Electric",tags: "vehicle transport ride",                 icon: icondata_mdi::MdiScooterElectric },
     NoteIconEntry { id: "Section",        label: "Section",         tags: "paragraph structure document",           icon: icondata_lu::LuSection        },
     NoteIconEntry { id: "Settings",       label: "Settings",        tags: "config options preferences",             icon: icondata_lu::LuSettings       },
     NoteIconEntry { id: "Shield",         label: "Shield",          tags: "security protection safety",             icon: icondata_lu::LuShield         },
