@@ -8,6 +8,7 @@ use granit_types::AppConfig;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    init_tracing();
     let config = AppConfig::default();
 
     tauri::Builder::default()
@@ -60,4 +61,18 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Initialize the tracing subscriber. Respects `RUST_LOG`; defaults to
+/// `info` for granit and `warn` for third-party crates.
+fn init_tracing() {
+    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,granit=info,granit_lib=info"));
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_target(false))
+        .init();
 }

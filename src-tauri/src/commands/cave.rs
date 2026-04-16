@@ -2,6 +2,14 @@ use super::AppState;
 use crate::cave::{CaveError, ContentMatch, Document, DocumentMeta, RenderedDocument};
 use crate::markdown::Markdown;
 use granit_types::{TagMap, TodoList, CAVE_NOTES_CHANGED};
+use tauri::Emitter;
+use tracing::warn;
+
+fn notify_notes_changed(app: &tauri::AppHandle) {
+    if let Err(e) = app.emit(CAVE_NOTES_CHANGED, ()) {
+        warn!(event = CAVE_NOTES_CHANGED, error = %e, "failed to emit event");
+    }
+}
 
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let md = Markdown::new(content);
@@ -156,10 +164,9 @@ pub(crate) fn update_note(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    use tauri::Emitter;
     let meta = state
         .with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))?;
-    let _ = app.emit(CAVE_NOTES_CHANGED, ());
+    notify_notes_changed(&app);
     Ok(meta)
 }
 
@@ -214,9 +221,8 @@ pub(crate) fn toggle_todo(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    use tauri::Emitter;
     state.with_cave(|cave| cave.toggle_todo(&slug, line))?;
-    let _ = app.emit(CAVE_NOTES_CHANGED, ());
+    notify_notes_changed(&app);
     Ok(())
 }
 
@@ -227,9 +233,8 @@ pub(crate) fn toggle_todo_by_index(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
-    use tauri::Emitter;
     state.with_cave(|cave| cave.toggle_todo_by_index(&slug, index))?;
-    let _ = app.emit(CAVE_NOTES_CHANGED, ());
+    notify_notes_changed(&app);
     Ok(())
 }
 

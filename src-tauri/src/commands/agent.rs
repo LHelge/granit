@@ -4,8 +4,18 @@ use granit_types::{
     AttachedNote, AGENT_STREAM_CHUNK, AGENT_STREAM_DONE, AGENT_STREAM_ERROR, AGENT_TOOL_CALL,
     CAVE_NOTES_CHANGED,
 };
+use tauri::Emitter;
+use tracing::{debug, info, instrument, warn};
+
+/// Emit a Tauri event and log any send failure at WARN level.
+fn emit<S: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &'static str, payload: S) {
+    if let Err(e) = app.emit(event, payload) {
+        warn!(event, error = %e, "failed to emit event");
+    }
+}
 
 #[tauri::command]
+#[instrument(skip_all, fields(msg_len = msg.len(), attached = attached_notes.len()))]
 pub(crate) async fn send_message(
     msg: String,
     attached_notes: Vec<AttachedNote>,
@@ -13,7 +23,6 @@ pub(crate) async fn send_message(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AgentError> {
     use rig::completion::message::Message;
-    use tauri::Emitter;
 
     state.ensure_agent()?;
     let generation = state.agent_generation();
@@ -24,30 +33,33 @@ pub(crate) async fn send_message(
         a.snapshot()
     };
 
+    debug!(history_len = history.len(), "starting agent stream");
+
     let prompt = agent::build_agent_prompt(&msg, &attached_notes);
     let mut stream = agent_clone
         .stream_with_history(prompt.as_str(), history)
         .await?;
 
-    let app_handle = app.clone();
+    let app_chunks = app.clone();
+    let app_tools = app.clone();
     let response = stream
         .collect_with(
-            |text| {
-                let _ = app.emit(AGENT_STREAM_CHUNK, text);
-            },
-            |item| match item {
+            move |text| emit(&app_chunks, AGENT_STREAM_CHUNK, text),
+            move |item| match item {
                 agent::AgentStreamItem::ToolCall(info) => {
-                    let _ = app_handle.emit(AGENT_TOOL_CALL, &info);
+                    info!(tool = %info.name, "agent tool call");
+                    emit(&app_tools, AGENT_TOOL_CALL, &info);
                 }
                 agent::AgentStreamItem::ToolResult => {
-                    let _ = app_handle.emit(CAVE_NOTES_CHANGED, ());
+                    emit(&app_tools, CAVE_NOTES_CHANGED, ());
                 }
                 _ => {}
             },
         )
         .await
         .inspect_err(|e| {
-            let _ = app.emit(AGENT_STREAM_ERROR, e.to_string());
+            warn!(error = %e, "agent stream failed");
+            emit(&app, AGENT_STREAM_ERROR, e.to_string());
         })?;
 
     {
@@ -62,8 +74,8 @@ pub(crate) async fn send_message(
         }
     }
 
-    let _ = app.emit(AGENT_STREAM_DONE, ());
-    let _ = app.emit(CAVE_NOTES_CHANGED, ());
+    emit(&app, AGENT_STREAM_DONE, ());
+    emit(&app, CAVE_NOTES_CHANGED, ());
     Ok(())
 }
 
