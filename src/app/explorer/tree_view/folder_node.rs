@@ -17,7 +17,8 @@ pub(super) fn FolderNode(
     depth: usize,
 ) -> impl IntoView {
     let ctx = use_tree_ctx();
-    let open = RwSignal::new(true);
+    let folder_path = path.clone();
+    let is_open = Memo::new(move |_| ctx.expanded_folders.get().contains(&folder_path));
     let drag_over = RwSignal::new(false);
 
     let children_views = children
@@ -88,7 +89,17 @@ pub(super) fn FolderNode(
                                 if drag_over.get() { format!("{base} bg-base-content/10") } else { base.to_string() }
                             }
                             style=indent_style.clone()
-                            on:click=move |_| open.update(|v| *v = !*v)
+                            on:click={
+                                let path = path.clone();
+                                move |_| {
+                                    let p = path.clone();
+                                    ctx.expanded_folders.update(|set| {
+                                        if !set.remove(&p) {
+                                            set.insert(p);
+                                        }
+                                    });
+                                }
+                            }
                             on:contextmenu=move |e: MouseEvent| {
                                 e.prevent_default();
                                 e.stop_propagation();
@@ -110,7 +121,7 @@ pub(super) fn FolderNode(
                                 }
                             }
                         >
-                            <span class=move || if open.get() { "inline-flex w-3 h-3 shrink-0 transition-transform rotate-90" } else { "inline-flex w-3 h-3 shrink-0 transition-transform" }>
+                            <span class=move || if is_open.get() { "inline-flex w-3 h-3 shrink-0 transition-transform rotate-90" } else { "inline-flex w-3 h-3 shrink-0 transition-transform" }>
                                 <Icon icon=icondata_lu::LuChevronRight width="100%" height="100%"/>
                             </span>
                             <span class="inline-flex w-3.5 h-3.5 shrink-0 text-warning">
@@ -122,7 +133,7 @@ pub(super) fn FolderNode(
                     .into_any()
                 }
             }}
-            <ul class=move || if open.get() { "" } else { "hidden" }>
+            <ul class=move || if is_open.get() { "" } else { "hidden" }>
                 {children_views}
             </ul>
         </li>
