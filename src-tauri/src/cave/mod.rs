@@ -277,6 +277,11 @@ impl Cave {
         &self.path
     }
 
+    /// Slug → absolute path map for all notes in the cave.
+    pub(crate) fn note_paths(&self) -> &HashMap<String, PathBuf> {
+        &self.notes
+    }
+
     /// Set the slug of the note currently open in the editor.
     pub fn set_active_slug(&mut self, slug: Option<String>) {
         self.active_slug = slug;

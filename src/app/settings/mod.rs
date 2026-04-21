@@ -8,8 +8,8 @@ use crate::app::components::modal::Modal;
 use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
 use granit_types::{
-    AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, ToolInfo, ToolsConfig,
-    WebFetchConfig, WebSearchConfig,
+    AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, RagConfig, ToolInfo,
+    ToolsConfig, WebFetchConfig, WebSearchConfig,
 };
 use leptos::prelude::*;
 use markdown::MarkdownSettings;
@@ -138,6 +138,10 @@ pub(super) struct SettingsForm {
     pub web_search_api_key: String,
     pub web_search_max_results: usize,
     pub web_fetch_max_output_chars: usize,
+    // RAG
+    pub rag_enabled: bool,
+    pub rag_top_n: usize,
+    pub rag_embedding_model: Option<String>,
     // Theme
     pub theme: String,
     // Available tools (loaded async, read-only after init)
@@ -180,6 +184,9 @@ impl SettingsForm {
                 .unwrap_or_default(),
             web_search_max_results: config.agent.tool_config.web_search.max_results,
             web_fetch_max_output_chars: config.agent.tool_config.web_fetch.max_output_chars,
+            rag_enabled: config.agent.rag.enabled,
+            rag_top_n: config.agent.rag.top_n,
+            rag_embedding_model: config.agent.rag.embedding_model.clone(),
             theme: config.theme.clone(),
             available_tools: Vec::new(),
             system_fonts: Vec::new(),
@@ -308,6 +315,11 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 system_prompt,
                 disabled_tools: f.disabled_tools,
                 tool_config,
+                rag: RagConfig {
+                    enabled: f.rag_enabled,
+                    top_n: f.rag_top_n,
+                    embedding_model: f.rag_embedding_model,
+                },
             };
             let mut next_config = config.get_untracked();
             next_config.agent = agent;

@@ -6,6 +6,22 @@ use crate::app::components::{
 use granit_types::default_system_prompt;
 use leptos::prelude::*;
 
+/// Available embedding models for the RAG selector.
+const EMBEDDING_MODELS: &[(&str, &str)] = &[
+    ("default", "AllMiniLM-L6-v2 Quantized (built-in)"),
+    ("AllMiniLML6V2", "AllMiniLM-L6-v2"),
+    ("BGESmallENV15", "BGE Small EN v1.5"),
+    ("BGESmallENV15Q", "BGE Small EN v1.5 (quantized)"),
+    ("BGEBaseENV15", "BGE Base EN v1.5"),
+    ("BGEBaseENV15Q", "BGE Base EN v1.5 (quantized)"),
+    ("BGESmallZHV15", "BGE Small ZH v1.5"),
+    ("NomicEmbedTextV1", "Nomic Embed Text v1"),
+    ("NomicEmbedTextV15", "Nomic Embed Text v1.5"),
+    ("NomicEmbedTextV15Q", "Nomic Embed Text v1.5 (quantized)"),
+    ("MultilingualE5Small", "Multilingual E5 Small"),
+    ("MultilingualE5Large", "Multilingual E5 Large"),
+];
+
 #[component]
 pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     // Derived read signals for the font picker
@@ -104,6 +120,76 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 >
                     "Reset to default"
                 </button>
+            </div>
+
+            <div class="divider my-1" />
+
+            // RAG (embeddings)
+            <div class="space-y-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">"Embeddings (RAG)"</span>
+
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        class="toggle toggle-sm toggle-primary"
+                        prop:checked=move || form.get().rag_enabled
+                        on:change=move |_| {
+                            form.update(|f| f.rag_enabled = !f.rag_enabled);
+                        }
+                    />
+                    <span class="text-xs">"Enable note context for agent"</span>
+                </label>
+
+                {move || {
+                    if !form.get().rag_enabled {
+                        return ().into_any();
+                    }
+                    let current_model = form.get().rag_embedding_model.clone();
+                    view! {
+                        <div class="space-y-2">
+                            <div class="space-y-1">
+                                <label class="label text-xs text-base-content/50" for="ag-rag-topn">"Notes to retrieve per query"</label>
+                                <input
+                                    id="ag-rag-topn"
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    class="input input-bordered input-sm w-20 font-mono text-xs"
+                                    prop:value=move || form.get().rag_top_n.to_string()
+                                    on:input=move |ev| {
+                                        if let Ok(v) = event_target_value(&ev).parse::<usize>() {
+                                            form.update(|f| f.rag_top_n = v);
+                                        }
+                                    }
+                                />
+                            </div>
+                            <div class="space-y-1">
+                                <label class="label text-xs text-base-content/50" for="ag-rag-model">"Embedding model"</label>
+                                <select
+                                    id="ag-rag-model"
+                                    class="select select-bordered select-sm w-full text-xs"
+                                    on:change=move |ev| {
+                                        let val = event_target_value(&ev);
+                                        form.update(|f| {
+                                            f.rag_embedding_model = if val == "default" { None } else { Some(val) };
+                                        });
+                                    }
+                                >
+                                    {EMBEDDING_MODELS.iter().map(|(value, label)| {
+                                        let is_selected = match &current_model {
+                                            None => *value == "default",
+                                            Some(m) => m.as_str() == *value,
+                                        };
+                                        view! {
+                                            <option value=*value selected=is_selected>{*label}</option>
+                                        }
+                                    }).collect_view()}
+                                </select>
+                                <p class="text-xs text-base-content/35 italic">"Changing model will re-embed all notes on next open."</p>
+                            </div>
+                        </div>
+                    }.into_any()
+                }}
             </div>
 
             <div class="divider my-1" />

@@ -2,7 +2,8 @@ use super::store::Store;
 use super::AppState;
 use crate::agent::{self, AgentError};
 use crate::cave::{Cave, CaveError};
-use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
+use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, RagConfig, SidebarConfig};
+use log::warn;
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -46,7 +47,7 @@ fn restore_cave_logic(
         return Ok(RestoreOutcome::InvalidPath);
     }
 
-    let cave = Cave::new(path);
+    let cave = Cave::open(path)?;
     cave.ensure_config()?;
     let config = cave.load_config()?;
     *state.lock_config() = config;
@@ -63,6 +64,14 @@ pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn st
     let outcome = restore_cave_logic(path, &state)?;
     if outcome == RestoreOutcome::InvalidPath {
         store.clear_persisted_active_cave()?;
+    }
+
+    // Build the vector index for RAG if a cave was restored.
+    if outcome == RestoreOutcome::Restored {
+        let rag_config = state.lock_config().agent.rag.clone();
+        if rag_config.enabled {
+            build_vector_index(app, &state, &rag_config);
+        }
     }
 
     Ok(())
@@ -206,6 +215,47 @@ pub(crate) fn save_sidebar_state(
     save_sidebar_state_for_state(state.inner(), sidebar, agent_panel)
 }
 
+/// Resolve paths and build the vector index for RAG, spawning the async
+/// rebuild in the background.
+fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_config: &RagConfig) {
+    let models_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("models");
+    let _ = std::fs::create_dir_all(&models_dir);
+
+    let model_name =
+        crate::agent::vectordb::resolve_model_name(rag_config.embedding_model.as_deref());
+
+    let bundled_model_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("resources/models/all-MiniLM-L6-v2-onnx"))
+        .filter(|d| d.join("model.onnx").exists());
+
+    match crate::agent::vectordb::CaveVectorIndex::new(
+        state.shared_cave(),
+        model_name,
+        &models_dir,
+        bundled_model_dir.as_deref(),
+    ) {
+        Ok(index) => {
+            state.set_vector_index(Some(index.clone()));
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = index.rebuild().await {
+                    warn!("vector index rebuild failed: {e}");
+                }
+            });
+        }
+        Err(e) => {
+            warn!("vector index init failed (RAG disabled): {e}");
+            state.set_vector_index(None);
+        }
+    }
+}
+
 #[tauri::command]
 pub(crate) fn open_cave(
     path: PathBuf,
@@ -222,6 +272,13 @@ pub(crate) fn open_cave(
     *state.lock_config() = config;
     state.set_cave(Some(cave));
     state.reset_agent();
+
+    let rag_config = state.lock_config().agent.rag.clone();
+    if rag_config.enabled {
+        build_vector_index(&app, &state, &rag_config);
+    } else {
+        state.set_vector_index(None);
+    }
 
     let config = state.lock_config();
     Ok(state.ipc_response(&config))
@@ -261,7 +318,7 @@ pub(crate) fn select_model(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::{AgentConfig, ToolsConfig};
+    use granit_types::{AgentConfig, RagConfig, ToolsConfig};
 
     fn test_app_state() -> AppState {
         AppState::new(AppConfig::default())
@@ -307,6 +364,7 @@ mod tests {
             system_prompt: None,
             disabled_tools: Vec::new(),
             tool_config: ToolsConfig::default(),
+            rag: RagConfig::default(),
         }
     }
 
