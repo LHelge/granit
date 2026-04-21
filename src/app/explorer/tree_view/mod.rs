@@ -4,6 +4,8 @@ mod note_node;
 mod rename_input;
 mod tree_model;
 
+use std::collections::HashSet;
+
 use crate::app::{
     editor::{EditOpen, OpenInEdit},
     ipc,
@@ -30,6 +32,7 @@ pub(super) struct TreeCtx {
     pub drag_payload: RwSignal<Option<DragPayload>>,
     pub renaming: RwSignal<Option<RenameTarget>>,
     pub open_in_edit: RwSignal<EditOpen>,
+    pub expanded_folders: RwSignal<HashSet<String>>,
 }
 
 impl TreeCtx {
@@ -70,6 +73,24 @@ impl TreeCtx {
                 });
             }
         }
+    }
+
+    /// Expand all parent folders for a note's relative path so it becomes visible.
+    pub fn expand_path_to(&self, relative_path: &str) {
+        let parts: Vec<&str> = relative_path.split('/').collect();
+        if parts.len() <= 1 {
+            return;
+        }
+        self.expanded_folders.update(|set| {
+            let mut path = String::new();
+            for part in &parts[..parts.len() - 1] {
+                if !path.is_empty() {
+                    path.push('/');
+                }
+                path.push_str(part);
+                set.insert(path.clone());
+            }
+        });
     }
 
     /// Async version of refresh (for use inside spawn_local blocks).
@@ -155,6 +176,7 @@ fn render_node(node: TreeNode, depth: usize) -> impl IntoView {
 #[component]
 pub fn TreeView() -> impl IntoView {
     let app = expect_context::<crate::app::AppCtx>();
+    let expanded_folders: RwSignal<HashSet<String>> = RwSignal::new(HashSet::new());
     let ctx = TreeCtx {
         notes: app.notes,
         folders: app.folders,
@@ -164,8 +186,16 @@ pub fn TreeView() -> impl IntoView {
         drag_payload: RwSignal::new(None),
         renaming: RwSignal::new(None),
         open_in_edit: expect_context::<OpenInEdit>().0,
+        expanded_folders,
     };
     provide_context(ctx);
+
+    // Auto-expand folders leading to the active note.
+    Effect::new(move || {
+        if let Some(note) = ctx.active_note.get() {
+            ctx.expand_path_to(&note.meta.relative_path);
+        }
+    });
 
     view! {
         <div
