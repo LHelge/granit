@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::agent::vectordb::CaveVectorIndex;
 use crate::agent::{Agent, AgentError};
 use crate::cave::{Cave, CaveError};
 use granit_types::AppConfig;
@@ -29,6 +30,7 @@ pub(crate) struct AppState {
     cave: SharedCave,
     agent: Mutex<Option<Agent>>,
     agent_generation: AtomicU64,
+    vector_index: Mutex<Option<CaveVectorIndex>>,
 }
 
 impl AppState {
@@ -38,6 +40,7 @@ impl AppState {
             cave: Arc::new(Mutex::new(None)),
             agent: Mutex::new(None),
             agent_generation: AtomicU64::new(0),
+            vector_index: Mutex::new(None),
         }
     }
 
@@ -47,6 +50,10 @@ impl AppState {
 
     pub(super) fn lock_cave(&self) -> std::sync::MutexGuard<'_, Option<Cave>> {
         self.cave.lock().expect("cave mutex poisoned")
+    }
+
+    pub(super) fn shared_cave(&self) -> SharedCave {
+        self.cave.clone()
     }
 
     pub(super) fn lock_agent(&self) -> std::sync::MutexGuard<'_, Option<Agent>> {
@@ -59,6 +66,20 @@ impl AppState {
 
     pub(super) fn set_cave(&self, cave: Option<Cave>) {
         *self.lock_cave() = cave;
+    }
+
+    pub(super) fn set_vector_index(&self, index: Option<CaveVectorIndex>) {
+        *self
+            .vector_index
+            .lock()
+            .expect("vector_index mutex poisoned") = index;
+    }
+
+    pub(super) fn vector_index(&self) -> Option<CaveVectorIndex> {
+        self.vector_index
+            .lock()
+            .expect("vector_index mutex poisoned")
+            .clone()
     }
 
     pub(super) fn reset_agent(&self) {
@@ -75,7 +96,12 @@ impl AppState {
             return Ok(());
         }
         let agent_config = self.lock_config().agent.clone();
-        *self.lock_agent() = Some(Agent::from_config(&agent_config, self.cave.clone())?);
+        let vector_index = self.vector_index();
+        *self.lock_agent() = Some(Agent::from_config(
+            &agent_config,
+            self.cave.clone(),
+            vector_index,
+        )?);
         Ok(())
     }
 

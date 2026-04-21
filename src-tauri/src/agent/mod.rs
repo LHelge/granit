@@ -1,5 +1,6 @@
 mod error;
 pub(crate) mod tools;
+pub(crate) mod vectordb;
 
 pub(crate) use crate::commands::SharedCave;
 pub use error::AgentError;
@@ -14,6 +15,8 @@ use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
 use rig::providers::{anthropic, mistral, ollama, openai};
 use rig::tool::ToolDyn;
+
+use self::vectordb::CaveVectorIndex;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
@@ -81,7 +84,11 @@ pub struct Agent {
 
 impl Agent {
     /// Build a provider-agnostic agent from the provided config and shared cave handle.
-    pub fn from_config(config: &AgentConfig, cave: SharedCave) -> Result<Self, AgentError> {
+    pub fn from_config(
+        config: &AgentConfig,
+        cave: SharedCave,
+        vector_index: Option<CaveVectorIndex>,
+    ) -> Result<Self, AgentError> {
         if config.providers.is_empty() {
             return Err(AgentError::NoProviders);
         }
@@ -118,19 +125,40 @@ impl Agent {
             "{system_prompt}\n\nToday's date is {}.",
             chrono::Local::now().format("%Y-%m-%d")
         );
+        let rag_top_n = config.rag.top_n;
         let inner = match &entry.provider {
-            ProviderConfig::Ollama { base_url } => {
-                Self::build_ollama(base_url.as_deref(), model, cave_tools, &system_prompt)?
-            }
-            ProviderConfig::Anthropic { api_key } => {
-                Self::build_anthropic(api_key, model, cave_tools, &system_prompt)?
-            }
-            ProviderConfig::Mistral { api_key } => {
-                Self::build_mistral(api_key, model, cave_tools, &system_prompt)?
-            }
-            ProviderConfig::Prisma { api_key } => {
-                Self::build_prisma(api_key, model, cave_tools, &system_prompt)?
-            }
+            ProviderConfig::Ollama { base_url } => Self::build_ollama(
+                base_url.as_deref(),
+                model,
+                cave_tools,
+                &system_prompt,
+                vector_index,
+                rag_top_n,
+            )?,
+            ProviderConfig::Anthropic { api_key } => Self::build_anthropic(
+                api_key,
+                model,
+                cave_tools,
+                &system_prompt,
+                vector_index,
+                rag_top_n,
+            )?,
+            ProviderConfig::Mistral { api_key } => Self::build_mistral(
+                api_key,
+                model,
+                cave_tools,
+                &system_prompt,
+                vector_index,
+                rag_top_n,
+            )?,
+            ProviderConfig::Prisma { api_key } => Self::build_prisma(
+                api_key,
+                model,
+                cave_tools,
+                &system_prompt,
+                vector_index,
+                rag_top_n,
+            )?,
         };
 
         Ok(Self {
@@ -146,6 +174,8 @@ impl Agent {
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
         system_prompt: &str,
+        vector_index: Option<CaveVectorIndex>,
+        rag_top_n: usize,
     ) -> Result<ProviderAgent, AgentError> {
         let base_url = base_url.unwrap_or(DEFAULT_OLLAMA_BASE_URL);
 
@@ -154,13 +184,16 @@ impl Agent {
             .base_url(base_url)
             .build()?;
 
-        let agent = client
+        let mut builder = client
             .agent(model)
             .preamble(system_prompt)
-            .tools(cave_tools)
-            .build();
+            .tools(cave_tools);
 
-        Ok(ProviderAgent::Ollama(agent))
+        if let Some(index) = vector_index {
+            builder = builder.dynamic_context(rag_top_n, index);
+        }
+
+        Ok(ProviderAgent::Ollama(builder.build()))
     }
 
     fn build_anthropic(
@@ -168,16 +201,21 @@ impl Agent {
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
         system_prompt: &str,
+        vector_index: Option<CaveVectorIndex>,
+        rag_top_n: usize,
     ) -> Result<ProviderAgent, AgentError> {
         let client = anthropic::Client::builder().api_key(api_key).build()?;
 
-        let agent = client
+        let mut builder = client
             .agent(model)
             .preamble(system_prompt)
-            .tools(cave_tools)
-            .build();
+            .tools(cave_tools);
 
-        Ok(ProviderAgent::Anthropic(agent))
+        if let Some(index) = vector_index {
+            builder = builder.dynamic_context(rag_top_n, index);
+        }
+
+        Ok(ProviderAgent::Anthropic(builder.build()))
     }
 
     fn build_prisma(
@@ -185,19 +223,24 @@ impl Agent {
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
         system_prompt: &str,
+        vector_index: Option<CaveVectorIndex>,
+        rag_top_n: usize,
     ) -> Result<ProviderAgent, AgentError> {
         let client = openai::CompletionsClient::builder()
             .api_key(api_key)
             .base_url(DEFAULT_PRISMA_BASE_URL)
             .build()?;
 
-        let agent = client
+        let mut builder = client
             .agent(model)
             .preamble(system_prompt)
-            .tools(cave_tools)
-            .build();
+            .tools(cave_tools);
 
-        Ok(ProviderAgent::Prisma(agent))
+        if let Some(index) = vector_index {
+            builder = builder.dynamic_context(rag_top_n, index);
+        }
+
+        Ok(ProviderAgent::Prisma(builder.build()))
     }
 
     fn build_mistral(
@@ -205,16 +248,21 @@ impl Agent {
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
         system_prompt: &str,
+        vector_index: Option<CaveVectorIndex>,
+        rag_top_n: usize,
     ) -> Result<ProviderAgent, AgentError> {
         let client = mistral::Client::builder().api_key(api_key).build()?;
 
-        let agent = client
+        let mut builder = client
             .agent(model)
             .preamble(system_prompt)
-            .tools(cave_tools)
-            .build();
+            .tools(cave_tools);
 
-        Ok(ProviderAgent::Mistral(agent))
+        if let Some(index) = vector_index {
+            builder = builder.dynamic_context(rag_top_n, index);
+        }
+
+        Ok(ProviderAgent::Mistral(builder.build()))
     }
 
     /// Push a message to the conversation history, dropping the oldest
@@ -460,7 +508,9 @@ pub(crate) fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::{AttachedNote, ModelInfo, ProviderConfig, ProviderEntry, ToolsConfig};
+    use granit_types::{
+        AttachedNote, ModelInfo, ProviderConfig, ProviderEntry, RagConfig, ToolsConfig,
+    };
 
     fn empty_cave() -> SharedCave {
         std::sync::Arc::new(std::sync::Mutex::new(None))
@@ -481,6 +531,7 @@ mod tests {
             system_prompt: None,
             disabled_tools: Vec::new(),
             tool_config: ToolsConfig::default(),
+            rag: RagConfig::default(),
         }
     }
 
@@ -494,20 +545,21 @@ mod tests {
             system_prompt: None,
             disabled_tools: Vec::new(),
             tool_config: ToolsConfig::default(),
+            rag: RagConfig::default(),
         }
     }
 
     #[tokio::test]
     async fn agent_builds_from_default_config() {
         let config = AgentConfig::default();
-        let agent = Agent::from_config(&config, empty_cave());
+        let agent = Agent::from_config(&config, empty_cave(), None);
         assert!(agent.is_ok(), "Agent should build without error");
     }
 
     #[tokio::test]
     async fn agent_builds_with_custom_base_url() {
         let config = ollama_config(Some("http://192.168.1.10:11434"));
-        let agent = Agent::from_config(&config, empty_cave());
+        let agent = Agent::from_config(&config, empty_cave(), None);
         assert!(agent.is_ok(), "Agent should build with a custom base URL");
     }
 
@@ -522,8 +574,9 @@ mod tests {
             system_prompt: None,
             disabled_tools: Vec::new(),
             tool_config: ToolsConfig::default(),
+            rag: RagConfig::default(),
         };
-        let result = Agent::from_config(&config, empty_cave());
+        let result = Agent::from_config(&config, empty_cave(), None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -536,7 +589,7 @@ mod tests {
     async fn selected_provider_out_of_range_returns_error() {
         let mut config = ollama_config(None);
         config.selected_provider = 5;
-        let result = Agent::from_config(&config, empty_cave());
+        let result = Agent::from_config(&config, empty_cave(), None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -553,7 +606,7 @@ mod tests {
                 api_key: "test-key-123".to_string(),
             },
         });
-        let result = Agent::from_config(&config, empty_cave());
+        let result = Agent::from_config(&config, empty_cave(), None);
         assert!(result.is_ok(), "Agent should build with Anthropic API key");
     }
 
@@ -565,7 +618,7 @@ mod tests {
                 api_key: "test-key-456".to_string(),
             },
         });
-        let result = Agent::from_config(&config, empty_cave());
+        let result = Agent::from_config(&config, empty_cave(), None);
         assert!(result.is_ok(), "Agent should build with Mistral API key");
     }
 
@@ -577,7 +630,7 @@ mod tests {
                 api_key: "test-key-789".to_string(),
             },
         });
-        let result = Agent::from_config(&config, empty_cave());
+        let result = Agent::from_config(&config, empty_cave(), None);
         assert!(result.is_ok(), "Agent should build with Prisma API key");
     }
 

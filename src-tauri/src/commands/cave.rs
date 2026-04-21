@@ -10,6 +10,24 @@ fn render_markdown_for_state(state: &AppState, content: &str) -> String {
         .unwrap_or_else(|_| md.render_html())
 }
 
+/// Spawn a background task to update the embedding for a note.
+fn spawn_index_update(state: &AppState, slug: String) {
+    if let Some(index) = state.vector_index() {
+        tauri::async_runtime::spawn(async move {
+            index.update_note(&slug).await;
+        });
+    }
+}
+
+/// Spawn a background task to remove the embedding for a deleted note.
+fn spawn_index_remove(state: &AppState, slug: String) {
+    if let Some(index) = state.vector_index() {
+        tauri::async_runtime::spawn(async move {
+            index.remove_note(&slug).await;
+        });
+    }
+}
+
 #[tauri::command]
 pub(crate) fn create_note(
     name: String,
@@ -17,13 +35,15 @@ pub(crate) fn create_note(
     template: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| {
+    let meta = state.with_cave(|cave| {
         cave.create_note(
             &name,
             folder.as_deref().map(std::path::Path::new),
             template.as_deref(),
         )
-    })
+    })?;
+    spawn_index_update(state.inner(), meta.slug.clone());
+    Ok(meta)
 }
 
 #[tauri::command]
@@ -144,6 +164,7 @@ pub(crate) fn save_note(
 ) -> Result<DocumentMeta, CaveError> {
     use tauri::Emitter;
     let meta = state.with_cave(|cave| cave.save_note(&name, &content))?;
+    spawn_index_update(state.inner(), meta.slug.clone());
     let _ = app.emit("cave:notes-changed", ());
     Ok(meta)
 }
@@ -163,7 +184,10 @@ pub(crate) fn rename_note(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.rename_note(&old_name, &new_name))
+    spawn_index_remove(state.inner(), old_name.clone());
+    let meta = state.with_cave(|cave| cave.rename_note(&old_name, &new_name))?;
+    spawn_index_update(state.inner(), meta.slug.clone());
+    Ok(meta)
 }
 
 #[tauri::command]
@@ -188,8 +212,12 @@ pub(crate) fn update_note(
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
     use tauri::Emitter;
+    if old_name != new_name {
+        spawn_index_remove(state.inner(), old_name.clone());
+    }
     let meta = state
         .with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))?;
+    spawn_index_update(state.inner(), meta.slug.clone());
     let _ = app.emit("cave:notes-changed", ());
     Ok(meta)
 }
@@ -217,7 +245,9 @@ pub(crate) fn rename_folder(
 
 #[tauri::command]
 pub(crate) fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
-    state.with_cave(|cave| cave.delete_note(&name))
+    state.with_cave(|cave| cave.delete_note(&name))?;
+    spawn_index_remove(state.inner(), name);
+    Ok(())
 }
 
 #[tauri::command]

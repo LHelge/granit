@@ -37,6 +37,10 @@ reqwest = { version = "0.13.2", features = ["json", "query"] }
 html-to-markdown-rs = "3.1.0"
 tauri-plugin-store = "2.4.2"
 tera = "1.20.1"
+log = "0.4"
+fastembed = "5"
+rkyv = { version = "0.8", features = ["alloc"] }
+tauri-plugin-log = "2"
 
 [dev-dependencies]
 tempfile = "3.27.0"

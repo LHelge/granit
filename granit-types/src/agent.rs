@@ -172,6 +172,41 @@ pub struct ToolsConfig {
     pub web_fetch: WebFetchConfig,
 }
 
+/// RAG (Retrieval-Augmented Generation) configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RagConfig {
+    /// Whether RAG is enabled.
+    #[serde(default = "RagConfig::default_enabled")]
+    pub enabled: bool,
+    /// Number of similar notes to retrieve per agent query.
+    #[serde(default = "RagConfig::default_top_n")]
+    pub top_n: usize,
+    /// fastembed model identifier (e.g. "AllMiniLML6V2").
+    /// When `None`, the built-in default model is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
+}
+
+impl RagConfig {
+    fn default_enabled() -> bool {
+        true
+    }
+
+    fn default_top_n() -> usize {
+        5
+    }
+}
+
+impl Default for RagConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Self::default_enabled(),
+            top_n: Self::default_top_n(),
+            embedding_model: None,
+        }
+    }
+}
+
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
@@ -199,6 +234,9 @@ pub struct AgentConfig {
     /// Per-tool configuration (API keys, limits, etc.).
     #[serde(default)]
     pub tool_config: ToolsConfig,
+    /// RAG configuration.
+    #[serde(default)]
+    pub rag: RagConfig,
 }
 
 fn default_max_history() -> usize {
@@ -259,6 +297,7 @@ impl Default for AgentConfig {
             system_prompt: None,
             disabled_tools: Vec::new(),
             tool_config: ToolsConfig::default(),
+            rag: RagConfig::default(),
         }
     }
 }
@@ -493,6 +532,7 @@ mod tests {
                     max_output_chars: 50_000,
                 },
             },
+            rag: RagConfig::default(),
         };
 
         let yaml = serde_yml::to_string(&config).unwrap();
