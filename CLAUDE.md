@@ -29,10 +29,23 @@ cargo test -p granit <name>          # single backend test by name
 wasm-pack test --headless --firefox  # frontend WASM tests
 
 cargo fmt --all
-cargo clippy --workspace
+cargo clippy -p granit --all-targets -- -D warnings              # backend lints
+cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings  # frontend lints
 ```
 
+The frontend is a `wasm32-unknown-unknown` crate, so it must be clippy-checked against that target — a plain `cargo clippy --workspace` fails on it. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs fmt, both clippy invocations, `cargo test -p granit`, and the wasm-pack tests.
+
 `npm run build` must run before the frontend can load — Trunk does not produce `build/styles.css` or `build/codemirror.js`. Use `npm run watch:css` / `npm run watch:js` during frontend iteration.
+
+### Git hooks
+
+Version-controlled hooks live in `.githooks/`. Activate them once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`pre-commit` runs `cargo fmt --all -- --check`; `pre-push` runs both clippy invocations and `cargo test -p granit`. They mirror CI so failures are caught before pushing.
 
 ## Architecture: backend-owned state
 

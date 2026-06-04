@@ -1,0 +1,19 @@
+#!/bin/sh
+# Granit pre-push hook: clippy (backend + frontend) and backend tests.
+# Mirrors the clippy/test steps in .github/workflows/ci.yml.
+#
+# The frontend WASM tests (wasm-pack) are intentionally left to CI — they
+# require a headless browser and are too slow for a local push hook.
+
+set -e
+
+echo "pre-push: cargo clippy -p granit (backend)"
+cargo clippy -p granit --all-targets -- -D warnings
+
+echo "pre-push: cargo clippy -p granit-ui (frontend, wasm32)"
+cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
+
+echo "pre-push: cargo test -p granit"
+cargo test -p granit
+
+echo "✓ pre-push checks passed"
