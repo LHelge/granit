@@ -1,10 +1,12 @@
 mod messages;
+mod mode_selector;
 mod model_selector;
 mod provider_selector;
 mod streaming;
 
 use crate::app::{components::icons::Icon, ipc, AppCtx};
 use messages::{DisplayItem, MessageList};
+use mode_selector::ModeSelector;
 use model_selector::ModelSelector;
 use provider_selector::ProviderSelector;
 
@@ -87,9 +89,10 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
             .map(|e| e.provider.provider_type().to_string())
             .unwrap_or_default();
         let model = cfg.agent.selected_model.clone().unwrap_or_default();
-        (provider, model)
+        let mode = format!("{:?}", cfg.agent.mode);
+        (provider, model, mode)
     });
-    let prev_identity: RwSignal<Option<(String, String)>> = RwSignal::new(None);
+    let prev_identity: RwSignal<Option<(String, String, String)>> = RwSignal::new(None);
     Effect::new(move |_| {
         let current = agent_identity.get();
         let prev = prev_identity.get_untracked();
@@ -331,6 +334,9 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                             <ModelSelector
                                 models=models
                                 models_loading=models_loading
+                                disabled=Signal::derive(move || is_streaming.get())
+                            />
+                            <ModeSelector
                                 disabled=Signal::derive(move || is_streaming.get())
                             />
                             <div class="flex-1" />

@@ -113,6 +113,14 @@ pub async fn select_model(model_id: &str) -> Result<AppConfig, String> {
     invoke_cmd("select_model", &Args { model_id }).await
 }
 
+pub async fn select_mode(mode: granit_types::AgentMode) -> Result<AppConfig, String> {
+    #[derive(Serialize)]
+    struct Args {
+        mode: granit_types::AgentMode,
+    }
+    invoke_cmd("select_mode", &Args { mode }).await
+}
+
 // ── Cave ───────────────────────────────────────────────────────────
 
 pub async fn open_cave(path: &str) -> Result<AppConfig, String> {

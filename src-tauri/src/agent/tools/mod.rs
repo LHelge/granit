@@ -6,7 +6,7 @@ mod web;
 mod writing;
 
 use crate::commands::{with_shared_cave, SharedCave};
-use granit_types::AgentConfig;
+use granit_types::{AgentConfig, AgentMode};
 pub use navigation::{ListFoldersTool, ListNotesTool, SearchContentTool, SearchNotesTool};
 pub use organization::{
     CreateFolderTool, DeleteFolderTool, DeleteNoteTool, MoveFolderTool, MoveNoteTool,
@@ -119,10 +119,32 @@ pub fn tool_info_list() -> Vec<granit_types::ToolInfo> {
         .collect()
 }
 
-/// Build the full toolset from config, excluding disabled tools.
+/// Tools that modify the cave. Excluded in Ask mode.
+const MUTATING_TOOLS: &[&str] = &[
+    "create_note",
+    "update_note",
+    "edit_note",
+    "delete_note",
+    "move_note",
+    "rename_note",
+    "create_folder",
+    "rename_folder",
+    "move_folder",
+    "delete_folder",
+    "open_daily_note",
+    "toggle_todo",
+];
+
+/// Build the full toolset from config, excluding disabled tools
+/// and mutating tools when in Ask mode.
 pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn ToolDyn>> {
     let disabled = &config.disabled_tools;
+    let ask_mode = config.mode == AgentMode::Ask;
     let mut tools: Vec<Box<dyn ToolDyn>> = Vec::new();
+
+    let is_excluded = |name: &str| -> bool {
+        disabled.iter().any(|d| d == name) || (ask_mode && MUTATING_TOOLS.contains(&name))
+    };
 
     // Cave tools
     type CaveToolBuilder = fn(SharedCave) -> Box<dyn ToolDyn>;
@@ -152,18 +174,18 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn Tool
     ];
 
     for (name, build) in cave_entries {
-        if !disabled.iter().any(|d| d == name) {
+        if !is_excluded(name) {
             tools.push(build(cave.clone()));
         }
     }
 
     // Web fetch — always available (no API key needed)
-    if !disabled.iter().any(|d| d == "web_fetch") {
+    if !is_excluded("web_fetch") {
         tools.push(Box::new(WebFetchTool::new(&config.tool_config.web_fetch)));
     }
 
     // Web search — requires a Brave API key
-    if !disabled.iter().any(|d| d == "web_search") {
+    if !is_excluded("web_search") {
         if let Some(api_key) = &config.tool_config.web_search.api_key {
             if !api_key.trim().is_empty() {
                 tools.push(Box::new(WebSearchTool::new(&config.tool_config.web_search)));
