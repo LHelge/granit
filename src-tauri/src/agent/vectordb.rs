@@ -347,12 +347,10 @@ impl CaveVectorIndex {
         let count = cache.entries.len();
         let path = self.inner.cache_path.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&cache).map_err(|e| {
-                format!("rkyv serialization failed: {e}")
-            })?;
-            std::fs::write(&path, &bytes).map_err(|e| {
-                format!("writing {}: {e}", path.display())
-            })?;
+            let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&cache)
+                .map_err(|e| format!("rkyv serialization failed: {e}"))?;
+            std::fs::write(&path, &bytes)
+                .map_err(|e| format!("writing {}: {e}", path.display()))?;
             Ok::<usize, String>(bytes.len())
         })
         .await;
