@@ -379,22 +379,10 @@ impl VectorStoreIndex for CaveVectorIndex {
         &self,
         req: VectorSearchRequest<Self::Filter>,
     ) -> Result<Vec<(f64, String, T)>, VectorStoreError> {
-        let query = req.query();
-        let n = req.samples() as usize;
-        debug!("RAG query (top {n}): {query}");
-
         let results = self
-            .search(query, n, req.threshold())
+            .search(req.query(), req.samples() as usize, req.threshold())
             .await
             .map_err(|e| VectorStoreError::DatastoreError(Box::new(e)))?;
-
-        if results.is_empty() {
-            debug!("RAG: no matching notes found");
-        } else {
-            for (score, slug) in &results {
-                debug!("RAG: {slug} (score {score:.4})");
-            }
-        }
 
         let mut out = Vec::with_capacity(results.len());
         for (score, slug) in results {
