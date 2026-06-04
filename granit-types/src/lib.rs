@@ -5,7 +5,7 @@ mod icons;
 mod metadata;
 
 pub use agent::{
-    default_system_prompt, AgentConfig, AttachedNote, ChatMessage, ChatRole, ModelInfo,
+    default_system_prompt, AgentConfig, AgentMode, AttachedNote, ChatMessage, ChatRole, ModelInfo,
     ProviderConfig, ProviderEntry, ProviderInfo, RagConfig, ToolCallInfo, ToolInfo, ToolsConfig,
     WebFetchConfig, WebSearchConfig,
 };

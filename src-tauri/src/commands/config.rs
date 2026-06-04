@@ -315,10 +315,25 @@ pub(crate) fn select_model(
     select_model_for_state(state.inner(), model_id)
 }
 
+#[tauri::command]
+pub(crate) fn select_mode(
+    mode: granit_types::AgentMode,
+    state: tauri::State<AppState>,
+) -> Result<AppConfig, ConfigError> {
+    let response = {
+        let mut config = state.lock_config();
+        config.agent.mode = mode;
+        config.clone()
+    };
+    state.save_config_to_cave(&response)?;
+    state.reset_agent();
+    Ok(state.ipc_response(&response))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use granit_types::{AgentConfig, RagConfig, ToolsConfig};
+    use granit_types::{AgentConfig, AgentMode, RagConfig, ToolsConfig};
 
     fn test_app_state() -> AppState {
         AppState::new(AppConfig::default())
@@ -359,6 +374,7 @@ mod tests {
             ],
             selected_provider: 0,
             selected_model: Some("qwen3.5:9b".into()),
+            mode: AgentMode::default(),
             max_history: 100,
             max_turns: 10,
             system_prompt: None,

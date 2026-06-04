@@ -63,6 +63,7 @@ pub fn run() {
             select_provider,
             list_models,
             select_model,
+            select_mode,
             send_message,
             clear_chat,
             list_tools,

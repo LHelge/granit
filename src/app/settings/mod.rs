@@ -310,6 +310,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 providers,
                 selected_provider,
                 selected_model,
+                mode: config.get_untracked().agent.mode,
                 max_history: f.max_history,
                 max_turns: f.max_turns,
                 system_prompt,

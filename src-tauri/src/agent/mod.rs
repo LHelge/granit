@@ -10,7 +10,7 @@ use granit_types::AttachedNote;
 
 use std::collections::{HashSet, VecDeque};
 
-use granit_types::{AgentConfig, ProviderConfig, ToolCallInfo};
+use granit_types::{AgentConfig, AgentMode, ProviderConfig, ToolCallInfo};
 use rig::client::{CompletionClient, Nothing};
 use rig::completion::message::Message;
 use rig::providers::{anthropic, mistral, ollama, openai};
@@ -126,6 +126,11 @@ impl Agent {
             chrono::Local::now().format("%Y-%m-%d")
         );
         let rag_top_n = config.rag.top_n;
+        // RAG context is only used in Ask mode.
+        let vector_index = match config.mode {
+            AgentMode::Ask => vector_index,
+            AgentMode::Agent => None,
+        };
         let inner = match &entry.provider {
             ProviderConfig::Ollama { base_url } => Self::build_ollama(
                 base_url.as_deref(),
@@ -509,7 +514,7 @@ pub(crate) fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> 
 mod tests {
     use super::*;
     use granit_types::{
-        AttachedNote, ModelInfo, ProviderConfig, ProviderEntry, RagConfig, ToolsConfig,
+        AgentMode, AttachedNote, ModelInfo, ProviderConfig, ProviderEntry, RagConfig, ToolsConfig,
     };
 
     fn empty_cave() -> SharedCave {
@@ -526,6 +531,7 @@ mod tests {
             }],
             selected_provider: 0,
             selected_model: None,
+            mode: AgentMode::default(),
             max_history: 100,
             max_turns: 10,
             system_prompt: None,
@@ -540,6 +546,7 @@ mod tests {
             providers: vec![entry],
             selected_provider: 0,
             selected_model: None,
+            mode: AgentMode::default(),
             max_history: 100,
             max_turns: 10,
             system_prompt: None,
@@ -569,6 +576,7 @@ mod tests {
             providers: vec![],
             selected_provider: 0,
             selected_model: None,
+            mode: AgentMode::default(),
             max_history: 100,
             max_turns: 10,
             system_prompt: None,

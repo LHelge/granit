@@ -19,6 +19,28 @@ pub fn default_system_prompt() -> String {
     )
 }
 
+/// Agent operating mode.
+///
+/// Controls which capabilities (tools, RAG) are available per interaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentMode {
+    /// Full tool access, no RAG context.
+    #[default]
+    Agent,
+    /// Read-only tools + RAG context for Q&A.
+    Ask,
+}
+
+impl AgentMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Agent => "Agent",
+            Self::Ask => "Ask",
+        }
+    }
+}
+
 /// Tagged provider configuration.
 ///
 /// Each variant carries only the fields relevant to that provider.
@@ -217,6 +239,9 @@ pub struct AgentConfig {
     /// Last-used model ID. If `None`, the agent uses a provider-specific default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_model: Option<String>,
+    /// Current operating mode (Agent or Ask).
+    #[serde(default)]
+    pub mode: AgentMode,
     /// Maximum number of messages to retain in chat history.
     /// Oldest messages are dropped when the limit is exceeded.
     #[serde(default = "default_max_history")]
@@ -292,6 +317,7 @@ impl Default for AgentConfig {
             providers: Self::default_providers(),
             selected_provider: 0,
             selected_model: None,
+            mode: AgentMode::default(),
             max_history: default_max_history(),
             max_turns: default_max_turns(),
             system_prompt: None,
