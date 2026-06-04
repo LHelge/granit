@@ -2,10 +2,7 @@ use crate::app::{components::icons::Icon, ipc, AppCtx};
 use granit_types::AgentMode;
 use leptos::{prelude::*, task::spawn_local};
 
-const MODES: &[(AgentMode, &str)] = &[
-    (AgentMode::Agent, "Agent"),
-    (AgentMode::Ask, "Ask"),
-];
+const MODES: &[(AgentMode, &str)] = &[(AgentMode::Agent, "Agent"), (AgentMode::Ask, "Ask")];
 
 #[component]
 pub fn ModeSelector(#[prop(into)] disabled: Signal<bool>) -> impl IntoView {
