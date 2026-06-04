@@ -472,19 +472,15 @@ pub fn Editor() -> impl IntoView {
         }
         match ev.key().as_str() {
             // Cmd/Ctrl+E → enter edit mode
-            "e" => {
-                if has_document() && !ctx.editing.get_untracked() {
-                    ev.prevent_default();
-                    ctx.editing.set(true);
-                    ctx.focus_content.set(true);
-                }
+            "e" if has_document() && !ctx.editing.get_untracked() => {
+                ev.prevent_default();
+                ctx.editing.set(true);
+                ctx.focus_content.set(true);
             }
             // Cmd/Ctrl+S → save and return to preview
-            "s" => {
-                if ctx.editing.get_untracked() {
-                    ev.prevent_default();
-                    ctx.save();
-                }
+            "s" if ctx.editing.get_untracked() => {
+                ev.prevent_default();
+                ctx.save();
             }
             _ => {}
         }

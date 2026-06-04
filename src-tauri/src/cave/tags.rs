@@ -27,7 +27,7 @@ impl Cave {
 
         // Sort notes within each tag by slug (case-insensitive)
         for notes in tags.values_mut() {
-            notes.sort_by(|a, b| a.slug.to_lowercase().cmp(&b.slug.to_lowercase()));
+            notes.sort_by_key(|n| n.slug.to_lowercase());
         }
 
         Ok(TagMap { tags })
