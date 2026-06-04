@@ -11,7 +11,10 @@ on:
 jobs:
   ci:
     name: Check (fmt, clippy, test)
-    runs-on: ubuntu-22.04
+    # Needs glibc >= 2.38: the onnxruntime binary pulled in via
+    # fastembed -> ort references __isoc23_strtol* symbols absent from
+    # older glibc, so linking the test binary failed on ubuntu-22.04.
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
