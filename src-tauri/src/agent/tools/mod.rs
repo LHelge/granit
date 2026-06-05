@@ -13,7 +13,7 @@ pub use organization::{
     RenameFolderTool, RenameNoteTool,
 };
 pub use reading::ReadNoteTool;
-use rig::tool::ToolDyn;
+use rig_core::tool::ToolDyn;
 pub use todos::{ListTodosTool, ToggleTodoTool};
 pub use web::{WebFetchTool, WebSearchTool};
 pub use writing::{CreateNoteTool, EditNoteTool, OpenDailyNoteTool, UpdateNoteTool};

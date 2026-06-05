@@ -18,14 +18,14 @@ pub enum AgentError {
     Embedding(String),
 }
 
-impl From<rig::http_client::Error> for AgentError {
-    fn from(e: rig::http_client::Error) -> Self {
+impl From<rig_core::http_client::Error> for AgentError {
+    fn from(e: rig_core::http_client::Error) -> Self {
         Self::Build(e.to_string())
     }
 }
 
-impl From<rig::model::ModelListingError> for AgentError {
-    fn from(e: rig::model::ModelListingError) -> Self {
+impl From<rig_core::model::ModelListingError> for AgentError {
+    fn from(e: rig_core::model::ModelListingError) -> Self {
         Self::ModelListing(e.to_string())
     }
 }

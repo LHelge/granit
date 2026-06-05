@@ -4,17 +4,17 @@ pub(crate) mod vectordb;
 
 pub(crate) use crate::commands::SharedCave;
 pub use error::AgentError;
-use rig::message::ToolCall;
+use rig_core::message::ToolCall;
 
 use granit_types::AttachedNote;
 
 use std::collections::{HashSet, VecDeque};
 
 use granit_types::{AgentConfig, AgentMode, ProviderConfig, ToolCallInfo};
-use rig::client::{CompletionClient, Nothing};
-use rig::completion::message::Message;
-use rig::providers::{anthropic, mistral, ollama, openai};
-use rig::tool::ToolDyn;
+use rig_core::client::{CompletionClient, Nothing};
+use rig_core::completion::message::Message;
+use rig_core::providers::{anthropic, mistral, ollama, openai};
+use rig_core::tool::ToolDyn;
 
 use self::vectordb::CaveVectorIndex;
 
@@ -23,10 +23,10 @@ use granit_types::default_system_prompt;
 
 /// Provider-agnostic agent wrapping different rig-core agent types.
 pub(crate) enum ProviderAgent {
-    Ollama(rig::agent::Agent<ollama::CompletionModel>),
-    Anthropic(rig::agent::Agent<anthropic::completion::CompletionModel>),
-    Mistral(rig::agent::Agent<mistral::CompletionModel>),
-    OpenAiCompatible(rig::agent::Agent<openai::completion::CompletionModel>),
+    Ollama(rig_core::agent::Agent<ollama::CompletionModel>),
+    Anthropic(rig_core::agent::Agent<anthropic::completion::CompletionModel>),
+    Mistral(rig_core::agent::Agent<mistral::CompletionModel>),
+    OpenAiCompatible(rig_core::agent::Agent<openai::completion::CompletionModel>),
 }
 
 /// Dispatch a single expression over all `ProviderAgent` variants.
@@ -302,11 +302,11 @@ impl Agent {
         history: Vec<Message>,
     ) -> Result<AgentStream, AgentError> {
         use futures::StreamExt;
-        use rig::streaming::StreamingPrompt;
+        use rig_core::streaming::StreamingPrompt;
 
-        fn map_item<R>(item: rig::agent::MultiTurnStreamItem<R>) -> AgentStreamItem {
-            use rig::agent::MultiTurnStreamItem;
-            use rig::streaming::{StreamedAssistantContent, StreamedUserContent};
+        fn map_item<R>(item: rig_core::agent::MultiTurnStreamItem<R>) -> AgentStreamItem {
+            use rig_core::agent::MultiTurnStreamItem;
+            use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent};
 
             match item {
                 MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(t)) => {
@@ -344,7 +344,7 @@ impl Agent {
 pub(crate) async fn list_models(
     provider: &ProviderConfig,
 ) -> Result<Vec<granit_types::ModelInfo>, AgentError> {
-    use rig::client::ModelListingClient;
+    use rig_core::client::ModelListingClient;
 
     let models = match provider {
         ProviderConfig::Ollama { base_url } => {

@@ -9,7 +9,7 @@ pub(crate) async fn send_message(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AgentError> {
-    use rig::completion::message::Message;
+    use rig_core::completion::message::Message;
     use tauri::Emitter;
 
     state.ensure_agent()?;

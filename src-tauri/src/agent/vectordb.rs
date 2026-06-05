@@ -367,8 +367,8 @@ impl CaveVectorIndex {
 // VectorStoreIndex implementation
 // ---------------------------------------------------------------------------
 
-use rig::vector_store::request::{Filter, VectorSearchRequest};
-use rig::vector_store::{VectorStoreError, VectorStoreIndex};
+use rig_core::vector_store::request::{Filter, VectorSearchRequest};
+use rig_core::vector_store::{VectorStoreError, VectorStoreIndex};
 
 impl VectorStoreIndex for CaveVectorIndex {
     type Filter = Filter<serde_json::Value>;
