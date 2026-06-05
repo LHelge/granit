@@ -65,8 +65,11 @@ pub enum ProviderConfig {
     Mistral {
         api_key: String,
     },
-    Prisma {
+    /// Any OpenAI/ChatGPT-compatible endpoint, configured with a custom base URL.
+    #[serde(rename = "openai")]
+    OpenAiCompatible {
         api_key: String,
+        base_url: String,
     },
 }
 
@@ -77,7 +80,7 @@ impl ProviderConfig {
             Self::Ollama { .. } => "qwen3.5:9b",
             Self::Anthropic { .. } => "claude-sonnet-4-6",
             Self::Mistral { .. } => "mistral-small-latest",
-            Self::Prisma { .. } => "prisma_default",
+            Self::OpenAiCompatible { .. } => "gpt-4o-mini",
         }
     }
 
@@ -87,7 +90,7 @@ impl ProviderConfig {
             Self::Ollama { .. } => "ollama",
             Self::Anthropic { .. } => "anthropic",
             Self::Mistral { .. } => "mistral",
-            Self::Prisma { .. } => "prisma",
+            Self::OpenAiCompatible { .. } => "openai",
         }
     }
 }
@@ -126,7 +129,9 @@ impl ProviderEntry {
             }
             ProviderConfig::Anthropic { .. } => "Anthropic".to_string(),
             ProviderConfig::Mistral { .. } => "Mistral".to_string(),
-            ProviderConfig::Prisma { .. } => "Prisma".to_string(),
+            ProviderConfig::OpenAiCompatible { base_url, .. } => {
+                format!("OpenAI ({base_url})")
+            }
         }
     }
 
@@ -135,7 +140,13 @@ impl ProviderEntry {
             ProviderConfig::Ollama { .. } => Ok(()),
             ProviderConfig::Anthropic { api_key } => validate_api_key("Anthropic", api_key),
             ProviderConfig::Mistral { api_key } => validate_api_key("Mistral", api_key),
-            ProviderConfig::Prisma { api_key } => validate_api_key("Prisma", api_key),
+            ProviderConfig::OpenAiCompatible { api_key, base_url } => {
+                validate_api_key("OpenAI", api_key)?;
+                if base_url.trim().is_empty() {
+                    return Err("OpenAI provider requires a base URL".to_string());
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -453,8 +464,9 @@ mod tests {
             },
             ProviderEntry {
                 name: None,
-                provider: ProviderConfig::Prisma {
-                    api_key: "prisma-test".into(),
+                provider: ProviderConfig::OpenAiCompatible {
+                    api_key: "openai-test".into(),
+                    base_url: "https://api.openai.com/v1".into(),
                 },
             },
         ];
@@ -462,6 +474,25 @@ mod tests {
         let yaml = serde_yml::to_string(&entries).unwrap();
         let parsed: Vec<ProviderEntry> = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed, entries);
+    }
+
+    #[test]
+    fn openai_compatible_serializes_with_openai_tag() {
+        let entry = ProviderEntry {
+            name: Some("Local LLM".into()),
+            provider: ProviderConfig::OpenAiCompatible {
+                api_key: "sk-test".into(),
+                base_url: "http://localhost:1234/v1".into(),
+            },
+        };
+        let yaml = serde_yml::to_string(&entry).unwrap();
+        assert!(yaml.contains("provider: openai"), "got: {yaml}");
+        assert!(yaml.contains("base_url:"));
+        assert!(yaml.contains("api_key:"));
+
+        let parsed: ProviderEntry = serde_yml::from_str(&yaml).unwrap();
+        assert_eq!(parsed, entry);
+        assert_eq!(parsed.provider.provider_type(), "openai");
     }
 
     #[test]
@@ -507,13 +538,14 @@ mod tests {
         };
         assert_eq!(mistral.display_name(), "Mistral");
 
-        let prisma = ProviderEntry {
+        let openai = ProviderEntry {
             name: None,
-            provider: ProviderConfig::Prisma {
+            provider: ProviderConfig::OpenAiCompatible {
                 api_key: "key".into(),
+                base_url: "https://api.openai.com/v1".into(),
             },
         };
-        assert_eq!(prisma.display_name(), "Prisma");
+        assert_eq!(openai.display_name(), "OpenAI (https://api.openai.com/v1)");
     }
 
     #[test]
@@ -545,6 +577,7 @@ mod tests {
             ],
             selected_provider: 1,
             selected_model: Some("claude-sonnet-4-20250514".into()),
+            mode: AgentMode::default(),
             max_history: 50,
             max_turns: 5,
             system_prompt: Some("You are helpful.".into()),

@@ -13,7 +13,6 @@ pub fn ProviderIcon(
         "anthropic" => Some(("/public/claude.svg", false)),
         "ollama" => Some(("/public/ollama.svg", true)),
         "mistral" => Some(("/public/mistral.svg", false)),
-        "prisma" => Some(("/public/prisma.svg", false)),
         "openai" => Some(("/public/openai.svg", true)),
         _ => None,
     };

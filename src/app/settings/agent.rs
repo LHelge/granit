@@ -351,7 +351,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
         ("ollama", "Ollama"),
         ("anthropic", "Anthropic"),
         ("mistral", "Mistral"),
-        ("prisma", "Prisma"),
+        ("openai", "OpenAI"),
     ];
 
     let provider_type = move || {
@@ -489,18 +489,22 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                 </div>
             </div>
 
-            // Base URL (Ollama only)
+            // Base URL (Ollama + OpenAI-compatible)
             <Show when=needs_base_url>
                 <input
                     type="text"
                     class="input input-bordered input-xs w-full"
-                    placeholder="Base URL (default: http://localhost:11434)"
+                    placeholder=move || if provider_type() == "openai" {
+                        "Base URL (e.g. https://api.openai.com/v1)"
+                    } else {
+                        "Base URL (default: http://localhost:11434)"
+                    }
                     prop:value=move || form.get().providers.get(index).map(|p| p.base_url.clone()).unwrap_or_default()
                     on:input=on_base_url_input
                 />
             </Show>
 
-            // API key (Anthropic, Mistral, Prisma)
+            // API key (Anthropic, Mistral, OpenAI-compatible)
             <Show when=needs_api_key>
                 <div class="flex items-center gap-1">
                     <input
