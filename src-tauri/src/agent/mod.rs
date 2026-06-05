@@ -19,7 +19,6 @@ use rig::tool::ToolDyn;
 use self::vectordb::CaveVectorIndex;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
-const DEFAULT_PRISMA_BASE_URL: &str = "https://api.ai.auth.axis.cloud/v1";
 use granit_types::default_system_prompt;
 
 /// Provider-agnostic agent wrapping different rig-core agent types.
@@ -27,7 +26,7 @@ pub(crate) enum ProviderAgent {
     Ollama(rig::agent::Agent<ollama::CompletionModel>),
     Anthropic(rig::agent::Agent<anthropic::completion::CompletionModel>),
     Mistral(rig::agent::Agent<mistral::CompletionModel>),
-    Prisma(rig::agent::Agent<openai::completion::CompletionModel>),
+    OpenAiCompatible(rig::agent::Agent<openai::completion::CompletionModel>),
 }
 
 /// Dispatch a single expression over all `ProviderAgent` variants.
@@ -38,7 +37,7 @@ macro_rules! provider_dispatch {
             ProviderAgent::Ollama($agent) => $body,
             ProviderAgent::Anthropic($agent) => $body,
             ProviderAgent::Mistral($agent) => $body,
-            ProviderAgent::Prisma($agent) => $body,
+            ProviderAgent::OpenAiCompatible($agent) => $body,
         }
     };
 }
@@ -50,7 +49,7 @@ macro_rules! provider_map {
             ProviderAgent::Ollama($agent) => ProviderAgent::Ollama($expr),
             ProviderAgent::Anthropic($agent) => ProviderAgent::Anthropic($expr),
             ProviderAgent::Mistral($agent) => ProviderAgent::Mistral($expr),
-            ProviderAgent::Prisma($agent) => ProviderAgent::Prisma($expr),
+            ProviderAgent::OpenAiCompatible($agent) => ProviderAgent::OpenAiCompatible($expr),
         }
     };
 }
@@ -67,7 +66,7 @@ impl std::fmt::Debug for ProviderAgent {
             Self::Ollama(_) => "Ollama",
             Self::Anthropic(_) => "Anthropic",
             Self::Mistral(_) => "Mistral",
-            Self::Prisma(_) => "Prisma",
+            Self::OpenAiCompatible(_) => "OpenAiCompatible",
         };
         write!(f, "ProviderAgent::{name}")
     }
@@ -156,14 +155,17 @@ impl Agent {
                 vector_index,
                 rag_top_n,
             )?,
-            ProviderConfig::Prisma { api_key } => Self::build_prisma(
-                api_key,
-                model,
-                cave_tools,
-                &system_prompt,
-                vector_index,
-                rag_top_n,
-            )?,
+            ProviderConfig::OpenAiCompatible { api_key, base_url } => {
+                Self::build_openai_compatible(
+                    api_key,
+                    base_url,
+                    model,
+                    cave_tools,
+                    &system_prompt,
+                    vector_index,
+                    rag_top_n,
+                )?
+            }
         };
 
         Ok(Self {
@@ -223,8 +225,9 @@ impl Agent {
         Ok(ProviderAgent::Anthropic(builder.build()))
     }
 
-    fn build_prisma(
+    fn build_openai_compatible(
         api_key: &str,
+        base_url: &str,
         model: &str,
         cave_tools: Vec<Box<dyn ToolDyn>>,
         system_prompt: &str,
@@ -233,7 +236,7 @@ impl Agent {
     ) -> Result<ProviderAgent, AgentError> {
         let client = openai::CompletionsClient::builder()
             .api_key(api_key)
-            .base_url(DEFAULT_PRISMA_BASE_URL)
+            .base_url(base_url)
             .build()?;
 
         let mut builder = client
@@ -245,7 +248,7 @@ impl Agent {
             builder = builder.dynamic_context(rag_top_n, index);
         }
 
-        Ok(ProviderAgent::Prisma(builder.build()))
+        Ok(ProviderAgent::OpenAiCompatible(builder.build()))
     }
 
     fn build_mistral(
@@ -360,10 +363,10 @@ pub(crate) async fn list_models(
             let client = mistral::Client::builder().api_key(api_key).build()?;
             client.list_models().await?
         }
-        ProviderConfig::Prisma { api_key } => {
+        ProviderConfig::OpenAiCompatible { api_key, base_url } => {
             let client = openai::Client::builder()
                 .api_key(api_key)
-                .base_url(DEFAULT_PRISMA_BASE_URL)
+                .base_url(base_url)
                 .build()?;
             client.list_models().await?
         }
@@ -646,15 +649,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prisma_builds_with_api_key() {
+    async fn openai_compatible_builds_with_api_key_and_base_url() {
         let config = provider_config(ProviderEntry {
             name: None,
-            provider: ProviderConfig::Prisma {
+            provider: ProviderConfig::OpenAiCompatible {
                 api_key: "test-key-789".to_string(),
+                base_url: "https://api.openai.com/v1".to_string(),
             },
         });
         let result = Agent::from_config(&config, empty_cave(), None);
-        assert!(result.is_ok(), "Agent should build with Prisma API key");
+        assert!(
+            result.is_ok(),
+            "Agent should build with OpenAI-compatible config"
+        );
     }
 
     #[test]

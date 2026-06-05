@@ -41,7 +41,9 @@ impl ProviderFormEntry {
             ProviderConfig::Mistral { api_key } => {
                 ("mistral".into(), String::new(), api_key.clone())
             }
-            ProviderConfig::Prisma { api_key } => ("prisma".into(), String::new(), api_key.clone()),
+            ProviderConfig::OpenAiCompatible { api_key, base_url } => {
+                ("openai".into(), base_url.clone(), api_key.clone())
+            }
         };
         Self {
             id,
@@ -77,8 +79,9 @@ impl ProviderFormEntry {
             "mistral" => ProviderConfig::Mistral {
                 api_key: self.api_key.clone(),
             },
-            "prisma" => ProviderConfig::Prisma {
+            "openai" => ProviderConfig::OpenAiCompatible {
                 api_key: self.api_key.clone(),
+                base_url: self.base_url.clone(),
             },
             _ => ProviderConfig::Ollama { base_url: None },
         };
@@ -98,7 +101,7 @@ impl ProviderFormEntry {
             "ollama" => "Ollama",
             "anthropic" => "Anthropic",
             "mistral" => "Mistral",
-            "prisma" => "Prisma",
+            "openai" => "OpenAI",
             _ => "Unknown",
         }
     }
@@ -107,13 +110,13 @@ impl ProviderFormEntry {
     pub fn needs_api_key(&self) -> bool {
         matches!(
             self.provider_type.as_str(),
-            "anthropic" | "mistral" | "prisma"
+            "anthropic" | "mistral" | "openai"
         )
     }
 
     /// Whether this provider type has a base_url field.
     pub fn needs_base_url(&self) -> bool {
-        self.provider_type == "ollama"
+        matches!(self.provider_type.as_str(), "ollama" | "openai")
     }
 }
 
