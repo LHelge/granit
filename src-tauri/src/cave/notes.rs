@@ -273,6 +273,7 @@ impl Cave {
         std::fs::rename(&old_abs, &new_abs)?;
         self.notes.remove(old_slug);
         self.notes.insert(new_name.to_string(), new_abs.clone());
+        self.rewrite_wiki_links_for_rename(old_slug, new_name);
         self.rebuild_backlinks();
 
         let rel = self.relative_path(&new_abs);
@@ -338,6 +339,7 @@ impl Cave {
         if renamed {
             self.notes.remove(old_slug);
             self.notes.insert(new_name.to_string(), final_abs.clone());
+            self.rewrite_wiki_links_for_rename(old_slug, new_name);
         }
         self.rebuild_backlinks();
 
@@ -347,6 +349,27 @@ impl Cave {
         meta.icon = updated_md.icon();
         meta.favorite = updated_md.favorite();
         Ok(meta)
+    }
+
+    /// Rewrite wiki-links pointing to `old_slug` across the whole cave so they
+    /// point to `new_slug`. Must be called after `self.notes` reflects the
+    /// rename, so the renamed note's own self-links are updated too.
+    ///
+    /// Splices raw bytes (via [`Markdown::rename_wiki_links`]) rather than going
+    /// through `Markdown::rebuild`, so each touched note keeps its existing
+    /// frontmatter and `modified_at` untouched. Notes with no matching link are
+    /// left byte-for-byte unchanged.
+    fn rewrite_wiki_links_for_rename(&self, old_slug: &str, new_slug: &str) {
+        for abs_path in self.notes.values() {
+            let Ok(raw) = std::fs::read_to_string(abs_path) else {
+                continue;
+            };
+            if let Some(updated) =
+                crate::markdown::Markdown::rename_wiki_links(&raw, old_slug, new_slug)
+            {
+                let _ = write_atomic(abs_path, &updated);
+            }
+        }
     }
 
     // ── Backlinks ──────────────────────────────────────────────────
@@ -1000,6 +1023,73 @@ mod tests {
         assert!(matches!(err, CaveError::NotFound(_)));
     }
 
+    #[test]
+    fn test_rename_note_updates_inbound_wiki_links() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(
+            dir.path().join("source.md"),
+            "See [[target]] and [[target|the target]].\n",
+        )
+        .unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.rename_note("target", "destination").unwrap();
+
+        let source = std::fs::read_to_string(dir.path().join("source.md")).unwrap();
+        assert_eq!(
+            source,
+            "See [[destination]] and [[destination|the target]].\n"
+        );
+        assert_eq!(
+            cave.backlink_slugs("destination").unwrap(),
+            vec!["source".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_rename_note_updates_self_links() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("foo.md"), "I link to [[foo]] myself.\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.rename_note("foo", "bar").unwrap();
+
+        let bar = std::fs::read_to_string(dir.path().join("bar.md")).unwrap();
+        assert_eq!(bar, "I link to [[bar]] myself.\n");
+    }
+
+    #[test]
+    fn test_rename_note_leaves_code_block_links_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        std::fs::write(
+            dir.path().join("source.md"),
+            "```\n[[target]]\n```\nreal [[target]]\n",
+        )
+        .unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.rename_note("target", "renamed").unwrap();
+
+        let source = std::fs::read_to_string(dir.path().join("source.md")).unwrap();
+        assert_eq!(source, "```\n[[target]]\n```\nreal [[renamed]]\n");
+    }
+
+    #[test]
+    fn test_rename_note_leaves_unrelated_note_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Target\n").unwrap();
+        let other = "---\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nLinks to [[elsewhere]].\n";
+        std::fs::write(dir.path().join("other.md"), other).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.rename_note("target", "renamed").unwrap();
+
+        let after = std::fs::read_to_string(dir.path().join("other.md")).unwrap();
+        assert_eq!(after, other);
+    }
+
     // ── update_note ────────────────────────────────────────────────
 
     #[test]
@@ -1031,6 +1121,20 @@ mod tests {
 
         let saved = std::fs::read_to_string(dir.path().join("new-name.md")).unwrap();
         assert_eq!(saved, "updated content");
+    }
+
+    #[test]
+    fn test_update_note_rename_updates_inbound_wiki_links() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("old.md"), "original content").unwrap();
+        std::fs::write(dir.path().join("source.md"), "See [[old]].\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.update_note("old", "new-name", "updated content", None, None, None)
+            .unwrap();
+
+        let source = std::fs::read_to_string(dir.path().join("source.md")).unwrap();
+        assert_eq!(source, "See [[new-name]].\n");
     }
 
     #[test]

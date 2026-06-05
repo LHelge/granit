@@ -185,8 +185,17 @@ pub(crate) fn rename_note(
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
     spawn_index_remove(state.inner(), old_name.clone());
-    let meta = state.with_cave(|cave| cave.rename_note(&old_name, &new_name))?;
+    // Capture inbound-link sources before the rename: their bodies are rewritten
+    // to point at the new slug, so their embeddings must be refreshed too.
+    let (meta, affected) = state.with_cave(|cave| {
+        let affected = cave.backlink_slugs(&old_name).unwrap_or_default();
+        let meta = cave.rename_note(&old_name, &new_name)?;
+        Ok((meta, affected))
+    })?;
     spawn_index_update(state.inner(), meta.slug.clone());
+    for slug in affected {
+        spawn_index_update(state.inner(), slug);
+    }
     Ok(meta)
 }
 
@@ -212,12 +221,25 @@ pub(crate) fn update_note(
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
     use tauri::Emitter;
-    if old_name != new_name {
+    let renaming = old_name != new_name;
+    if renaming {
         spawn_index_remove(state.inner(), old_name.clone());
     }
-    let meta = state
-        .with_cave(|cave| cave.update_note(&old_name, &new_name, &content, tags, icon, favorite))?;
+    let (meta, affected) = state.with_cave(|cave| {
+        // Only a rename rewrites inbound links in other notes; capture those
+        // sources first so their embeddings can be refreshed afterwards.
+        let affected = if renaming {
+            cave.backlink_slugs(&old_name).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let meta = cave.update_note(&old_name, &new_name, &content, tags, icon, favorite)?;
+        Ok((meta, affected))
+    })?;
     spawn_index_update(state.inner(), meta.slug.clone());
+    for slug in affected {
+        spawn_index_update(state.inner(), slug);
+    }
     let _ = app.emit("cave:notes-changed", ());
     Ok(meta)
 }
