@@ -432,7 +432,7 @@ pub fn Editor() -> impl IntoView {
         notes: app.notes,
         templates: app.templates,
         config: app.config,
-        editing: RwSignal::new(false),
+        editing: app.editing,
         content: RwSignal::new(String::new()),
         title_input: RwSignal::new(String::new()),
         saving: RwSignal::new(false),

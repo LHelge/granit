@@ -63,11 +63,20 @@ pub fn App() -> impl IntoView {
         ipc::spawn_event_listener_simple("cave:notes-changed", move || {
             leptos::task::spawn_local(async move {
                 if let Ok(notes) = ipc::fetch_notes().await {
-                    if let Some(active) = ctx.active_note.get_untracked() {
-                        if !notes.iter().any(|n| n.slug == active.meta.slug) {
-                            ctx.clear_active_document();
-                        } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
-                            ctx.set_active_note_document(note);
+                    // While the user is editing, the editor owns the active-note
+                    // state — including in-flight renames from a title change.
+                    // Reconciling here would race the editor's own save: the
+                    // active slug is briefly stale (the file was just renamed),
+                    // so we'd clear/re-read it and the editor would treat that as
+                    // a note switch, firing a spurious second save against the
+                    // old slug. Skip it; the editor keeps itself in sync.
+                    if !ctx.editing.get_untracked() {
+                        if let Some(active) = ctx.active_note.get_untracked() {
+                            if !notes.iter().any(|n| n.slug == active.meta.slug) {
+                                ctx.clear_active_document();
+                            } else if let Ok(note) = ipc::read_note(&active.meta.slug).await {
+                                ctx.set_active_note_document(note);
+                            }
                         }
                     }
                     ctx.notes.set(notes);
