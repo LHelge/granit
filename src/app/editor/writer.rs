@@ -135,13 +135,21 @@ pub(super) fn Writer() -> impl IntoView {
         editor_handle.with_value(|cell| cell.set(Some(h)));
     });
 
-    // Keep the slug list up to date when notes are added/removed/renamed.
+    // Keep the completion slug list up to date when notes (or their heading
+    // anchors) change. Subscribing to `ctx.notes` re-runs this on every cave
+    // refresh — including saves, which is when a note's `{#id}` anchors change —
+    // so we re-fetch anchors here and merge them in alongside note slugs.
     Effect::new(move || {
-        let slugs: Vec<String> = ctx.notes.get().into_iter().map(|m| m.slug).collect();
-        editor_handle.with_value(|cell| {
-            if let Some(h) = cell.get() {
-                codemirror::set_slugs(h, &slugs);
+        let mut slugs: Vec<String> = ctx.notes.get().into_iter().map(|m| m.slug).collect();
+        leptos::task::spawn_local(async move {
+            if let Ok(anchors) = crate::app::ipc::fetch_anchors().await {
+                slugs.extend(anchors);
             }
+            editor_handle.with_value(|cell| {
+                if let Some(h) = cell.get() {
+                    codemirror::set_slugs(h, &slugs);
+                }
+            });
         });
     });
 

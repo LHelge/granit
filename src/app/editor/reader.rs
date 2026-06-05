@@ -205,7 +205,11 @@ pub(super) fn Reader() -> impl IntoView {
                     let _ = ipc::open_url(&url).await;
                 });
             }
-            MarkdownLinkTarget::Wiki { slug, is_broken } => ctx.navigate_wiki_link(slug, is_broken),
+            MarkdownLinkTarget::Wiki {
+                slug,
+                fragment,
+                is_broken,
+            } => ctx.navigate_wiki_link(slug, fragment, is_broken),
         }
     };
 
@@ -277,7 +281,7 @@ pub(super) fn Reader() -> impl IntoView {
                                                     <button
                                                         type="button"
                                                         class="flex items-start gap-2 rounded-box px-2 py-1.5 text-left hover:bg-base-200/70"
-                                                        on:click=move |_| ctx.navigate_wiki_link(slug.clone(), false)
+                                                        on:click=move |_| ctx.navigate_wiki_link(slug.clone(), None, false)
                                                     >
                                                         <span class="inline-flex w-4 h-4 shrink-0 text-accent mt-0.5">
                                                             {icon.map(|id| view! {

@@ -21,6 +21,13 @@ pub enum CaveError {
     #[error("Duplicate template slug \"{slug}\" found at {paths:?}")]
     DuplicateTemplateSlug { slug: String, paths: Vec<String> },
 
+    #[error("Duplicate link target \"{slug}\": heading anchor in \"{anchor_note}\" collides with {conflict}")]
+    DuplicateAnchor {
+        slug: String,
+        anchor_note: String,
+        conflict: String,
+    },
+
     #[error("Invalid note name: {0}")]
     InvalidName(String),
 

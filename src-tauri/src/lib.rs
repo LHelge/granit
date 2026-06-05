@@ -35,6 +35,7 @@ pub fn run() {
             move_note,
             move_folder,
             list_notes,
+            list_anchors,
             list_templates,
             search_content,
             list_folders,

@@ -395,7 +395,10 @@ impl EditorCtx {
     }
 
     /// Navigate to a wiki-link target, creating the note if it's a broken link.
-    pub fn navigate_wiki_link(self, slug: String, is_broken: bool) {
+    ///
+    /// `fragment` is a heading anchor id (`[[note#anchor]]`); when present and the
+    /// target note exists, the reader scrolls to that heading after rendering.
+    pub fn navigate_wiki_link(self, slug: String, fragment: Option<String>, is_broken: bool) {
         leptos::task::spawn_local(async move {
             if is_broken {
                 if let Ok(meta) = ipc::create_note(&slug, None, None).await {
@@ -410,6 +413,9 @@ impl EditorCtx {
                 }
             } else if let Ok(note) = ipc::read_note(&slug).await {
                 self.app.set_active_note_document(note);
+                if let Some(anchor) = fragment {
+                    crate::app::markdown_links::scroll_to_anchor(anchor);
+                }
             }
         });
     }

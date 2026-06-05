@@ -26,6 +26,9 @@ pub struct Cave {
     notes: HashMap<String, PathBuf>,
     /// In-memory reverse wiki-link index: target slug → source slugs.
     backlinks: HashMap<String, Vec<String>>,
+    /// In-memory index: heading anchor id → owning note slug. Populated from
+    /// `# Heading {#id}` attributes. Shares the global slug namespace with notes.
+    anchors: HashMap<String, String>,
     /// In-memory index: template slug → absolute path inside `.granit/templates`.
     templates: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
@@ -43,6 +46,7 @@ impl Cave {
             path,
             notes: HashMap::new(),
             backlinks: HashMap::new(),
+            anchors: HashMap::new(),
             templates: HashMap::new(),
             active_slug: None,
             scanned: false,
@@ -57,7 +61,13 @@ impl Cave {
             return Ok(());
         }
         self.notes = Self::scan_recursive(&self.path, &self.path)?;
-        self.backlinks = Self::build_backlinks(&self.notes);
+        // Strict: a duplicate anchor (vs a note or another anchor) refuses to open.
+        let (anchors, collision) = Self::collect_anchors(&self.notes);
+        if let Some(err) = collision {
+            return Err(err);
+        }
+        self.anchors = anchors;
+        self.backlinks = Self::build_backlinks(&self.notes, &self.anchors);
         self.templates = Self::scan_templates(&self.templates_dir())?;
         self.scanned = true;
         Ok(())
@@ -261,6 +271,35 @@ impl Cave {
             .keys()
             .find(|slug| slug.to_lowercase() == lower)
             .map(String::as_str)
+    }
+
+    /// Resolve a wiki-link target name to its href (case-insensitive).
+    ///
+    /// A note name resolves to its canonical slug; a heading anchor resolves to
+    /// `note-slug#anchor-id`. Notes take precedence over anchors. Returns `None`
+    /// for unresolved (broken) links. Used as the resolver for markdown rendering.
+    pub fn resolve_link(&self, name: &str) -> Option<String> {
+        Self::resolve_link_in(&self.notes, &self.anchors, name)
+    }
+
+    fn resolve_link_in(
+        notes: &HashMap<String, PathBuf>,
+        anchors: &HashMap<String, String>,
+        name: &str,
+    ) -> Option<String> {
+        if let Some(slug) = Self::lookup_slug_in_notes(notes, name) {
+            return Some(slug.to_string());
+        }
+        let lower = name.to_lowercase();
+        anchors
+            .iter()
+            .find(|(anchor_id, _)| anchor_id.to_lowercase() == lower)
+            .map(|(anchor_id, note_slug)| format!("{note_slug}#{anchor_id}"))
+    }
+
+    /// All heading anchor ids declared across the cave, for link completion.
+    pub fn list_anchors(&self) -> Vec<String> {
+        self.anchors.keys().cloned().collect()
     }
 
     /// Resolve a slug case-insensitively, returning the canonical stored slug.
@@ -495,5 +534,64 @@ mod tests {
         assert_eq!(cave.lookup_slug("project-alpha"), Some("Project-Alpha"));
         assert_eq!(cave.lookup_slug("PROJECT-ALPHA"), Some("Project-Alpha"));
         assert!(cave.lookup_slug("project-beta").is_none());
+    }
+
+    // ── Heading anchors ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_anchor_index_built_on_scan_and_resolves_to_note_fragment() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Car brands.md"),
+            "# Volvo {#volvo}\n\nbla\n\n# SAAB {#saab}\n",
+        )
+        .unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // Notes still take precedence and resolve to a bare slug.
+        assert_eq!(
+            cave.resolve_link("Car brands"),
+            Some("Car brands".to_string())
+        );
+        // Anchors resolve to `note#anchor`, case-insensitively.
+        assert_eq!(
+            cave.resolve_link("Volvo"),
+            Some("Car brands#volvo".to_string())
+        );
+        assert_eq!(
+            cave.resolve_link("saab"),
+            Some("Car brands#saab".to_string())
+        );
+        assert!(cave.resolve_link("Ford").is_none());
+
+        let mut anchors = cave.list_anchors();
+        anchors.sort();
+        assert_eq!(anchors, vec!["saab".to_string(), "volvo".to_string()]);
+    }
+
+    #[test]
+    fn test_open_cave_rejects_anchor_colliding_with_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Volvo.md"), "the car").unwrap();
+        std::fs::write(dir.path().join("Brands.md"), "# Volvo {#volvo}\n").unwrap();
+
+        let err = Cave::open(dir.path().to_path_buf()).unwrap_err();
+        assert!(
+            matches!(err, CaveError::DuplicateAnchor { ref slug, .. } if slug == "volvo"),
+            "expected DuplicateAnchor, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_open_cave_rejects_duplicate_anchors_across_notes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "# X {#dup}\n").unwrap();
+        std::fs::write(dir.path().join("b.md"), "# Y {#dup}\n").unwrap();
+
+        let err = Cave::open(dir.path().to_path_buf()).unwrap_err();
+        assert!(
+            matches!(err, CaveError::DuplicateAnchor { ref slug, .. } if slug == "dup"),
+            "expected DuplicateAnchor, got: {err:?}"
+        );
     }
 }

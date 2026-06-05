@@ -131,6 +131,11 @@ pub async fn fetch_notes() -> Result<Vec<DocumentMeta>, String> {
     invoke_no_args("list_notes").await
 }
 
+/// Heading anchor ids (`# Heading {#id}` targets) for wiki-link completion.
+pub async fn fetch_anchors() -> Result<Vec<String>, String> {
+    invoke_no_args("list_anchors").await
+}
+
 pub async fn search_content(query: &str) -> Result<Vec<ContentMatch>, String> {
     #[derive(Serialize)]
     struct Args<'a> {

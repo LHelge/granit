@@ -33,7 +33,7 @@ impl Cave {
         // Filesystem first — only update the index after the delete succeeds.
         std::fs::remove_dir_all(&abs)?;
         self.notes.retain(|_, note_abs| !note_abs.starts_with(&abs));
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
         Ok(())
     }
 

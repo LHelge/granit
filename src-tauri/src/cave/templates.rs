@@ -330,7 +330,7 @@ impl Cave {
             );
             write_new(&final_path, initial_content)?;
             self.notes.insert(date.to_string(), final_path);
-            self.rebuild_backlinks();
+            self.rebuild_link_indexes();
         }
 
         self.read_note(date)
