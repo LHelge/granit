@@ -233,6 +233,21 @@ function slugsExtension(slugs: string[]) {
     return slugsField.init(() => slugs);
 }
 
+// Insert `<label>]]`, overwriting any `]]` that closeBrackets already inserted
+// (so we don't end up with `]]]]`), and place the cursor after the closing `]]`.
+function applyWikiLink(
+    view: EditorView,
+    completion: { label: string },
+    from: number,
+    to: number,
+) {
+    const docTo = view.state.doc.sliceString(to, to + 2) === "]]" ? to + 2 : to;
+    view.dispatch({
+        changes: { from, to: docTo, insert: `${completion.label}]]` },
+        selection: { anchor: from + completion.label.length + 2 },
+    });
+}
+
 function wikiLinkCompletionSource(context: CompletionContext): CompletionResult | null {
     // Match `[[` followed by any non-`]` characters up to the cursor
     const match = context.matchBefore(/\[\[[^\]]*$/);
@@ -241,20 +256,28 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
     const typed = match.text.slice(2);
     const slugs = context.state.field(slugsField);
 
+    const options = slugs.map((slug) => ({
+        label: slug,
+        apply: applyWikiLink,
+    }));
+
+    // Obsidian-style: when the typed text matches no existing slug, offer to
+    // link a not-yet-existing note. It sorts last (negative boost) and inserts
+    // the typed text verbatim — the resulting link renders as a broken link
+    // until the note is created.
+    const trimmed = typed.trim();
+    if (trimmed.length > 0 && !slugs.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+        options.push({
+            label: trimmed,
+            detail: "Create new note",
+            boost: -99,
+            apply: applyWikiLink,
+        } as (typeof options)[number]);
+    }
+
     return {
         from: match.from + 2, // complete only the slug part (after `[[`)
-        options: slugs.map((slug) => ({
-            label: slug,
-            apply: (view, completion, from, to) => {
-                // closeBrackets may have already inserted `]]` after the cursor.
-                // Extend `to` to overwrite them so we don't end up with `]]]]`.
-                const docTo = view.state.doc.sliceString(to, to + 2) === "]]" ? to + 2 : to;
-                view.dispatch({
-                    changes: { from, to: docTo, insert: `${completion.label}]]` },
-                    selection: { anchor: from + completion.label.length + 2 },
-                });
-            },
-        })),
+        options,
         filter: typed.length > 0, // use CM6 built-in fuzzy filter once typing starts
     };
 }
