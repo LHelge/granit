@@ -22,6 +22,10 @@ pub struct AppCtx {
     pub active_note: RwSignal<Option<granit_types::Document>>,
     pub active_template: RwSignal<Option<granit_types::Document>>,
     pub selected_note_text: RwSignal<Option<String>>,
+    /// Whether the editor is currently in edit (writing) mode. Owned by the
+    /// editor but lifted here so the app-root `cave:notes-changed` listener can
+    /// avoid reconciling the active note while the editor is mid-edit/save.
+    pub editing: RwSignal<bool>,
     pub is_mac: bool,
     errors: RwSignal<Vec<AppError>>,
     next_id: RwSignal<u32>,
@@ -38,6 +42,7 @@ impl AppCtx {
             active_note: RwSignal::new(None),
             active_template: RwSignal::new(None),
             selected_note_text: RwSignal::new(None),
+            editing: RwSignal::new(false),
             is_mac,
             errors: RwSignal::new(Vec::new()),
             next_id: RwSignal::new(0),
