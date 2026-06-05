@@ -1,6 +1,7 @@
 use chrono::{Local, Utc};
 use granit_types::RenderedDocument;
 use pulldown_cmark::{html, BlockQuoteKind, Event, LinkType, Options, Parser, Tag, TagEnd};
+use std::ops::Range;
 
 use super::Markdown;
 
@@ -81,6 +82,58 @@ impl<'a> Markdown<'a> {
     ) -> Vec<String> {
         collect_resolved_wiki_links(self.body(), lookup)
     }
+}
+
+impl Markdown<'_> {
+    /// Rewrite every wiki-link whose target resolves (case-insensitively) to
+    /// `old_slug` so it points to `new_slug`, preserving any `|label`. Returns
+    /// `Some(rewritten)` if at least one link changed, else `None`.
+    ///
+    /// Operates on raw bytes via pulldown-cmark offsets, so links inside code
+    /// spans/blocks (which are not real wiki-links) are left untouched. The
+    /// caller passes the full file content; frontmatter is irrelevant since it
+    /// never contains wiki-links, and splicing raw bytes preserves it verbatim.
+    pub fn rename_wiki_links(text: &str, old_slug: &str, new_slug: &str) -> Option<String> {
+        let mut opts = base_options();
+        opts.insert(Options::ENABLE_WIKILINKS);
+
+        let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+        for (event, range) in Parser::new_ext(text, opts).into_offset_iter() {
+            if let Event::Start(Tag::Link {
+                link_type: LinkType::WikiLink { .. },
+                dest_url,
+                ..
+            }) = event
+            {
+                if dest_url.trim().eq_ignore_ascii_case(old_slug) {
+                    if let Some(replacement) = rewrite_wiki_span(&text[range.clone()], new_slug) {
+                        edits.push((range, replacement));
+                    }
+                }
+            }
+        }
+
+        if edits.is_empty() {
+            return None;
+        }
+
+        let mut out = text.to_string();
+        // Apply right-to-left so earlier byte ranges stay valid.
+        for (range, replacement) in edits.into_iter().rev() {
+            out.replace_range(range, &replacement);
+        }
+        Some(out)
+    }
+}
+
+/// Replace the target of a raw wiki-link span (`[[target]]` / `[[target|label]]`)
+/// with `new_slug`, preserving the brackets and any display label.
+fn rewrite_wiki_span(span: &str, new_slug: &str) -> Option<String> {
+    let inner = span.strip_prefix("[[")?.strip_suffix("]]")?;
+    Some(match inner.split_once('|') {
+        Some((_target, label)) => format!("[[{new_slug}|{label}]]"),
+        None => format!("[[{new_slug}]]"),
+    })
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
@@ -568,6 +621,70 @@ mod tests {
             result.html
         );
         assert_eq!(result.outgoing_links, ["resolve-me"]);
+    }
+
+    // ── rename_wiki_links ─────────────────────────────────────────────
+
+    #[test]
+    fn test_rename_wiki_links_bare() {
+        let out = Markdown::rename_wiki_links("See [[old]] here.", "old", "new").unwrap();
+        assert_eq!(out, "See [[new]] here.");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_preserves_label() {
+        let out = Markdown::rename_wiki_links("See [[old|My Label]].", "old", "new").unwrap();
+        assert_eq!(out, "See [[new|My Label]].");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_case_insensitive_target() {
+        let out = Markdown::rename_wiki_links("See [[Old]] here.", "old", "new").unwrap();
+        assert_eq!(out, "See [[new]] here.");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_multiple_in_one_note() {
+        let out =
+            Markdown::rename_wiki_links("[[old]] and [[old|again]] and [[old]]", "old", "new")
+                .unwrap();
+        assert_eq!(out, "[[new]] and [[new|again]] and [[new]]");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_only_matched_target() {
+        let out = Markdown::rename_wiki_links("[[old]] and [[other]]", "old", "new").unwrap();
+        assert_eq!(out, "[[new]] and [[other]]");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_skips_code_block() {
+        let input = "```\n[[old]]\n```\nthen [[old]]";
+        let out = Markdown::rename_wiki_links(input, "old", "new").unwrap();
+        assert_eq!(out, "```\n[[old]]\n```\nthen [[new]]");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_skips_inline_code() {
+        let input = "`[[old]]` and [[old]]";
+        let out = Markdown::rename_wiki_links(input, "old", "new").unwrap();
+        assert_eq!(out, "`[[old]]` and [[new]]");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_no_match_returns_none() {
+        assert!(Markdown::rename_wiki_links("See [[other]] here.", "old", "new").is_none());
+        assert!(Markdown::rename_wiki_links("No links at all.", "old", "new").is_none());
+    }
+
+    #[test]
+    fn test_rename_wiki_links_preserves_frontmatter_and_body() {
+        let input = "---\ntags:\n- a\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nLink to [[old]].";
+        let out = Markdown::rename_wiki_links(input, "old", "new").unwrap();
+        assert_eq!(
+            out,
+            "---\ntags:\n- a\nmodified_at: \"2026-01-01T00:00:00Z\"\n---\nLink to [[new]]."
+        );
     }
 
     // ── HTML sanitization ─────────────────────────────────────────────────────
