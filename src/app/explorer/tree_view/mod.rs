@@ -18,7 +18,7 @@ use note_node::NoteNode;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use tree_model::{build_tree, TreeNode};
+use tree_model::{build_tree, visible_note_slugs, TreeNode};
 use web_sys::{DragEvent, MouseEvent};
 
 // ── Shared state via context ───────────────────────────────────────
@@ -83,6 +83,10 @@ pub(super) struct TreeCtx {
     pub renaming: RwSignal<Option<RenameTarget>>,
     pub open_in_edit: RwSignal<EditOpen>,
     pub expanded_folders: RwSignal<HashSet<String>>,
+    /// Slugs currently multi-selected in the tree (ctrl/cmd or shift click).
+    pub selected: RwSignal<HashSet<String>>,
+    /// Pivot slug for shift-click range selection.
+    pub selection_anchor: RwSignal<Option<String>>,
     /// Serializes tree mutations (moves) so drops cannot race each other.
     op_queue: StoredValue<Rc<RefCell<TreeOpQueue>>, LocalStorage>,
 }
@@ -93,19 +97,90 @@ impl TreeCtx {
         self.app.push_error("tree", msg);
     }
 
+    /// Apply a tree selection click for `slug` given keyboard modifiers.
+    /// Returns `true` if the caller should load the note as the active document
+    /// (plain and shift clicks load; ctrl/cmd toggles selection without loading).
+    fn select_click(&self, slug: &str, ctrl: bool, shift: bool) -> bool {
+        if ctrl {
+            self.selected.update(|set| {
+                if !set.remove(slug) {
+                    set.insert(slug.to_string());
+                }
+            });
+            self.selection_anchor.set(Some(slug.to_string()));
+            false
+        } else if shift {
+            if let Some(anchor) = self.selection_anchor.get_untracked() {
+                let order = visible_note_slugs(
+                    self.notes.get_untracked(),
+                    self.folders.get_untracked(),
+                    &self.expanded_folders.get_untracked(),
+                );
+                if let (Some(i), Some(j)) = (
+                    order.iter().position(|s| *s == anchor),
+                    order.iter().position(|s| s == slug),
+                ) {
+                    let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
+                    self.selected.set(order[lo..=hi].iter().cloned().collect());
+                    return true;
+                }
+            }
+            // No usable anchor: behave like a plain click.
+            self.select_single(slug);
+            true
+        } else {
+            self.select_single(slug);
+            true
+        }
+    }
+
+    fn select_single(&self, slug: &str) {
+        self.selected.set(HashSet::from([slug.to_string()]));
+        self.selection_anchor.set(Some(slug.to_string()));
+    }
+
+    /// The set of slugs that a drag starting on `slug` should move: the whole
+    /// multi-selection if `slug` is part of it, otherwise just `slug` (which
+    /// also becomes the new selection). Returned in display order.
+    fn drag_slugs_for(&self, slug: &str) -> Vec<String> {
+        let selected = self.selected.get_untracked();
+        if selected.len() > 1 && selected.contains(slug) {
+            let order = visible_note_slugs(
+                self.notes.get_untracked(),
+                self.folders.get_untracked(),
+                &self.expanded_folders.get_untracked(),
+            );
+            order.into_iter().filter(|s| selected.contains(s)).collect()
+        } else {
+            self.select_single(slug);
+            vec![slug.to_string()]
+        }
+    }
+
     /// Process a drop event targeted at `dest_folder` (None = cave root).
     pub fn handle_drop(self, payload: DragPayload, dest_folder: Option<String>) {
-        let op = match payload {
-            DragPayload::Note(slug) => TreeOp::MoveNote {
-                slug,
-                dest: dest_folder,
-            },
-            DragPayload::Folder(src_path) => TreeOp::MoveFolder {
+        let mut should_drive = false;
+        let mut enqueue = |op: TreeOp| {
+            if self.op_queue.with_value(|q| q.borrow_mut().enqueue(op)) {
+                should_drive = true;
+            }
+        };
+        match payload {
+            DragPayload::Notes(slugs) => {
+                for slug in slugs {
+                    enqueue(TreeOp::MoveNote {
+                        slug,
+                        dest: dest_folder.clone(),
+                    });
+                }
+                // The moved notes are no longer a meaningful selection.
+                self.selected.set(HashSet::new());
+            }
+            DragPayload::Folder(src_path) => enqueue(TreeOp::MoveFolder {
                 src: src_path,
                 dest: dest_folder,
-            },
-        };
-        let should_drive = self.op_queue.with_value(|q| q.borrow_mut().enqueue(op));
+            }),
+        }
         if should_drive {
             leptos::task::spawn_local(async move {
                 self.drain_ops().await;
@@ -190,10 +265,10 @@ pub(super) fn use_tree_ctx() -> TreeCtx {
 
 // ── Shared types ───────────────────────────────────────────────────
 
-/// What is being dragged: a note (by slug) or a folder (by relative path).
+/// What is being dragged: one or more notes (by slug) or a folder (by relative path).
 #[derive(Clone, Debug)]
 pub(super) enum DragPayload {
-    Note(String),
+    Notes(Vec<String>),
     Folder(String),
 }
 
@@ -262,6 +337,8 @@ pub fn TreeView() -> impl IntoView {
         renaming: RwSignal::new(None),
         open_in_edit: expect_context::<OpenInEdit>().0,
         expanded_folders,
+        selected: RwSignal::new(HashSet::new()),
+        selection_anchor: RwSignal::new(None),
         op_queue: StoredValue::new_local(Rc::new(RefCell::new(TreeOpQueue::new()))),
     };
     provide_context(ctx);

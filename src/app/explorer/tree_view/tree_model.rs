@@ -1,4 +1,5 @@
 use granit_types::DocumentMeta;
+use std::collections::HashSet;
 
 /// A node in the display tree built from flat `DocumentMeta` list.
 #[derive(Clone, Debug)]
@@ -41,6 +42,34 @@ pub(super) fn build_tree(notes: Vec<DocumentMeta>, folders: Vec<String>) -> Vec<
     }
 
     roots
+}
+
+/// Return note slugs in displayed (top-to-bottom) order, skipping notes inside
+/// collapsed folders — i.e. the order the user visually sees and can click.
+///
+/// Used to resolve the endpoints of a shift-click range selection.
+pub(super) fn visible_note_slugs(
+    notes: Vec<DocumentMeta>,
+    folders: Vec<String>,
+    expanded: &HashSet<String>,
+) -> Vec<String> {
+    let tree = build_tree(notes, folders);
+    let mut out = Vec::new();
+    collect_visible(&tree, expanded, &mut out);
+    out
+}
+
+fn collect_visible(nodes: &[TreeNode], expanded: &HashSet<String>, out: &mut Vec<String>) {
+    for node in nodes {
+        match node {
+            TreeNode::Note(meta) => out.push(meta.slug.clone()),
+            TreeNode::Folder { path, children, .. } => {
+                if expanded.contains(path) {
+                    collect_visible(children, expanded, out);
+                }
+            }
+        }
+    }
 }
 
 /// Ensure a folder path exists in the tree, creating empty folder nodes as needed.
@@ -152,6 +181,25 @@ mod tests {
         };
 
         assert!(children.is_empty());
+    }
+
+    #[wasm_bindgen_test]
+    fn visible_note_slugs_skips_collapsed_folders() {
+        let notes = vec![
+            note("root-note", "root-note.md"),
+            note("child", "projects/child.md"),
+        ];
+        let folders = vec!["projects".to_string()];
+
+        // Collapsed: only the root note is visible.
+        let collapsed = visible_note_slugs(notes.clone(), folders.clone(), &HashSet::new());
+        assert_eq!(collapsed, vec!["root-note".to_string()]);
+
+        // Expanded: the child becomes visible, after the root note.
+        let mut expanded = HashSet::new();
+        expanded.insert("projects".to_string());
+        let shown = visible_note_slugs(notes, folders, &expanded);
+        assert_eq!(shown, vec!["root-note".to_string(), "child".to_string()]);
     }
 
     #[wasm_bindgen_test]

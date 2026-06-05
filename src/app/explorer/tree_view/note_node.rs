@@ -17,10 +17,11 @@ pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoVie
         let slug = slug.clone();
         move |e: DragEvent| {
             e.stop_propagation();
+            let slugs = ctx.drag_slugs_for(&slug);
             if let Some(dt) = e.data_transfer() {
-                let _ = dt.set_data("text/plain", &slug);
+                let _ = dt.set_data("text/plain", &slugs.join(","));
             }
-            ctx.drag_payload.set(Some(DragPayload::Note(slug.clone())));
+            ctx.drag_payload.set(Some(DragPayload::Notes(slugs)));
         }
     };
 
@@ -71,14 +72,23 @@ pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoVie
                         <button
                             class=move || {
                                 let base = "w-full text-left py-0.5 text-sm truncate transition-colors flex items-center gap-1";
-                                if ctx.active_note.get().map(|n| n.meta.slug == slug).unwrap_or(false) {
+                                let is_active = ctx.active_note.get().map(|n| n.meta.slug == slug).unwrap_or(false);
+                                if is_active {
                                     format!("{base} bg-base-content/10 text-base-content")
+                                } else if ctx.selected.get().contains(&slug) {
+                                    format!("{base} bg-primary/20 text-base-content")
                                 } else {
                                     format!("{base} text-base-content/60 hover:bg-base-content/5 hover:text-base-content")
                                 }
                             }
                             style=indent_style.clone()
-                            on:click=move |_| {
+                            on:click=move |e: MouseEvent| {
+                                let ctrl = e.ctrl_key() || e.meta_key();
+                                let shift = e.shift_key();
+                                let load = ctx.select_click(&slug_click, ctrl, shift);
+                                if !load {
+                                    return;
+                                }
                                 let s = slug_click.clone();
                                 leptos::task::spawn_local(async move {
                                     match ipc::read_note(&s).await {
