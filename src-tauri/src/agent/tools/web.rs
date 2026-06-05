@@ -1,7 +1,7 @@
 use granit_types::{WebFetchConfig, WebSearchConfig};
 use html_to_markdown_rs::{convert, ConversionOptions, PreprocessingPreset};
-use rig::completion::ToolDefinition;
-use rig::tool::Tool;
+use rig_core::completion::ToolDefinition;
+use rig_core::tool::Tool;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
