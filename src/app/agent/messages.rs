@@ -58,7 +58,11 @@ pub(super) fn MessageList(
                     let _ = ipc::open_url(&url).await;
                 });
             }
-            MarkdownLinkTarget::Wiki { slug, is_broken } => spawn_local(async move {
+            MarkdownLinkTarget::Wiki {
+                slug,
+                fragment,
+                is_broken,
+            } => spawn_local(async move {
                 if is_broken {
                     if let Ok(meta) = ipc::create_note(&slug, None, None).await {
                         if let Ok(all) = ipc::fetch_notes().await {
@@ -70,6 +74,9 @@ pub(super) fn MessageList(
                     }
                 } else if let Ok(note) = ipc::read_note(&slug).await {
                     app.set_active_note_document(note);
+                    if let Some(anchor) = fragment {
+                        crate::app::markdown_links::scroll_to_anchor(anchor);
+                    }
                 }
             }),
         }

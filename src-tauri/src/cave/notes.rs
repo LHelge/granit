@@ -44,7 +44,7 @@ impl Cave {
         let initial_content = crate::markdown::Markdown::new_note_with_body(&body, tags, icon);
         write_new(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
 
         let rel = self.relative_path(&final_path);
         Ok(note_meta_from_relative_path(&rel))
@@ -106,7 +106,7 @@ impl Cave {
         let existing_raw = std::fs::read_to_string(&abs_path)?;
         let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
         write_atomic(&abs_path, updated.as_str())?;
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
         let rel = self.relative_path(&abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
         let updated_md = crate::markdown::Markdown::new(&updated);
@@ -164,7 +164,7 @@ impl Cave {
         let new_body = body.replacen(old_text, new_text, 1);
         let new_content = crate::markdown::Markdown::rebuild(&raw, &new_body, None, None, None);
         write_atomic(&abs_path, &new_content)?;
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
 
         let rel = self.relative_path(&abs_path);
         Ok(note_meta_from_relative_path(&rel))
@@ -181,7 +181,7 @@ impl Cave {
 
         std::fs::remove_file(&abs_path)?;
         self.notes.remove(slug);
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
         Ok(())
     }
 
@@ -274,7 +274,7 @@ impl Cave {
         self.notes.remove(old_slug);
         self.notes.insert(new_name.to_string(), new_abs.clone());
         self.rewrite_wiki_links_for_rename(old_slug, new_name);
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
 
         let rel = self.relative_path(&new_abs);
         Ok(note_meta_with_frontmatter(&rel, &new_abs))
@@ -341,7 +341,7 @@ impl Cave {
             self.notes.insert(new_name.to_string(), final_abs.clone());
             self.rewrite_wiki_links_for_rename(old_slug, new_name);
         }
-        self.rebuild_backlinks();
+        self.rebuild_link_indexes();
 
         let rel = self.relative_path(&final_abs);
         let mut meta = note_meta_from_relative_path(&rel);
@@ -376,6 +376,7 @@ impl Cave {
 
     pub(crate) fn build_backlinks(
         notes: &HashMap<String, std::path::PathBuf>,
+        anchors: &HashMap<String, String>,
     ) -> HashMap<String, Vec<String>> {
         let mut backlinks: HashMap<String, HashSet<String>> = HashMap::new();
 
@@ -385,7 +386,7 @@ impl Cave {
             };
 
             for target_slug in crate::markdown::Markdown::new(&raw)
-                .outgoing_links(|name| Self::lookup_slug_in_notes(notes, name))
+                .outgoing_links(|name| Self::resolve_link_in(notes, anchors, name))
             {
                 if target_slug == *source_slug {
                     continue;
@@ -408,8 +409,70 @@ impl Cave {
             .collect()
     }
 
-    pub(crate) fn rebuild_backlinks(&mut self) {
-        self.backlinks = Self::build_backlinks(&self.notes);
+    /// Build the heading-anchor index (anchor id → owning note slug) by scanning
+    /// every note body for `{#id}` attributes.
+    ///
+    /// Anchor ids share the global slug namespace with note slugs, so a
+    /// collision (case-insensitive) with a note slug or another anchor is
+    /// returned as the second tuple element. The map keeps the first occurrence
+    /// in a deterministic (sorted-by-note) order, so callers that ignore the
+    /// error still get a consistent index.
+    pub(crate) fn collect_anchors(
+        notes: &HashMap<String, std::path::PathBuf>,
+    ) -> (HashMap<String, String>, Option<CaveError>) {
+        let mut anchors: HashMap<String, String> = HashMap::new();
+        // Lowercased anchor id → first note that declared it.
+        let mut seen_lower: HashMap<String, String> = HashMap::new();
+        // Lowercased note slug → canonical note slug, for anchor-vs-note clashes.
+        let note_lower: HashMap<String, String> = notes
+            .keys()
+            .map(|slug| (slug.to_lowercase(), slug.clone()))
+            .collect();
+        let mut collision: Option<CaveError> = None;
+
+        // Deterministic order so "first wins" is stable across runs.
+        let mut sources: Vec<(&String, &std::path::PathBuf)> = notes.iter().collect();
+        sources.sort_by_key(|a| a.0.to_lowercase());
+
+        for (note_slug, abs_path) in sources {
+            let Ok(raw) = std::fs::read_to_string(abs_path) else {
+                continue;
+            };
+            for anchor_id in crate::markdown::Markdown::new(&raw).anchor_ids() {
+                let lower = anchor_id.to_lowercase();
+                if let Some(note) = note_lower.get(&lower) {
+                    collision.get_or_insert_with(|| CaveError::DuplicateAnchor {
+                        slug: anchor_id.clone(),
+                        anchor_note: note_slug.clone(),
+                        conflict: format!("note \"{note}\""),
+                    });
+                    continue;
+                }
+                if let Some(first_note) = seen_lower.get(&lower) {
+                    collision.get_or_insert_with(|| CaveError::DuplicateAnchor {
+                        slug: anchor_id.clone(),
+                        anchor_note: note_slug.clone(),
+                        conflict: format!("anchor in \"{first_note}\""),
+                    });
+                    continue;
+                }
+                seen_lower.insert(lower, note_slug.clone());
+                anchors.insert(anchor_id, note_slug.clone());
+            }
+        }
+
+        (anchors, collision)
+    }
+
+    /// Rebuild the anchor and backlink indexes after a note mutation.
+    ///
+    /// Anchors are rebuilt leniently (collisions are dropped, first wins) so a
+    /// duplicate introduced during live editing never blocks the mutation; the
+    /// strict check that refuses to open the cave runs only on a full scan.
+    pub(crate) fn rebuild_link_indexes(&mut self) {
+        let (anchors, _collision) = Self::collect_anchors(&self.notes);
+        self.anchors = anchors;
+        self.backlinks = Self::build_backlinks(&self.notes, &self.anchors);
     }
 
     pub fn backlink_slugs(&self, slug: &str) -> Result<Vec<String>, CaveError> {

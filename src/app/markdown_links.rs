@@ -1,9 +1,38 @@
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+
+/// Scroll the element with the given id (a heading anchor) into view.
+///
+/// Retries across a bounded number of animation frames so navigation works
+/// whether the target note was just switched in (DOM not yet rendered) or is
+/// already open (element present immediately).
+pub(crate) fn scroll_to_anchor(id: String) {
+    fn attempt(id: String, remaining: u32) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        if let Some(el) = window.document().and_then(|d| d.get_element_by_id(&id)) {
+            el.scroll_into_view();
+            return;
+        }
+        if remaining == 0 {
+            return;
+        }
+        let cb = Closure::once_into_js(move || attempt(id, remaining - 1));
+        let _ = window.request_animation_frame(cb.as_ref().unchecked_ref());
+    }
+    attempt(id, 30);
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum MarkdownLinkTarget {
     External(String),
-    Wiki { slug: String, is_broken: bool },
+    Wiki {
+        slug: String,
+        /// Heading anchor id (`note#anchor` wiki links), if present.
+        fragment: Option<String>,
+        is_broken: bool,
+    },
 }
 
 pub(crate) fn classify_markdown_link_target(
@@ -29,13 +58,28 @@ pub(crate) fn classify_markdown_link_target(
         return Some(MarkdownLinkTarget::External(href));
     }
 
-    let slug = js_sys::decode_uri_component(&href)
-        .ok()
-        .and_then(|s| s.as_string())
-        .unwrap_or(href);
+    // Split off an optional `#anchor` fragment (heading-anchor wiki links).
+    let (path, fragment_raw) = match href.split_once('#') {
+        Some((p, f)) => (p, Some(f)),
+        None => (href.as_str(), None),
+    };
+
+    let decode = |s: &str| {
+        js_sys::decode_uri_component(s)
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| s.to_string())
+    };
+
+    let slug = decode(path);
+    let fragment = fragment_raw.map(decode);
     let is_broken = anchor.class_list().contains("broken-link");
 
-    Some(MarkdownLinkTarget::Wiki { slug, is_broken })
+    Some(MarkdownLinkTarget::Wiki {
+        slug,
+        fragment,
+        is_broken,
+    })
 }
 
 #[cfg(test)]
@@ -87,6 +131,28 @@ mod tests {
             target,
             Some(MarkdownLinkTarget::Wiki {
                 slug: "daily note".into(),
+                fragment: None,
+                is_broken: false,
+            })
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn parses_heading_anchor_fragment() {
+        let anchor = document()
+            .create_element("a")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlAnchorElement>()
+            .unwrap();
+        anchor.set_attribute("href", "car%20brands#volvo").unwrap();
+
+        let target = classify_markdown_link_target(Some(anchor.into()));
+
+        assert_eq!(
+            target,
+            Some(MarkdownLinkTarget::Wiki {
+                slug: "car brands".into(),
+                fragment: Some("volvo".into()),
                 is_broken: false,
             })
         );
@@ -110,6 +176,7 @@ mod tests {
             target,
             Some(MarkdownLinkTarget::Wiki {
                 slug: "folder/missing-note".into(),
+                fragment: None,
                 is_broken: true,
             })
         );

@@ -32,14 +32,13 @@ impl<'a> Markdown<'a> {
     /// 1. Strip and parse YAML frontmatter (between `---` fences)
     /// 2. Render body through pulldown-cmark with `ENABLE_WIKILINKS`, resolving
     ///    wiki-links during event processing against `lookup`
-    pub fn render<'lookup>(
+    pub fn render(
         &self,
         title: &str,
-        lookup: impl Fn(&str) -> Option<&'lookup str>,
+        resolve: impl Fn(&str) -> Option<String>,
     ) -> RenderedDocument {
         let frontmatter = self.frontmatter().cloned();
-        let to_owned = |s: &str| lookup(s).map(ToString::to_string);
-        let (html, outgoing_links) = render_core(self.body(), Some(&to_owned), true);
+        let (html, outgoing_links) = render_core(self.body(), Some(&resolve), true);
         let fmt = |d: chrono::DateTime<Utc>| {
             d.with_timezone(&Local)
                 .format("%Y-%m-%d %H:%M:%S")
@@ -67,20 +66,30 @@ impl<'a> Markdown<'a> {
     ///
     /// Used for agent chat messages where wiki-links should be clickable
     /// but checkboxes are non-interactive.
-    pub fn render_with_links<'lookup>(
-        &self,
-        lookup: impl Fn(&str) -> Option<&'lookup str>,
-    ) -> String {
-        let to_owned = |s: &str| lookup(s).map(ToString::to_string);
-        render_core(self.body(), Some(&to_owned), false).0
+    pub fn render_with_links(&self, resolve: impl Fn(&str) -> Option<String>) -> String {
+        render_core(self.body(), Some(&resolve), false).0
     }
 
-    /// Collect resolved outgoing wiki-link slugs without full rendering.
-    pub fn outgoing_links<'lookup>(
-        &self,
-        lookup: impl Fn(&str) -> Option<&'lookup str>,
-    ) -> Vec<String> {
-        collect_resolved_wiki_links(self.body(), lookup)
+    /// Collect resolved outgoing wiki-link **note** slugs without full rendering.
+    ///
+    /// `resolve` returns the link href (`note` or `note#anchor`); the fragment is
+    /// stripped so the returned slugs are always note-level (for the backlink graph).
+    pub fn outgoing_links(&self, resolve: impl Fn(&str) -> Option<String>) -> Vec<String> {
+        collect_resolved_wiki_links(self.body(), resolve)
+    }
+
+    /// Collect the anchor ids declared by `{#id}` heading attributes in the body.
+    ///
+    /// These are the headings that act as wiki-link targets. Plain headings
+    /// without an attribute carry no id and are not returned.
+    pub fn anchor_ids(&self) -> Vec<String> {
+        let options = base_options();
+        Parser::new_ext(self.body(), options)
+            .filter_map(|event| match event {
+                Event::Start(Tag::Heading { id: Some(id), .. }) => Some(id.to_string()),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -146,6 +155,10 @@ fn base_options() -> Options {
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_GFM);
+    // Parse pandoc-style `# Heading {#id}` attributes. The `{#id}` both renders
+    // as `<h1 id="id">` (the scroll anchor) and marks the heading as a wiki-link
+    // target; plain headings without an attribute are not link targets.
+    options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     options
 }
 
@@ -196,11 +209,14 @@ fn render_core(
             id,
         }) => {
             let lookup = lookup.expect("ENABLE_WIKILINKS set only when lookup is Some");
-            if let Some(slug) = lookup(&dest_url) {
-                outgoing_links.push(slug.clone());
+            if let Some(href) = lookup(&dest_url) {
+                // The href may carry a `#anchor` fragment; the backlink graph is
+                // note-level, so record only the note slug.
+                let note_slug = href.split_once('#').map_or(href.as_str(), |(n, _)| n);
+                outgoing_links.push(note_slug.to_string());
                 vec![Event::Start(Tag::Link {
                     link_type: LinkType::Inline,
-                    dest_url: slug.into(),
+                    dest_url: href.clone().into(),
                     title: "".into(),
                     id,
                 })]
@@ -250,9 +266,9 @@ fn render_core(
     (html_output, outgoing_links)
 }
 
-fn collect_resolved_wiki_links<'lookup>(
+fn collect_resolved_wiki_links(
     markdown: &str,
-    lookup: impl Fn(&str) -> Option<&'lookup str>,
+    resolve: impl Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     let mut options = base_options();
     options.insert(Options::ENABLE_WIKILINKS);
@@ -263,7 +279,11 @@ fn collect_resolved_wiki_links<'lookup>(
                 link_type: LinkType::WikiLink { .. },
                 dest_url,
                 ..
-            }) => lookup(&dest_url).map(ToString::to_string),
+            }) => resolve(&dest_url).map(|href| {
+                // Strip any `#anchor` fragment: backlinks are note-level.
+                href.split_once('#')
+                    .map_or(href.clone(), |(note, _)| note.to_string())
+            }),
             _ => None,
         })
         .collect()
@@ -328,6 +348,57 @@ mod tests {
     fn test_heading() {
         let html = Markdown::new("# Hello").render_html();
         assert!(html.contains("<h1>Hello</h1>"), "got: {html}");
+    }
+
+    // ── Heading anchors ───────────────────────────────────────────────
+
+    #[test]
+    fn test_marked_heading_renders_id() {
+        let html = Markdown::new("# Volvo {#volvo}").render_html();
+        assert!(html.contains(r#"<h1 id="volvo">Volvo</h1>"#), "got: {html}");
+    }
+
+    #[test]
+    fn test_plain_heading_has_no_id_and_no_anchor() {
+        let md = Markdown::new("# Volvo");
+        let html = md.render_html();
+        assert!(html.contains("<h1>Volvo</h1>"), "got: {html}");
+        assert!(md.anchor_ids().is_empty());
+    }
+
+    #[test]
+    fn test_anchor_ids_collects_marked_headings_only() {
+        let md = Markdown::new("# Volvo {#volvo}\n\nbody\n\n## SAAB\n\n### Ford {#ford}");
+        assert_eq!(
+            md.anchor_ids(),
+            vec!["volvo".to_string(), "ford".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_wiki_link_to_anchor_resolves_with_fragment() {
+        // A resolver that maps the anchor name to a `note#anchor` href.
+        let note = Markdown::new("See [[Volvo]].").render("t", |s| {
+            (s.eq_ignore_ascii_case("volvo")).then(|| "car-brands#volvo".to_string())
+        });
+        assert!(
+            note.html
+                .contains(r#"<a href="car-brands#volvo">Volvo</a>"#),
+            "got: {}",
+            note.html
+        );
+        // The backlink graph stays note-level: the fragment is stripped.
+        assert_eq!(note.outgoing_links, ["car-brands"]);
+    }
+
+    #[test]
+    fn test_outgoing_links_strips_anchor_fragment() {
+        let links = Markdown::new("[[Volvo]] and [[plain]]").outgoing_links(|name| match name {
+            "Volvo" => Some("car-brands#volvo".to_string()),
+            "plain" => Some("plain".to_string()),
+            _ => None,
+        });
+        assert_eq!(links, vec!["car-brands".to_string(), "plain".to_string()]);
     }
 
     #[test]
@@ -406,8 +477,8 @@ mod tests {
     fn test_outgoing_links_collects_resolved_targets() {
         let links =
             Markdown::new("[[Target]] and [[Other|label]]").outgoing_links(|name| match name {
-                "Target" => Some("target"),
-                "Other" => Some("other"),
+                "Target" => Some("target".to_string()),
+                "Other" => Some("other".to_string()),
                 _ => None,
             });
         assert_eq!(links, vec!["target".to_string(), "other".to_string()]);
@@ -416,7 +487,7 @@ mod tests {
     #[test]
     fn test_outgoing_links_skips_broken_targets() {
         let links = Markdown::new("[[Target]] [[Missing]]").outgoing_links(|name| match name {
-            "Target" => Some("target"),
+            "Target" => Some("target".to_string()),
             _ => None,
         });
         assert_eq!(links, vec!["target".to_string()]);
@@ -438,6 +509,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             note.html.contains("<a href=\"my-note\">my-note</a>"),
@@ -454,6 +526,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(note.html.contains("href=\"my-note\""), "got: {}", note.html);
         assert!(note.html.contains("My-Note"), "got: {}", note.html);
@@ -467,6 +540,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(note.html.contains("broken-link"), "got: {}", note.html);
         assert!(note.html.contains("ghost"), "got: {}", note.html);
@@ -477,7 +551,11 @@ mod tests {
     fn test_wiki_link_multiple() {
         let notes = ["alpha", "gamma"];
         let note = Markdown::new("[[alpha]] and [[beta]] and [[gamma]].").render("t", |s| {
-            notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
+            notes
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             note.html.contains("<a href=\"alpha\">alpha</a>"),
@@ -501,7 +579,11 @@ mod tests {
     fn test_wiki_link_in_render_populates_outgoing() {
         let notes = ["other-note"];
         let result = Markdown::new("Check [[other-note]] out.").render("my-note", |s| {
-            notes.iter().copied().find(|&k| k.eq_ignore_ascii_case(s))
+            notes
+                .iter()
+                .copied()
+                .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert_eq!(result.outgoing_links, ["other-note"]);
         assert!(result.html.contains("<a href=\"other-note\">"));
@@ -522,6 +604,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             !note.html.contains("<a href=\"not-a-link\">"),
@@ -544,6 +627,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             !note.html.contains("<a href=\"not-a-link\">"),
@@ -562,6 +646,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             !note.html.contains("<a href=\"not-a-link\">"),
@@ -579,7 +664,7 @@ mod tests {
     #[test]
     fn test_wiki_link_in_double_backtick_inline_code() {
         let input = "See ``[[not-a-link]]`` here";
-        let note = Markdown::new(input).render("t", |_| Some("not-a-link"));
+        let note = Markdown::new(input).render("t", |_| Some("not-a-link".to_string()));
         assert!(
             !note.html.contains("<a href=\"not-a-link\">"),
             "got: {}",
@@ -595,6 +680,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(note.html.contains("href=\"target\""), "got: {}", note.html);
         assert!(note.html.contains("display text"), "got: {}", note.html);
@@ -609,6 +695,7 @@ mod tests {
                 .iter()
                 .copied()
                 .find(|&k| k.eq_ignore_ascii_case(s))
+                .map(String::from)
         });
         assert!(
             !result.html.contains("<a href=\"skip-me\">"),

@@ -6,7 +6,7 @@ use granit_types::{TagMap, TodoList};
 fn render_markdown_for_state(state: &AppState, content: &str) -> String {
     let md = Markdown::new(content);
     state
-        .with_cave(|cave| Ok(md.render_with_links(|s| cave.lookup_slug(s))))
+        .with_cave(|cave| Ok(md.render_with_links(|s| cave.resolve_link(s))))
         .unwrap_or_else(|_| md.render_html())
 }
 
@@ -90,6 +90,13 @@ pub(crate) fn move_folder(
 #[tauri::command]
 pub(crate) fn list_notes(state: tauri::State<AppState>) -> Result<Vec<DocumentMeta>, CaveError> {
     state.with_cave(|cave| cave.list_notes())
+}
+
+/// List all heading anchor ids in the cave (`# Heading {#id}` targets), for
+/// wiki-link completion alongside note slugs.
+#[tauri::command]
+pub(crate) fn list_anchors(state: tauri::State<AppState>) -> Result<Vec<String>, CaveError> {
+    state.with_cave(|cave| Ok(cave.list_anchors()))
 }
 
 #[tauri::command]
@@ -324,7 +331,7 @@ pub(crate) fn render_note(
     state.with_cave(|cave| {
         let slug = cave.resolve_slug(&name)?;
         let raw = cave.read_note_raw(&slug)?;
-        let mut rendered = Markdown::new(&raw).render(&slug, |s| cave.lookup_slug(s));
+        let mut rendered = Markdown::new(&raw).render(&slug, |s| cave.resolve_link(s));
         rendered.backlinks = cave.backlink_note_metas(&slug)?;
         Ok(rendered)
     })
@@ -337,7 +344,7 @@ pub(crate) fn render_template(
 ) -> Result<RenderedDocument, CaveError> {
     state.with_cave(|cave| {
         let raw = cave.read_template_raw(&name)?;
-        Ok(Markdown::new(&raw).render(&name, |s| cave.lookup_slug(s)))
+        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
     })
 }
 
