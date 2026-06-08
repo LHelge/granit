@@ -57,13 +57,36 @@ fn restore_cave_logic(
 }
 
 pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // The setup hook must never fail: a returned `Err` aborts the whole app
+    // (tao calls this from `did_finish_launching`, which cannot unwind, so the
+    // panic becomes a hard abort). Restoring the previously-open cave is
+    // best-effort — any failure (e.g. a macOS folder-permission `EPERM` on a
+    // freshly-built binary, or a since-deleted directory) degrades to starting
+    // with no cave open, which the user can reopen via the dialog.
     let store = Store::new(app);
-    let path = store.load_persisted_active_cave()?;
+    let path = match store.load_persisted_active_cave() {
+        Ok(path) => path,
+        Err(err) => {
+            warn!("Failed to read persisted active cave, starting with no cave: {err}");
+            return Ok(());
+        }
+    };
     let state = app.state::<AppState>();
 
-    let outcome = restore_cave_logic(path, &state)?;
+    let outcome = match restore_cave_logic(path, &state) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            // Keep the stored path so a later launch can restore it once the
+            // underlying issue (e.g. granting folder access) is resolved.
+            warn!("Failed to restore last cave, starting with no cave: {err}");
+            return Ok(());
+        }
+    };
+
     if outcome == RestoreOutcome::InvalidPath {
-        store.clear_persisted_active_cave()?;
+        if let Err(err) = store.clear_persisted_active_cave() {
+            warn!("Failed to clear stored cave path: {err}");
+        }
     }
 
     // Build the vector index for RAG if a cave was restored.
