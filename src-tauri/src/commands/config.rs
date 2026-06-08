@@ -33,6 +33,10 @@ enum RestoreOutcome {
     NothingStored,
     InvalidPath,
     Restored,
+    /// The stored path exists but the cave could not be opened (folder
+    /// permissions, a duplicate slug/anchor, …). Non-fatal: the app starts
+    /// with no cave open.
+    Failed,
 }
 
 fn restore_cave_logic(
@@ -56,6 +60,25 @@ fn restore_cave_logic(
     Ok(RestoreOutcome::Restored)
 }
 
+/// Restore the cave at `path` into `state`, **never failing**.
+///
+/// A cave that cannot be opened — folder permissions (`EPERM`), a duplicate
+/// slug, a duplicate heading anchor, etc. — degrades to
+/// [`RestoreOutcome::Failed`] with no cave set, instead of propagating the
+/// error. This is the invariant that keeps the setup hook safe: it runs inside
+/// tao's non-unwinding `did_finish_launching`, so a propagated `Err` aborts the
+/// whole process. The caller preserves the stored path so a later launch can
+/// retry once the underlying issue is resolved.
+fn restore_cave_or_empty(path: Option<PathBuf>, state: &AppState) -> RestoreOutcome {
+    match restore_cave_logic(path, state) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            warn!("Failed to restore last cave, starting with no cave: {err}");
+            RestoreOutcome::Failed
+        }
+    }
+}
+
 pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // The setup hook must never fail: a returned `Err` aborts the whole app
     // (tao calls this from `did_finish_launching`, which cannot unwind, so the
@@ -73,15 +96,9 @@ pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn st
     };
     let state = app.state::<AppState>();
 
-    let outcome = match restore_cave_logic(path, &state) {
-        Ok(outcome) => outcome,
-        Err(err) => {
-            // Keep the stored path so a later launch can restore it once the
-            // underlying issue (e.g. granting folder access) is resolved.
-            warn!("Failed to restore last cave, starting with no cave: {err}");
-            return Ok(());
-        }
-    };
+    // Best-effort: a `Failed` outcome keeps the stored path so a later launch
+    // can retry once the underlying issue (e.g. granting folder access) is fixed.
+    let outcome = restore_cave_or_empty(path, &state);
 
     if outcome == RestoreOutcome::InvalidPath {
         if let Err(err) = store.clear_persisted_active_cave() {
@@ -377,6 +394,83 @@ mod tests {
             name: name.map(str::to_string),
             provider,
         }
+    }
+
+    // ── restore_cave_or_empty: startup must never fail ──────────────────────
+    //
+    // Regression guard for the crash where the setup hook propagated a
+    // cave-open error. tao runs the setup hook in a non-unwinding context, so a
+    // propagated `Err` aborts the whole app. `restore_cave_or_empty` must always
+    // degrade to a non-fatal outcome instead.
+
+    #[test]
+    fn restore_cave_or_empty_restores_a_valid_cave() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "# hi").unwrap();
+        let state = test_app_state();
+
+        let outcome = restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+
+        assert_eq!(outcome, RestoreOutcome::Restored);
+        assert_eq!(state.active_cave_path(), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn restore_cave_or_empty_is_non_fatal_for_a_broken_cave() {
+        // Two notes share a slug across subdirectories, so `Cave::open` returns
+        // `DuplicateSlug`. This stands in for any open failure (incl. the
+        // macOS `EPERM` that originally crashed the app): the error path is
+        // identical, and unlike permission tricks it is portable to CI.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("dup.md"), "a").unwrap();
+        std::fs::write(dir.path().join("sub/dup.md"), "b").unwrap();
+        let state = test_app_state();
+
+        // Must NOT propagate (would abort the setup hook); degrades to Failed.
+        let outcome = restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+
+        assert_eq!(outcome, RestoreOutcome::Failed);
+        assert!(
+            state.active_cave_path().is_none(),
+            "no cave should be set when restore fails"
+        );
+    }
+
+    #[test]
+    fn restore_cave_or_empty_is_non_fatal_for_a_duplicate_anchor_cave() {
+        // The hard heading-anchor uniqueness check makes `Cave::open` fail;
+        // restoring such a cave at startup must not crash the app either.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.md"), "# X {#dup}\n").unwrap();
+        std::fs::write(dir.path().join("b.md"), "# Y {#dup}\n").unwrap();
+        let state = test_app_state();
+
+        let outcome = restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+
+        assert_eq!(outcome, RestoreOutcome::Failed);
+        assert!(state.active_cave_path().is_none());
+    }
+
+    #[test]
+    fn restore_cave_or_empty_reports_invalid_path() {
+        let state = test_app_state();
+        let missing = PathBuf::from("/granit/definitely/does/not/exist");
+
+        assert_eq!(
+            restore_cave_or_empty(Some(missing), &state),
+            RestoreOutcome::InvalidPath
+        );
+        assert!(state.active_cave_path().is_none());
+    }
+
+    #[test]
+    fn restore_cave_or_empty_reports_nothing_stored() {
+        let state = test_app_state();
+        assert_eq!(
+            restore_cave_or_empty(None, &state),
+            RestoreOutcome::NothingStored
+        );
     }
 
     fn multi_provider_agent_config() -> AgentConfig {
