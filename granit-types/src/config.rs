@@ -128,7 +128,9 @@ mod tests {
 
     #[test]
     fn test_empty_yaml_uses_all_defaults() {
-        let config: AppConfig = serde_yml::from_str("").unwrap();
+        // serde_yml 0.0.13 rejects fully empty documents, so an empty mapping
+        // is the minimal input; empty-file handling lives in Cave::load_config.
+        let config: AppConfig = serde_yml::from_str("{}").unwrap();
         assert_eq!(config.theme, "dark");
         assert_eq!(config.daily_note_folder, "Daily");
         assert_eq!(config.markdown_font, FontConfig::markdown_default());

@@ -107,6 +107,11 @@ impl Cave {
         let path = self.config_path();
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
+                // serde_yml 0.0.13 rejects fully empty documents; an empty
+                // config.yml must keep meaning "all defaults".
+                if contents.trim().is_empty() {
+                    return Ok(AppConfig::default());
+                }
                 let mut config: AppConfig = serde_yml::from_str(&contents)?;
                 config.active_cave = None;
                 Ok(config)
@@ -420,6 +425,18 @@ mod tests {
 
         let config_path = dir.path().join(".granit/config.yml");
         assert!(config_path.exists());
+
+        let config = cave.load_config().unwrap();
+        assert_eq!(config.theme, "dark");
+        assert_eq!(config.daily_note_folder, "Daily");
+    }
+
+    #[test]
+    fn test_load_config_empty_file_uses_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".granit")).unwrap();
+        std::fs::write(cave.config_path(), "").unwrap();
 
         let config = cave.load_config().unwrap();
         assert_eq!(config.theme, "dark");

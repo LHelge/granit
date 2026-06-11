@@ -76,7 +76,14 @@ pub(super) fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
         .strip_prefix('\n')
         .or_else(|| body.strip_prefix("\r\n"))
         .unwrap_or(body);
-    let frontmatter = serde_yml::from_str::<Frontmatter>(&yaml_text).ok();
+    // serde_yml 0.0.13 rejects fully empty documents, so an empty frontmatter
+    // block (`---\n---`) is parsed as an empty mapping to keep yielding
+    // default frontmatter instead of none.
+    let frontmatter = if yaml_text.trim().is_empty() {
+        serde_yml::from_str::<Frontmatter>("{}").ok()
+    } else {
+        serde_yml::from_str::<Frontmatter>(&yaml_text).ok()
+    };
     (frontmatter, body)
 }
 

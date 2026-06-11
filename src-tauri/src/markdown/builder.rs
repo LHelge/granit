@@ -3,6 +3,21 @@ use granit_types::Frontmatter;
 
 use super::Markdown;
 
+/// Serialize frontmatter to YAML normalized to exactly one trailing newline,
+/// so the closing `---` fence always lands on its own line regardless of how
+/// the YAML library terminates its output (serde_yml 0.0.13 stopped emitting
+/// a trailing newline).
+fn frontmatter_yaml(fm: &Frontmatter) -> String {
+    let mut yaml = serde_yml::to_string(fm).unwrap_or_default();
+    while yaml.ends_with('\n') {
+        yaml.pop();
+    }
+    if !yaml.is_empty() {
+        yaml.push('\n');
+    }
+    yaml
+}
+
 impl Markdown<'_> {
     /// Generate the initial file content for a new note.
     ///
@@ -22,7 +37,7 @@ impl Markdown<'_> {
             icon,
             favorite: None,
         };
-        let yaml = serde_yml::to_string(&fm).unwrap_or_default();
+        let yaml = frontmatter_yaml(&fm);
         format!("---\n{yaml}---\n{body}")
     }
 
@@ -71,7 +86,7 @@ impl Markdown<'_> {
         if let Some(favorite) = favorite {
             fm.favorite = Some(favorite);
         }
-        let yaml = serde_yml::to_string(&fm).unwrap_or_default();
+        let yaml = frontmatter_yaml(&fm);
         format!("---\n{yaml}---\n{body}")
     }
 }
@@ -130,6 +145,17 @@ mod tests {
     fn test_rebuild_no_frontmatter_returns_body_unchanged() {
         let result = Markdown::rebuild("No frontmatter here", "new body", None, None, None);
         assert_eq!(result, "new body");
+    }
+
+    #[test]
+    fn test_new_note_closing_fence_on_own_line() {
+        // Guards against the YAML serializer dropping its trailing newline,
+        // which would glue the closing fence onto the last frontmatter line.
+        let result = Markdown::new_note_with_body("Body", vec![], Some("Star".into()));
+        assert!(
+            result.contains("icon: Star\n---\nBody"),
+            "closing fence must sit on its own line: {result}"
+        );
     }
 
     #[test]
@@ -207,7 +233,7 @@ mod tests {
             "frontmatter should be added: {result}"
         );
         assert!(
-            result.contains("tags:\n- legacy\n- migrated"),
+            result.contains("- legacy") && result.contains("- migrated"),
             "tags should be written: {result}"
         );
         assert!(

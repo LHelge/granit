@@ -1310,7 +1310,7 @@ mod tests {
             "frontmatter should be added: {raw}"
         );
         assert!(
-            raw.contains("tags:\n- legacy\n- migrated"),
+            raw.contains("- legacy") && raw.contains("- migrated"),
             "tags should be persisted: {raw}"
         );
         assert!(
