@@ -7,7 +7,55 @@ use granit_types::{Document, DocumentMeta};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// The outcome of a note-rewrite closure: the new body plus optional
+/// frontmatter changes, as accepted by [`crate::markdown::Markdown::rebuild`].
+#[derive(Default)]
+struct NoteRewrite {
+    body: String,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+    favorite: Option<bool>,
+}
+
 impl Cave {
+    /// Shared read→modify→rebuild→write cycle for note mutations.
+    ///
+    /// Validates and resolves `slug`, reads the raw file, lets `f` derive the
+    /// new body (and optional frontmatter changes) from it, rebuilds the file
+    /// preserving remaining frontmatter, writes it atomically, and returns
+    /// metadata for the rewritten note. Callers whose change can affect
+    /// wiki-links must call `rebuild_link_indexes()` afterwards.
+    fn rewrite_note(
+        &self,
+        slug: &str,
+        f: impl FnOnce(&str) -> Result<NoteRewrite, CaveError>,
+    ) -> Result<DocumentMeta, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
+            .clone();
+
+        let raw = std::fs::read_to_string(&abs_path)?;
+        let rewrite = f(&raw)?;
+        let updated = crate::markdown::Markdown::rebuild(
+            &raw,
+            &rewrite.body,
+            rewrite.tags,
+            rewrite.icon,
+            rewrite.favorite,
+        );
+        write_atomic(&abs_path, updated.as_str())?;
+
+        let rel = self.relative_path(&abs_path);
+        let mut meta = note_meta_from_relative_path(&rel);
+        let updated_md = crate::markdown::Markdown::new(&updated);
+        meta.icon = updated_md.icon();
+        meta.favorite = updated_md.favorite();
+        Ok(meta)
+    }
+
     /// Create a new note in this cave, optionally inside `folder` (relative path
     /// from cave root) and optionally seeded from a template slug. Returns the
     /// metadata of the created note.
@@ -96,22 +144,13 @@ impl Cave {
 
     /// Save new content to an existing note (looked up by slug).
     pub fn save_note(&mut self, slug: &str, content: &str) -> Result<DocumentMeta, CaveError> {
-        validate_name(slug)?;
-        let abs_path = self
-            .notes
-            .get(slug)
-            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
-            .clone();
-
-        let existing_raw = std::fs::read_to_string(&abs_path)?;
-        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
-        write_atomic(&abs_path, updated.as_str())?;
+        let meta = self.rewrite_note(slug, |_raw| {
+            Ok(NoteRewrite {
+                body: content.to_string(),
+                ..Default::default()
+            })
+        })?;
         self.rebuild_link_indexes();
-        let rel = self.relative_path(&abs_path);
-        let mut meta = note_meta_from_relative_path(&rel);
-        let updated_md = crate::markdown::Markdown::new(&updated);
-        meta.icon = updated_md.icon();
-        meta.favorite = updated_md.favorite();
         Ok(meta)
     }
 
@@ -121,24 +160,14 @@ impl Cave {
         slug: &str,
         icon: Option<String>,
     ) -> Result<DocumentMeta, CaveError> {
-        validate_name(slug)?;
-        let abs_path = self
-            .notes
-            .get(slug)
-            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
-
-        let existing_raw = std::fs::read_to_string(abs_path)?;
-        let existing_body = crate::markdown::Markdown::new(&existing_raw).body();
-        let updated =
-            crate::markdown::Markdown::rebuild(&existing_raw, existing_body, None, icon, None);
-        write_atomic(abs_path, &updated)?;
-
-        let rel = self.relative_path(abs_path);
-        let mut meta = note_meta_from_relative_path(&rel);
-        let updated_md = crate::markdown::Markdown::new(&updated);
-        meta.icon = updated_md.icon();
-        meta.favorite = updated_md.favorite();
-        Ok(meta)
+        self.rewrite_note(slug, |raw| {
+            let md = crate::markdown::Markdown::new(raw);
+            Ok(NoteRewrite {
+                body: md.body().to_string(),
+                icon,
+                ..Default::default()
+            })
+        })
     }
 
     /// Replace `old_text` with `new_text` in an existing note (looked up by slug).
@@ -149,25 +178,19 @@ impl Cave {
         old_text: &str,
         new_text: &str,
     ) -> Result<DocumentMeta, CaveError> {
-        validate_name(slug)?;
-        let abs_path = self
-            .notes
-            .get(slug)
-            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?
-            .clone();
-
-        let raw = std::fs::read_to_string(&abs_path)?;
-        let body = crate::markdown::Markdown::new(&raw).body();
-        if !body.contains(old_text) {
-            return Err(CaveError::EditNotFound);
-        }
-        let new_body = body.replacen(old_text, new_text, 1);
-        let new_content = crate::markdown::Markdown::rebuild(&raw, &new_body, None, None, None);
-        write_atomic(&abs_path, &new_content)?;
+        let meta = self.rewrite_note(slug, |raw| {
+            let md = crate::markdown::Markdown::new(raw);
+            let body = md.body();
+            if !body.contains(old_text) {
+                return Err(CaveError::EditNotFound);
+            }
+            Ok(NoteRewrite {
+                body: body.replacen(old_text, new_text, 1),
+                ..Default::default()
+            })
+        })?;
         self.rebuild_link_indexes();
-
-        let rel = self.relative_path(&abs_path);
-        Ok(note_meta_from_relative_path(&rel))
+        Ok(meta)
     }
 
     /// Delete a note by slug.
@@ -285,6 +308,10 @@ impl Cave {
     /// If `old_slug` and `new_name` differ the file is renamed first (same directory),
     /// then the new content is written. If `tags` is `Some`, the frontmatter tags
     /// are replaced. If `icon` is `Some`, the icon is set (`Some("")` clears it).
+    ///
+    /// Deliberately not built on [`rewrite_note`]: the rename-then-write here
+    /// interleaves filesystem state with a rollback (rename back on write
+    /// failure), which a closure-based helper would obscure.
     pub fn update_note(
         &mut self,
         old_slug: &str,

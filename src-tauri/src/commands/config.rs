@@ -146,24 +146,39 @@ fn rag_index_action(old: &RagConfig, new: &RagConfig) -> RagIndexAction {
     }
 }
 
+/// Lock the config, apply `f`, persist to the cave, reset the agent, and
+/// return the IPC response.
+///
+/// `f` must validate before mutating: returning an error from it leaves the
+/// stored config untouched and the agent generation unchanged.
+fn update_agent_config(
+    state: &AppState,
+    f: impl FnOnce(&mut AppConfig) -> Result<(), ConfigError>,
+) -> Result<AppConfig, ConfigError> {
+    let response = {
+        let mut config = state.lock_config();
+        f(&mut config)?;
+        config.clone()
+    };
+    state.save_config_to_cave(&response)?;
+    state.reset_agent();
+    Ok(state.ipc_response(&response))
+}
+
 fn save_config_for_state(
     state: &AppState,
     mut config: AppConfig,
 ) -> Result<(AppConfig, RagIndexAction), ConfigError> {
     config.agent.validate().map_err(ConfigError::Validation)?;
+    config.active_cave = None;
 
-    let (response, rag_action) = {
-        config.active_cave = None;
-
-        let mut stored_config = state.lock_config();
-        let rag_action = rag_index_action(&stored_config.agent.rag, &config.agent.rag);
-        *stored_config = config.clone();
-        (config, rag_action)
-    };
-
-    state.save_config_to_cave(&response)?;
-    state.reset_agent();
-    Ok((state.ipc_response(&response), rag_action))
+    let mut rag_action = RagIndexAction::None;
+    let response = update_agent_config(state, |stored| {
+        rag_action = rag_index_action(&stored.agent.rag, &config.agent.rag);
+        *stored = config;
+        Ok(())
+    })?;
+    Ok((response, rag_action))
 }
 
 fn save_sidebar_state_for_state(
@@ -197,8 +212,7 @@ fn list_providers_for_state(state: &AppState) -> Vec<granit_types::ProviderInfo>
 }
 
 fn select_provider_for_state(state: &AppState, index: usize) -> Result<AppConfig, ConfigError> {
-    let response = {
-        let mut config = state.lock_config();
+    update_agent_config(state, |config| {
         if index >= config.agent.providers.len() {
             return Err(ConfigError::Validation(format!(
                 "Provider index {index} out of range"
@@ -206,12 +220,8 @@ fn select_provider_for_state(state: &AppState, index: usize) -> Result<AppConfig
         }
         config.agent.selected_provider = index;
         config.agent.selected_model = None;
-        config.clone()
-    };
-
-    state.save_config_to_cave(&response)?;
-    state.reset_agent();
-    Ok(state.ipc_response(&response))
+        Ok(())
+    })
 }
 
 fn current_provider_for_model_listing(state: &AppState) -> Result<ProviderConfig, AgentError> {
@@ -230,15 +240,10 @@ fn current_provider_for_model_listing(state: &AppState) -> Result<ProviderConfig
 }
 
 fn select_model_for_state(state: &AppState, model_id: String) -> Result<AppConfig, ConfigError> {
-    let response = {
-        let mut config = state.lock_config();
+    update_agent_config(state, |config| {
         config.agent.selected_model = Some(model_id);
-        config.clone()
-    };
-
-    state.save_config_to_cave(&response)?;
-    state.reset_agent();
-    Ok(state.ipc_response(&response))
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -430,14 +435,10 @@ pub(crate) fn select_mode(
     mode: granit_types::AgentMode,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, ConfigError> {
-    let response = {
-        let mut config = state.lock_config();
+    update_agent_config(state.inner(), |config| {
         config.agent.mode = mode;
-        config.clone()
-    };
-    state.save_config_to_cave(&response)?;
-    state.reset_agent();
-    Ok(state.ipc_response(&response))
+        Ok(())
+    })
 }
 
 #[cfg(test)]
