@@ -9,6 +9,7 @@ mod todos;
 
 pub use error::CaveError;
 use granit_types::AppConfig;
+pub(crate) use helpers::write_atomic;
 use helpers::{ensure_md_extension, validate_folder_path};
 pub use helpers::{Document, DocumentMeta, RenderedDocument};
 use std::collections::HashMap;

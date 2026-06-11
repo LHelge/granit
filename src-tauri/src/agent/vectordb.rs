@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use log::{debug, info, warn};
+use parking_lot::Mutex;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
@@ -84,7 +85,9 @@ impl CaveVectorIndex {
 
         let cache_path = {
             let guard = cave.lock();
-            let cave_ref = guard.as_ref().expect("cave must be open");
+            let cave_ref = guard.as_ref().ok_or_else(|| {
+                AgentError::Embedding("cave must be open when building the vector index".into())
+            })?;
             cave_ref.path().join(".granit").join("embeddings.bin")
         };
 
@@ -128,7 +131,7 @@ impl CaveVectorIndex {
             let note_paths = cave.note_paths();
 
             let mut slugs_with_mtimes: Vec<(String, SystemTime)> = Vec::new();
-            let mut need_embedding: Vec<String> = Vec::new();
+            let mut need_embedding: Vec<(String, SystemTime)> = Vec::new();
 
             for (slug, abs_path) in note_paths {
                 let mtime = file_mtime(abs_path);
@@ -140,21 +143,16 @@ impl CaveVectorIndex {
                 };
 
                 if needs_update {
-                    need_embedding.push(slug.clone());
+                    need_embedding.push((slug.clone(), mtime));
                 }
             }
 
             // Read note bodies for notes that need embedding (still under cave lock).
             let texts_to_embed: Vec<(String, SystemTime, String)> = need_embedding
-                .iter()
-                .filter_map(|slug| {
-                    let doc = cave.read_note(slug).ok()?;
-                    let mtime = slugs_with_mtimes
-                        .iter()
-                        .find(|(s, _)| s == slug)
-                        .map(|(_, m)| *m)
-                        .unwrap_or(SystemTime::UNIX_EPOCH);
-                    Some((slug.clone(), mtime, doc.content))
+                .into_iter()
+                .filter_map(|(slug, mtime)| {
+                    let doc = cave.read_note(&slug).ok()?;
+                    Some((slug, mtime, doc.content))
                 })
                 .collect();
 
@@ -180,7 +178,7 @@ impl CaveVectorIndex {
                 let model = Arc::clone(&self.inner.model);
                 let docs = documents;
                 move || {
-                    let mut model = model.lock().expect("embedding model mutex poisoned");
+                    let mut model = model.lock();
                     model.embed(docs, None)
                 }
             })
@@ -231,16 +229,25 @@ impl CaveVectorIndex {
             let cave_guard = self.inner.cave.lock();
             let cave = match cave_guard.as_ref() {
                 Some(c) => c,
-                None => return,
+                None => {
+                    debug!("skipping embedding update for {slug}: no cave open");
+                    return;
+                }
             };
             let abs_path = match cave.note_paths().get(slug) {
                 Some(p) => p.clone(),
-                None => return,
+                None => {
+                    debug!("skipping embedding update for {slug}: not in note index");
+                    return;
+                }
             };
             let mtime = file_mtime(&abs_path);
             let content = match cave.read_note(slug) {
                 Ok(doc) => doc.content,
-                Err(_) => return,
+                Err(e) => {
+                    warn!("skipping embedding update for {slug}: failed to read note: {e}");
+                    return;
+                }
             };
             (mtime, content)
         };
@@ -251,13 +258,24 @@ impl CaveVectorIndex {
             let model = Arc::clone(&self.inner.model);
             let doc = content;
             match tokio::task::spawn_blocking(move || {
-                let mut model = model.lock().expect("embedding model mutex poisoned");
+                let mut model = model.lock();
                 model.embed(vec![doc], None)
             })
             .await
             {
                 Ok(Ok(mut vecs)) if !vecs.is_empty() => vecs.remove(0),
-                _ => return,
+                Ok(Ok(_)) => {
+                    warn!("embedding update for {slug} returned no vectors");
+                    return;
+                }
+                Ok(Err(e)) => {
+                    warn!("embedding update for {slug} failed: {e}");
+                    return;
+                }
+                Err(e) => {
+                    warn!("embedding update task for {slug} panicked: {e}");
+                    return;
+                }
             }
         };
 
@@ -289,7 +307,7 @@ impl CaveVectorIndex {
             let model = Arc::clone(&self.inner.model);
             let q = query.to_string();
             tokio::task::spawn_blocking(move || {
-                let mut model = model.lock().expect("embedding model mutex poisoned");
+                let mut model = model.lock();
                 model.embed(vec![q], None)
             })
             .await
@@ -349,7 +367,7 @@ impl CaveVectorIndex {
         let result = tokio::task::spawn_blocking(move || {
             let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&cache)
                 .map_err(|e| format!("rkyv serialization failed: {e}"))?;
-            std::fs::write(&path, &bytes)
+            crate::cave::write_atomic(&path, &bytes)
                 .map_err(|e| format!("writing {}: {e}", path.display()))?;
             Ok::<usize, String>(bytes.len())
         })
@@ -482,20 +500,38 @@ pub(crate) fn resolve_model_name(config_model: Option<&str>) -> &str {
 }
 
 /// Load cached embeddings from disk. Returns an empty map on any failure
-/// or if the model name doesn't match.
+/// or if the model name doesn't match; the next rebuild re-embeds everything
+/// and overwrites the cache.
 fn load_cache(path: &Path, expected_model: &str) -> HashMap<String, EmbeddingEntry> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(_) => return HashMap::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            debug!("no embedding cache at {}", path.display());
+            return HashMap::new();
+        }
+        Err(e) => {
+            warn!("failed to read embedding cache {}: {e}", path.display());
+            return HashMap::new();
+        }
     };
 
     let cache: EmbeddingCache =
         match rkyv::from_bytes::<EmbeddingCache, rkyv::rancor::Error>(&bytes) {
             Ok(c) => c,
-            Err(_) => return HashMap::new(),
+            Err(e) => {
+                warn!(
+                    "embedding cache {} is corrupt, re-embedding all notes: {e}",
+                    path.display()
+                );
+                return HashMap::new();
+            }
         };
 
     if cache.model_name != expected_model {
+        info!(
+            "embedding cache model {} != configured {expected_model}, re-embedding all notes",
+            cache.model_name
+        );
         return HashMap::new();
     }
 
@@ -623,6 +659,16 @@ mod tests {
     #[test]
     fn cache_missing_file_returns_empty() {
         let loaded = load_cache(Path::new("/nonexistent/path.bin"), "AllMiniLML6V2");
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn cache_corrupt_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.bin");
+        std::fs::write(&path, b"not an rkyv archive").unwrap();
+
+        let loaded = load_cache(&path, "AllMiniLML6V2");
         assert!(loaded.is_empty());
     }
 
