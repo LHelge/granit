@@ -297,8 +297,14 @@ pub(crate) fn save_sidebar_state(
     save_sidebar_state_for_state(state.inner(), sidebar, agent_panel)
 }
 
-/// Resolve paths and build the vector index for RAG, spawning the async
-/// rebuild in the background.
+/// Resolve paths for the embedding model and build the vector index for RAG
+/// on a background task.
+///
+/// Loading the ONNX model can take seconds, so only the cheap path resolution
+/// happens on the calling command; model load, cache read, and the rebuild all
+/// run in the background. The current index is dropped immediately (cancelling
+/// any in-flight rebuild) so an agent built during the window never holds an
+/// index with stale embeddings; the new index is installed once ready.
 fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_config: &RagConfig) {
     let models_dir = app
         .path()
@@ -308,7 +314,8 @@ fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_conf
     let _ = std::fs::create_dir_all(&models_dir);
 
     let model_name =
-        crate::agent::vectordb::resolve_model_name(rag_config.embedding_model.as_deref());
+        crate::agent::vectordb::resolve_model_name(rag_config.embedding_model.as_deref())
+            .to_string();
 
     let bundled_model_dir = app
         .path()
@@ -317,25 +324,46 @@ fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_conf
         .map(|d| d.join("resources/models/all-MiniLM-L6-v2-onnx"))
         .filter(|d| d.join("model.onnx").exists());
 
-    match crate::agent::vectordb::CaveVectorIndex::new(
-        state.shared_cave(),
-        model_name,
-        &models_dir,
-        bundled_model_dir.as_deref(),
-    ) {
-        Ok(index) => {
+    state.set_vector_index(None);
+
+    let shared_cave = state.shared_cave();
+    let app_handle = app.app_handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let built = tauri::async_runtime::spawn_blocking(move || {
+            crate::agent::vectordb::CaveVectorIndex::new(
+                shared_cave,
+                &model_name,
+                &models_dir,
+                bundled_model_dir.as_deref(),
+            )
+        })
+        .await;
+
+        let index = match built {
+            Ok(Ok(index)) => index,
+            Ok(Err(e)) => {
+                warn!("vector index init failed (RAG disabled): {e}");
+                return;
+            }
+            Err(e) => {
+                warn!("vector index init task panicked: {e}");
+                return;
+            }
+        };
+
+        {
+            let state = app_handle.state::<AppState>();
             state.set_vector_index(Some(index.clone()));
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = index.rebuild().await {
-                    warn!("vector index rebuild failed: {e}");
-                }
-            });
+            // ensure_agent snapshots the vector index when it builds the
+            // agent, so an agent built before the index was ready would never
+            // see RAG. Reset so the next message rebuilds it with the index.
+            state.reset_agent();
         }
-        Err(e) => {
-            warn!("vector index init failed (RAG disabled): {e}");
-            state.set_vector_index(None);
+
+        if let Err(e) = index.rebuild().await {
+            warn!("vector index rebuild failed: {e}");
         }
-    }
+    });
 }
 
 #[tauri::command]

@@ -71,7 +71,15 @@ impl AppState {
     }
 
     pub(super) fn set_vector_index(&self, index: Option<CaveVectorIndex>) {
-        *self.vector_index.lock() = index;
+        let old = {
+            let mut guard = self.vector_index.lock();
+            std::mem::replace(&mut *guard, index)
+        };
+        // Abort any in-flight rebuild on the superseded index so it stops
+        // embedding and never overwrites the new index's cache file.
+        if let Some(old) = old {
+            old.cancel();
+        }
     }
 
     pub(super) fn vector_index(&self) -> Option<CaveVectorIndex> {

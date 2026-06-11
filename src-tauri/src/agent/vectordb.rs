@@ -49,6 +49,10 @@ struct CaveVectorIndexInner {
     entries: RwLock<HashMap<String, EmbeddingEntry>>,
     cave: SharedCave,
     cache_path: PathBuf,
+    /// Set when this index has been replaced (cave switch, RAG config
+    /// change). An in-flight [`rebuild`] checks it between embedding chunks
+    /// and aborts instead of racing the successor on the cache file.
+    cancelled: std::sync::atomic::AtomicBool,
 }
 
 impl CaveVectorIndex {
@@ -105,8 +109,23 @@ impl CaveVectorIndex {
                 entries: RwLock::new(entries),
                 cave,
                 cache_path,
+                cancelled: std::sync::atomic::AtomicBool::new(false),
             }),
         })
+    }
+
+    /// Mark this index as superseded, aborting any in-flight rebuild at the
+    /// next chunk boundary.
+    pub(crate) fn cancel(&self) {
+        self.inner
+            .cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.inner
+            .cancelled
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Rebuild the index: compare in-memory entries against the cave's current
@@ -167,16 +186,25 @@ impl CaveVectorIndex {
             texts_to_embed.len()
         );
 
-        // Batch-embed on a blocking thread (fastembed is synchronous).
-        let new_embeddings = if !texts_to_embed.is_empty() {
-            let documents: Vec<String> = texts_to_embed
-                .iter()
-                .map(|(_, _, text)| text.clone())
+        // Batch-embed on a blocking thread (fastembed is synchronous), in
+        // chunks so memory stays bounded and a superseded rebuild can abort
+        // between chunks instead of running to completion.
+        let mut pending = texts_to_embed;
+        let mut new_embeddings: Vec<(String, SystemTime, Vec<f32>)> =
+            Vec::with_capacity(pending.len());
+        while !pending.is_empty() {
+            if self.is_cancelled() {
+                info!("vector index rebuild cancelled (index superseded)");
+                return Ok(());
+            }
+
+            let batch: Vec<(String, SystemTime, String)> = pending
+                .drain(..pending.len().min(EMBED_CHUNK_SIZE))
                 .collect();
+            let docs: Vec<String> = batch.iter().map(|(_, _, text)| text.clone()).collect();
 
             let vectors = tokio::task::spawn_blocking({
                 let model = Arc::clone(&self.inner.model);
-                let docs = documents;
                 move || {
                     let mut model = model.lock();
                     model.embed(docs, None)
@@ -186,14 +214,20 @@ impl CaveVectorIndex {
             .map_err(|e| AgentError::Embedding(format!("spawn_blocking panicked: {e}")))?
             .map_err(|e| AgentError::Embedding(e.to_string()))?;
 
-            texts_to_embed
-                .into_iter()
-                .zip(vectors)
-                .map(|((slug, mtime, _), vec)| (slug, mtime, vec))
-                .collect::<Vec<_>>()
-        } else {
-            Vec::new()
-        };
+            new_embeddings.extend(
+                batch
+                    .into_iter()
+                    .zip(vectors)
+                    .map(|((slug, mtime, _), vec)| (slug, mtime, vec)),
+            );
+        }
+
+        // A cancelled rebuild must not touch the store or the cache file —
+        // they now belong to the successor index.
+        if self.is_cancelled() {
+            info!("vector index rebuild cancelled (index superseded)");
+            return Ok(());
+        }
 
         // Update in-memory store.
         let current_slugs: std::collections::HashSet<&str> =
@@ -493,6 +527,9 @@ fn parse_model_name(name: &str) -> Result<fastembed::EmbeddingModel, AgentError>
 }
 
 const DEFAULT_EMBEDDING_MODEL: &str = "AllMiniLML6V2Q";
+
+/// Number of documents embedded per blocking batch during a rebuild.
+const EMBED_CHUNK_SIZE: usize = 32;
 
 /// Resolve the model name from config, falling back to the default.
 pub(crate) fn resolve_model_name(config_model: Option<&str>) -> &str {
