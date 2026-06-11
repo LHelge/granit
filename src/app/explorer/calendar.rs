@@ -109,12 +109,8 @@ pub fn Calendar() -> impl IntoView {
                     Ok(note) => {
                         ctx.set_active_note_document(note);
                         // Refresh notes and folders so the tree and calendar stay in sync.
-                        if let Ok(notes) = ipc::fetch_notes().await {
-                            ctx.notes.set(notes);
-                        }
-                        if let Ok(folders) = ipc::fetch_folders().await {
-                            ctx.folders.set(folders);
-                        }
+                        ctx.refresh_notes().await;
+                        ctx.refresh_folders().await;
                     }
                     Err(e) => {
                         ctx.push_error("calendar", e);
@@ -138,12 +134,8 @@ pub fn Calendar() -> impl IntoView {
                         match ipc::open_daily_note().await {
                             Ok(note) => {
                                 ctx.set_active_note_document(note);
-                                if let Ok(notes) = ipc::fetch_notes().await {
-                                    ctx.notes.set(notes);
-                                }
-                                if let Ok(folders) = ipc::fetch_folders().await {
-                                    ctx.folders.set(folders);
-                                }
+                                ctx.refresh_notes().await;
+                                ctx.refresh_folders().await;
                             }
                             Err(e) => { ctx.push_error("daily-note", e); }
                         }

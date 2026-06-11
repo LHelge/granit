@@ -110,26 +110,9 @@ pub fn App() -> impl IntoView {
         ctx.set_theme(&theme_name);
 
         if has_active_cave {
-            match ipc::fetch_notes().await {
-                Ok(notes) => ctx.notes.set(notes),
-                Err(e) => {
-                    ctx.push_error("notes", format!("Failed to load restored cave: {e}"));
-                }
-            }
-
-            match ipc::fetch_folders().await {
-                Ok(folders) => ctx.folders.set(folders),
-                Err(e) => {
-                    ctx.push_error("folders", format!("Failed to load folders: {e}"));
-                }
-            }
-
-            match ipc::fetch_templates().await {
-                Ok(templates) => ctx.templates.set(templates),
-                Err(e) => {
-                    ctx.push_error("templates", format!("Failed to load templates: {e}"));
-                }
-            }
+            ctx.refresh_notes().await;
+            ctx.refresh_folders().await;
+            ctx.refresh_templates().await;
         }
     });
 

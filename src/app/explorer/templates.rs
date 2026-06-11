@@ -14,15 +14,7 @@ pub fn Templates() -> impl IntoView {
 
     let refresh_templates = move || {
         leptos::task::spawn_local(async move {
-            match ipc::fetch_templates().await {
-                Ok(templates) => {
-                    ctx.clear_source("templates");
-                    ctx.templates.set(templates);
-                }
-                Err(e) => {
-                    ctx.push_error("templates", format!("Failed to load templates: {e}"));
-                }
-            }
+            ctx.refresh_templates().await;
         });
     };
 
@@ -31,9 +23,7 @@ pub fn Templates() -> impl IntoView {
             loading.set(true);
             match ipc::create_template("untitled").await {
                 Ok(meta) => {
-                    if let Ok(templates) = ipc::fetch_templates().await {
-                        ctx.templates.set(templates);
-                    }
+                    ctx.refresh_templates().await;
                     match ipc::read_template(&meta.slug).await {
                         Ok(template) => {
                             open_in_edit.set(EditOpen::EditFocusTitle);
@@ -151,9 +141,7 @@ pub fn Templates() -> impl IntoView {
                                                             if ctx.active_template.get().map(|active| active.meta.slug == s).unwrap_or(false) {
                                                                 ctx.clear_active_document();
                                                             }
-                                                            if let Ok(templates) = ipc::fetch_templates().await {
-                                                                ctx.templates.set(templates);
-                                                            }
+                                                            ctx.refresh_templates().await;
                                                         }
                                                         Err(e) => {
                                                             ctx.push_error("templates", format!("Failed to delete template: {e}"));

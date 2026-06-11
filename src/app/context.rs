@@ -121,36 +121,50 @@ impl AppCtx {
         self.selected_note_text.set(None);
     }
 
+    /// Fetch the note list into `self.notes`, surfacing failures as a toast.
+    ///
+    /// Replaces any previous error from the same source so repeated refreshes
+    /// don't stack stale toasts.
+    pub async fn refresh_notes(self) {
+        self.clear_source("notes");
+        match ipc::fetch_notes().await {
+            Ok(notes) => self.notes.set(notes),
+            Err(e) => {
+                self.push_error("notes", format!("Failed to load notes: {e}"));
+            }
+        }
+    }
+
+    /// Fetch the folder list into `self.folders`, surfacing failures as a toast.
+    pub async fn refresh_folders(self) {
+        self.clear_source("folders");
+        match ipc::fetch_folders().await {
+            Ok(folders) => self.folders.set(folders),
+            Err(e) => {
+                self.push_error("folders", format!("Failed to load folders: {e}"));
+            }
+        }
+    }
+
+    /// Fetch the template list into `self.templates`, surfacing failures as a toast.
+    pub async fn refresh_templates(self) {
+        self.clear_source("templates");
+        match ipc::fetch_templates().await {
+            Ok(templates) => self.templates.set(templates),
+            Err(e) => {
+                self.push_error("templates", format!("Failed to load templates: {e}"));
+            }
+        }
+    }
+
     /// Open a cave through IPC and refresh all frontend state that depends on it.
     pub async fn open_cave_and_refresh(self, path: &str) -> Result<(), String> {
         let new_config = ipc::open_cave(path).await?;
         self.config.set(new_config);
 
-        match ipc::fetch_notes().await {
-            Ok(notes) => {
-                self.clear_source("notes");
-                self.notes.set(notes);
-            }
-            Err(err) => {
-                self.clear_source("notes");
-                self.push_error("notes", err);
-            }
-        }
-
-        if let Ok(folders) = ipc::fetch_folders().await {
-            self.folders.set(folders);
-        }
-
-        match ipc::fetch_templates().await {
-            Ok(templates) => {
-                self.clear_source("templates");
-                self.templates.set(templates);
-            }
-            Err(err) => {
-                self.clear_source("templates");
-                self.push_error("templates", err);
-            }
-        }
+        self.refresh_notes().await;
+        self.refresh_folders().await;
+        self.refresh_templates().await;
 
         self.clear_active_document();
         Ok(())
