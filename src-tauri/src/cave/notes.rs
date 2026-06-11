@@ -361,13 +361,22 @@ impl Cave {
     /// left byte-for-byte unchanged.
     fn rewrite_wiki_links_for_rename(&self, old_slug: &str, new_slug: &str) {
         for abs_path in self.notes.values() {
-            let Ok(raw) = std::fs::read_to_string(abs_path) else {
-                continue;
+            let raw = match std::fs::read_to_string(abs_path) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    log::warn!("skipping wiki-link rewrite for {}: {e}", abs_path.display());
+                    continue;
+                }
             };
             if let Some(updated) =
                 crate::markdown::Markdown::rename_wiki_links(&raw, old_slug, new_slug)
             {
-                let _ = write_atomic(abs_path, &updated);
+                if let Err(e) = write_atomic(abs_path, &updated) {
+                    log::warn!(
+                        "failed to rewrite wiki-links in {}: {e}",
+                        abs_path.display()
+                    );
+                }
             }
         }
     }

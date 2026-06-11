@@ -179,16 +179,26 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> Vec<Box<dyn Tool
         }
     }
 
-    // Web fetch — always available (no API key needed)
+    // Web fetch — always available (no API key needed). A failed HTTP-client
+    // build (TLS/proxy misconfiguration) drops the tool instead of failing
+    // the whole agent.
     if !is_excluded("web_fetch") {
-        tools.push(Box::new(WebFetchTool::new(&config.tool_config.web_fetch)));
+        match WebFetchTool::new(&config.tool_config.web_fetch) {
+            Ok(tool) => tools.push(Box::new(tool)),
+            Err(e) => log::warn!("web_fetch unavailable: failed to build HTTP client: {e}"),
+        }
     }
 
     // Web search — requires a Brave API key
     if !is_excluded("web_search") {
         if let Some(api_key) = &config.tool_config.web_search.api_key {
             if !api_key.trim().is_empty() {
-                tools.push(Box::new(WebSearchTool::new(&config.tool_config.web_search)));
+                match WebSearchTool::new(&config.tool_config.web_search) {
+                    Ok(tool) => tools.push(Box::new(tool)),
+                    Err(e) => {
+                        log::warn!("web_search unavailable: failed to build HTTP client: {e}")
+                    }
+                }
             }
         }
     }

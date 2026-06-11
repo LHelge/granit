@@ -18,17 +18,16 @@ pub struct WebFetchTool {
 }
 
 impl WebFetchTool {
-    pub fn new(config: &WebFetchConfig) -> Self {
+    pub fn new(config: &WebFetchConfig) -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder()
             .user_agent("Granit/1.0")
             .timeout(TIMEOUT)
-            .build()
-            .expect("failed to create HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             client,
             max_output_chars: config.max_output_chars,
-        }
+        })
     }
 }
 
@@ -159,17 +158,16 @@ struct BraveWebResult {
 }
 
 impl WebSearchTool {
-    pub fn new(config: &WebSearchConfig) -> Self {
+    pub fn new(config: &WebSearchConfig) -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder()
             .user_agent("Granit/1.0")
-            .build()
-            .expect("failed to create HTTP client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             client,
             api_key: config.api_key.clone().unwrap_or_default(),
             max_results: config.max_results,
-        }
+        })
     }
 }
 
@@ -243,5 +241,16 @@ impl Tool for WebSearchTool {
             .join("\n\n");
 
         Ok(formatted)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_tool_constructors_succeed_with_default_config() {
+        assert!(WebFetchTool::new(&WebFetchConfig::default()).is_ok());
+        assert!(WebSearchTool::new(&WebSearchConfig::default()).is_ok());
     }
 }
