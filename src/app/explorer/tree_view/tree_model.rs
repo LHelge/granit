@@ -195,11 +195,12 @@ mod tests {
         let collapsed = visible_note_slugs(notes.clone(), folders.clone(), &HashSet::new());
         assert_eq!(collapsed, vec!["root-note".to_string()]);
 
-        // Expanded: the child becomes visible, after the root note.
+        // Expanded: the child becomes visible. Folders render above
+        // root-level notes, so the child comes first.
         let mut expanded = HashSet::new();
         expanded.insert("projects".to_string());
         let shown = visible_note_slugs(notes, folders, &expanded);
-        assert_eq!(shown, vec!["root-note".to_string(), "child".to_string()]);
+        assert_eq!(shown, vec!["child".to_string(), "root-note".to_string()]);
     }
 
     #[wasm_bindgen_test]
