@@ -122,23 +122,48 @@ fn get_config_for_state(state: &AppState) -> AppConfig {
     state.ipc_response(&config)
 }
 
+/// What a config change means for the RAG vector index.
+#[derive(Debug, PartialEq)]
+enum RagIndexAction {
+    /// No index-affecting RAG change.
+    None,
+    /// RAG was enabled, or is enabled and the embedding model changed:
+    /// the index must be (re)built.
+    Rebuild,
+    /// RAG was disabled: the index should be dropped.
+    Disable,
+}
+
+fn rag_index_action(old: &RagConfig, new: &RagConfig) -> RagIndexAction {
+    if new.enabled && (!old.enabled || old.embedding_model != new.embedding_model) {
+        RagIndexAction::Rebuild
+    } else if old.enabled && !new.enabled {
+        RagIndexAction::Disable
+    } else {
+        // A `top_n`-only change needs no rebuild: top_n is baked into the
+        // agent at build time and the caller resets the agent anyway.
+        RagIndexAction::None
+    }
+}
+
 fn save_config_for_state(
     state: &AppState,
     mut config: AppConfig,
-) -> Result<AppConfig, ConfigError> {
+) -> Result<(AppConfig, RagIndexAction), ConfigError> {
     config.agent.validate().map_err(ConfigError::Validation)?;
 
-    let response = {
+    let (response, rag_action) = {
         config.active_cave = None;
 
         let mut stored_config = state.lock_config();
+        let rag_action = rag_index_action(&stored_config.agent.rag, &config.agent.rag);
         *stored_config = config.clone();
-        config
+        (config, rag_action)
     };
 
     state.save_config_to_cave(&response)?;
     state.reset_agent();
-    Ok(state.ipc_response(&response))
+    Ok((state.ipc_response(&response), rag_action))
 }
 
 fn save_sidebar_state_for_state(
@@ -241,9 +266,26 @@ pub(crate) fn list_system_fonts() -> Vec<String> {
 #[tauri::command]
 pub(crate) fn save_config(
     config: AppConfig,
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<AppConfig, ConfigError> {
-    save_config_for_state(state.inner(), config)
+    let (response, rag_action) = save_config_for_state(state.inner(), config)?;
+
+    // Apply the index consequence of the RAG settings change. Without this,
+    // enabling RAG or switching the embedding model would silently keep
+    // serving the old (or no) index until the cave is reopened.
+    match rag_action {
+        RagIndexAction::Rebuild => {
+            if state.active_cave_path().is_some() {
+                let rag_config = state.lock_config().agent.rag.clone();
+                build_vector_index(&app, &state, &rag_config);
+            }
+        }
+        RagIndexAction::Disable => state.set_vector_index(None),
+        RagIndexAction::None => {}
+    }
+
+    Ok(response)
 }
 
 #[tauri::command]
@@ -523,7 +565,7 @@ mod tests {
         };
         config.active_cave = Some("/should/not/persist".into());
 
-        let response = save_config_for_state(&state, config).unwrap();
+        let (response, _) = save_config_for_state(&state, config).unwrap();
 
         assert_eq!(state.lock_config().theme, "latte");
         assert!(state.lock_config().active_cave.is_none());
@@ -536,6 +578,84 @@ mod tests {
         let saved = state.lock_cave().as_ref().unwrap().load_config().unwrap();
         assert_eq!(saved.theme, "latte");
         assert!(saved.active_cave.is_none());
+    }
+
+    // ── rag_index_action: which config changes touch the vector index ──────
+
+    fn rag(enabled: bool, top_n: usize, model: Option<&str>) -> RagConfig {
+        RagConfig {
+            enabled,
+            top_n,
+            embedding_model: model.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn rag_index_action_enabling_rag_rebuilds() {
+        assert_eq!(
+            rag_index_action(&rag(false, 5, None), &rag(true, 5, None)),
+            RagIndexAction::Rebuild
+        );
+    }
+
+    #[test]
+    fn rag_index_action_disabling_rag_disables() {
+        assert_eq!(
+            rag_index_action(&rag(true, 5, None), &rag(false, 5, None)),
+            RagIndexAction::Disable
+        );
+    }
+
+    #[test]
+    fn rag_index_action_model_change_while_enabled_rebuilds() {
+        assert_eq!(
+            rag_index_action(&rag(true, 5, None), &rag(true, 5, Some("BGESmallENV15"))),
+            RagIndexAction::Rebuild
+        );
+    }
+
+    #[test]
+    fn rag_index_action_model_change_while_disabled_is_none() {
+        assert_eq!(
+            rag_index_action(&rag(false, 5, None), &rag(false, 5, Some("BGESmallENV15"))),
+            RagIndexAction::None
+        );
+    }
+
+    #[test]
+    fn rag_index_action_top_n_only_change_is_none() {
+        assert_eq!(
+            rag_index_action(&rag(true, 5, None), &rag(true, 10, None)),
+            RagIndexAction::None
+        );
+    }
+
+    #[test]
+    fn rag_index_action_unchanged_config_is_none() {
+        assert_eq!(
+            rag_index_action(&rag(true, 5, None), &rag(true, 5, None)),
+            RagIndexAction::None
+        );
+        assert_eq!(
+            rag_index_action(&rag(false, 5, None), &rag(false, 5, None)),
+            RagIndexAction::None
+        );
+    }
+
+    #[test]
+    fn test_save_config_for_state_reports_rag_action() {
+        let (_dir, state) = test_app_state_with_cave();
+
+        // Default config has RAG enabled; disabling it must report Disable.
+        let mut config = AppConfig::default();
+        config.agent.rag.enabled = false;
+
+        let (_, action) = save_config_for_state(&state, config).unwrap();
+        assert_eq!(action, RagIndexAction::Disable);
+
+        // Re-enabling reports Rebuild.
+        let (_, action) = save_config_for_state(&state, AppConfig::default()).unwrap();
+        assert_eq!(action, RagIndexAction::Rebuild);
     }
 
     #[test]
