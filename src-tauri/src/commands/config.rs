@@ -282,8 +282,10 @@ pub(crate) fn save_config(
     match rag_action {
         RagIndexAction::Rebuild => {
             if state.active_cave_path().is_some() {
-                let rag_config = state.lock_config().agent.rag.clone();
-                build_vector_index(&app, &state, &rag_config);
+                // Use the config this save just persisted — re-locking here
+                // could pick up a concurrent save's settings and rebuild with
+                // the wrong model (or after that save disabled RAG).
+                build_vector_index(&app, &state, &response.agent.rag);
             }
         }
         RagIndexAction::Disable => state.set_vector_index(None),

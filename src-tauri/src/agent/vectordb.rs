@@ -259,6 +259,10 @@ impl CaveVectorIndex {
 
     /// Re-embed a single note after it has been saved or created.
     pub(crate) async fn update_note(&self, slug: &str) {
+        if self.is_cancelled() {
+            debug!("skipping embedding update for {slug}: index superseded");
+            return;
+        }
         let data = {
             let cave_guard = self.inner.cave.lock();
             let cave = match cave_guard.as_ref() {
@@ -323,6 +327,10 @@ impl CaveVectorIndex {
 
     /// Remove the embedding for a deleted note.
     pub(crate) async fn remove_note(&self, slug: &str) {
+        if self.is_cancelled() {
+            debug!("skipping embedding removal for {slug}: index superseded");
+            return;
+        }
         {
             let mut entries = self.inner.entries.write().await;
             entries.remove(slug);
@@ -375,6 +383,13 @@ impl CaveVectorIndex {
     }
 
     async fn save_cache(&self) {
+        // Backstop for ops that started before this index was superseded
+        // (e.g. an update_note mid-embed): a cancelled index must never
+        // overwrite the cache file the successor now owns.
+        if self.is_cancelled() {
+            debug!("skipping embedding cache save: index superseded");
+            return;
+        }
         let entries = self.inner.entries.read().await;
 
         let cache = EmbeddingCache {
