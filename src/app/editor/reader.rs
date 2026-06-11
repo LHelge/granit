@@ -9,8 +9,6 @@ use granit_types::resolve_note_icon;
 use leptos::prelude::*;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 
-const READER_SELECTION_HANDLER_KEY: &str = "__granitReaderSelectionHandler";
-
 fn current_selection() -> Option<JsValue> {
     let window = web_sys::window()?;
     let get_selection = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("getSelection"))
@@ -83,6 +81,28 @@ pub(super) fn Reader() -> impl IntoView {
     let app_ctx = expect_context::<AppCtx>();
     let reader_ref = NodeRef::<leptos::html::Div>::new();
 
+    // The document-level selectionchange listener is owned by this component:
+    // the closure lives in `selection_listener` (`new_local` because `Closure`
+    // is not Send) and is removed + dropped when the effect re-runs and on
+    // unmount, so it never leaks and never lingers into writer mode, where it
+    // would interfere with CM6 selection tracking.
+    let selection_listener = StoredValue::new_local(None::<Closure<dyn FnMut(web_sys::Event)>>);
+
+    let remove_selection_listener = move || {
+        let Some(listener) = selection_listener
+            .try_update_value(|stored| stored.take())
+            .flatten()
+        else {
+            return;
+        };
+        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+            let _ = document.remove_event_listener_with_callback(
+                "selectionchange",
+                listener.as_ref().unchecked_ref(),
+            );
+        }
+    };
+
     Effect::new(move |_| {
         let Some(reader) = reader_ref.get() else {
             return;
@@ -91,17 +111,8 @@ pub(super) fn Reader() -> impl IntoView {
             return;
         };
 
-        if let Some(existing_handler) = js_sys::Reflect::get(
-            document.as_ref(),
-            &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
-        )
-        .ok()
-        .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
-        {
-            let existing_handler_ref: &js_sys::Function = existing_handler.unchecked_ref();
-            let _ = document
-                .remove_event_listener_with_callback("selectionchange", existing_handler_ref);
-        }
+        // The effect re-runs when the node ref changes; replace the listener.
+        remove_selection_listener();
 
         let reader_for_listener = reader.clone();
         let ctx_for_listener = ctx;
@@ -115,36 +126,10 @@ pub(super) fn Reader() -> impl IntoView {
 
         let _ = document
             .add_event_listener_with_callback("selectionchange", listener.as_ref().unchecked_ref());
-        let _ = js_sys::Reflect::set(
-            document.as_ref(),
-            &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
-            listener.as_ref(),
-        );
-        listener.forget();
+        selection_listener.set_value(Some(listener));
     });
 
-    // Remove the selectionchange listener when the Reader is unmounted so it
-    // doesn't interfere with CM6 selection tracking in writer mode.
-    on_cleanup(move || {
-        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
-            if let Some(handler) = js_sys::Reflect::get(
-                document.as_ref(),
-                &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
-            )
-            .ok()
-            .and_then(|value| value.dyn_into::<js_sys::Function>().ok())
-            {
-                let _ = document.remove_event_listener_with_callback(
-                    "selectionchange",
-                    handler.unchecked_ref(),
-                );
-                let _ = js_sys::Reflect::delete_property(
-                    &document,
-                    &JsValue::from_str(READER_SELECTION_HANDLER_KEY),
-                );
-            }
-        }
-    });
+    on_cleanup(remove_selection_listener);
 
     // Intercept clicks on links and checkboxes in rendered markdown.
     // - Checkboxes toggle the underlying markdown via the backend.
@@ -201,8 +186,11 @@ pub(super) fn Reader() -> impl IntoView {
         ev.prevent_default();
         match link {
             MarkdownLinkTarget::External(url) => {
+                let app = app_ctx;
                 leptos::task::spawn_local(async move {
-                    let _ = ipc::open_url(&url).await;
+                    if let Err(e) = ipc::open_url(&url).await {
+                        app.push_error("reader", format!("Failed to open link: {e}"));
+                    }
                 });
             }
             MarkdownLinkTarget::Wiki {

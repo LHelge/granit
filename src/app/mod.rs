@@ -144,7 +144,9 @@ pub fn App() -> impl IntoView {
             width: agent_width.get_untracked(),
         };
         leptos::task::spawn_local(async move {
-            let _ = ipc::save_sidebar_state(sb, ap).await;
+            if let Err(e) = ipc::save_sidebar_state(sb, ap).await {
+                ctx.push_error("config", format!("Failed to save layout: {e}"));
+            }
         });
     };
 

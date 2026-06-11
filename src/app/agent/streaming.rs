@@ -65,7 +65,11 @@ pub(super) fn setup_stream_listeners(
                 _handles.push(h);
             }
 
-            // error
+            // error. The is_streaming guard is intentional, not a dropped
+            // error: the backend both emits this event and rejects the
+            // send_message invoke, and the invoke path already surfaces the
+            // message. The guard only filters stale events from a previous
+            // or cancelled turn, mirroring the chunk/done listeners.
             if let Some(h) = ipc::listen_stream_error(move |err| {
                 if !is_streaming.get_untracked() {
                     return;
