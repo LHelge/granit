@@ -45,7 +45,7 @@ Version-controlled hooks live in `.githooks/`. Activate them once per clone:
 git config core.hooksPath .githooks
 ```
 
-`pre-commit` runs `cargo fmt --all -- --check`; `pre-push` runs both clippy invocations and `cargo test -p granit`. They mirror CI so failures are caught before pushing.
+`pre-commit` runs `cargo fmt --all -- --check`; `pre-push` runs both clippy invocations, `cargo test -p granit`, and the wasm-pack frontend tests (in Chrome locally; set `GRANIT_WASM_TEST_BROWSER=firefox` to match CI). They mirror CI so failures are caught before pushing.
 
 ## Architecture: backend-owned state
 
