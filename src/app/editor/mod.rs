@@ -1,104 +1,21 @@
 mod codemirror;
 mod frontmatter;
 mod reader;
+mod save_queue;
 mod writer;
 
 use crate::app::{components::icons::Icon, ipc};
 use granit_types::{AppConfig, Document, DocumentMeta, RenderedDocument};
 use leptos::prelude::*;
 use reader::Reader;
+use save_queue::{DocumentKind, PersistSnapshot, SaveQueue};
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::rc::Rc;
 use writer::Writer;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DocumentKind {
-    Note,
-    Template,
-}
 
 enum PersistedMeta {
     Note(DocumentMeta),
     Template(DocumentMeta),
-}
-
-/// A fully-captured snapshot of editor state at the moment a save is requested.
-///
-/// All persist logic operates on snapshots instead of reading signals during
-/// async work, so that rapid switches between notes cannot cause the wrong
-/// content to be written for the wrong slug.
-#[derive(Clone)]
-struct PersistSnapshot {
-    kind: DocumentKind,
-    slug: String,
-    name: String,
-    content: String,
-    tags: Option<Vec<String>>,
-    icon: Option<String>,
-    favorite: Option<bool>,
-    /// Whether this save was initiated explicitly (Save button / Ctrl-S).
-    /// Explicit saves toggle `saving`/`editing` state and update the active
-    /// document on success. Auto-saves do not.
-    explicit: bool,
-}
-
-impl PersistSnapshot {
-    fn doc_key(&self) -> String {
-        match self.kind {
-            DocumentKind::Note => format!("note:{}", self.slug),
-            DocumentKind::Template => format!("template:{}", self.slug),
-        }
-    }
-}
-
-/// Ordered queue of pending save snapshots.
-///
-/// Only one save is in flight at any time. When a new snapshot is enqueued
-/// for a `doc_key` that is already pending (but not yet started), the existing
-/// entry is replaced with the newer snapshot (latest-wins per document), so a
-/// burst of switches away from the same note collapses into a single write.
-/// The `explicit` flag is preserved on replacement: if either the existing or
-/// incoming snapshot is explicit, the merged entry remains explicit so UI
-/// state (`saving`, `editing`) is always finalized.
-struct SaveQueue {
-    pending: VecDeque<PersistSnapshot>,
-    in_flight: bool,
-}
-
-impl SaveQueue {
-    fn new() -> Self {
-        Self {
-            pending: VecDeque::new(),
-            in_flight: false,
-        }
-    }
-
-    /// Enqueue `snapshot` and return `true` if the caller should start
-    /// draining the queue (i.e. nothing is currently in flight).
-    fn enqueue(&mut self, mut snapshot: PersistSnapshot) -> bool {
-        let key = snapshot.doc_key();
-        if let Some(existing) = self.pending.iter_mut().find(|s| s.doc_key() == key) {
-            snapshot.explicit = snapshot.explicit || existing.explicit;
-            *existing = snapshot;
-        } else {
-            self.pending.push_back(snapshot);
-        }
-        if self.in_flight {
-            false
-        } else {
-            self.in_flight = true;
-            true
-        }
-    }
-
-    fn take_next(&mut self) -> Option<PersistSnapshot> {
-        let next = self.pending.pop_front();
-        if next.is_none() {
-            self.in_flight = false;
-        }
-        next
-    }
 }
 
 // ── Shared context: open next note in edit mode ────────────────────

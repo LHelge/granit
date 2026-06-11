@@ -130,41 +130,55 @@ impl Agent {
             AgentMode::Ask => vector_index,
             AgentMode::Agent => None,
         };
+        // Each arm only constructs the provider-specific client; the shared
+        // builder chain lives in `configure_agent`.
         let inner = match &entry.provider {
-            ProviderConfig::Ollama { base_url } => Self::build_ollama(
-                base_url.as_deref(),
-                model,
-                cave_tools,
-                &system_prompt,
-                vector_index,
-                rag_top_n,
-            )?,
-            ProviderConfig::Anthropic { api_key } => Self::build_anthropic(
-                api_key,
-                model,
-                cave_tools,
-                &system_prompt,
-                vector_index,
-                rag_top_n,
-            )?,
-            ProviderConfig::Mistral { api_key } => Self::build_mistral(
-                api_key,
-                model,
-                cave_tools,
-                &system_prompt,
-                vector_index,
-                rag_top_n,
-            )?,
-            ProviderConfig::OpenAiCompatible { api_key, base_url } => {
-                Self::build_openai_compatible(
-                    api_key,
-                    base_url,
-                    model,
+            ProviderConfig::Ollama { base_url } => {
+                let base_url = base_url.as_deref().unwrap_or(DEFAULT_OLLAMA_BASE_URL);
+                let client = ollama::Client::builder()
+                    .api_key(Nothing)
+                    .base_url(base_url)
+                    .build()?;
+                ProviderAgent::Ollama(configure_agent(
+                    client.agent(model),
                     cave_tools,
                     &system_prompt,
                     vector_index,
                     rag_top_n,
-                )?
+                ))
+            }
+            ProviderConfig::Anthropic { api_key } => {
+                let client = anthropic::Client::builder().api_key(api_key).build()?;
+                ProviderAgent::Anthropic(configure_agent(
+                    client.agent(model),
+                    cave_tools,
+                    &system_prompt,
+                    vector_index,
+                    rag_top_n,
+                ))
+            }
+            ProviderConfig::Mistral { api_key } => {
+                let client = mistral::Client::builder().api_key(api_key).build()?;
+                ProviderAgent::Mistral(configure_agent(
+                    client.agent(model),
+                    cave_tools,
+                    &system_prompt,
+                    vector_index,
+                    rag_top_n,
+                ))
+            }
+            ProviderConfig::OpenAiCompatible { api_key, base_url } => {
+                let client = openai::CompletionsClient::builder()
+                    .api_key(api_key)
+                    .base_url(base_url)
+                    .build()?;
+                ProviderAgent::OpenAiCompatible(configure_agent(
+                    client.agent(model),
+                    cave_tools,
+                    &system_prompt,
+                    vector_index,
+                    rag_top_n,
+                ))
             }
         };
 
@@ -174,103 +188,6 @@ impl Agent {
             max_history: config.max_history,
             max_turns: config.max_turns,
         })
-    }
-
-    fn build_ollama(
-        base_url: Option<&str>,
-        model: &str,
-        cave_tools: Vec<Box<dyn ToolDyn>>,
-        system_prompt: &str,
-        vector_index: Option<CaveVectorIndex>,
-        rag_top_n: usize,
-    ) -> Result<ProviderAgent, AgentError> {
-        let base_url = base_url.unwrap_or(DEFAULT_OLLAMA_BASE_URL);
-
-        let client = ollama::Client::builder()
-            .api_key(Nothing)
-            .base_url(base_url)
-            .build()?;
-
-        let mut builder = client
-            .agent(model)
-            .preamble(system_prompt)
-            .tools(cave_tools);
-
-        if let Some(index) = vector_index {
-            builder = builder.dynamic_context(rag_top_n, index);
-        }
-
-        Ok(ProviderAgent::Ollama(builder.build()))
-    }
-
-    fn build_anthropic(
-        api_key: &str,
-        model: &str,
-        cave_tools: Vec<Box<dyn ToolDyn>>,
-        system_prompt: &str,
-        vector_index: Option<CaveVectorIndex>,
-        rag_top_n: usize,
-    ) -> Result<ProviderAgent, AgentError> {
-        let client = anthropic::Client::builder().api_key(api_key).build()?;
-
-        let mut builder = client
-            .agent(model)
-            .preamble(system_prompt)
-            .tools(cave_tools);
-
-        if let Some(index) = vector_index {
-            builder = builder.dynamic_context(rag_top_n, index);
-        }
-
-        Ok(ProviderAgent::Anthropic(builder.build()))
-    }
-
-    fn build_openai_compatible(
-        api_key: &str,
-        base_url: &str,
-        model: &str,
-        cave_tools: Vec<Box<dyn ToolDyn>>,
-        system_prompt: &str,
-        vector_index: Option<CaveVectorIndex>,
-        rag_top_n: usize,
-    ) -> Result<ProviderAgent, AgentError> {
-        let client = openai::CompletionsClient::builder()
-            .api_key(api_key)
-            .base_url(base_url)
-            .build()?;
-
-        let mut builder = client
-            .agent(model)
-            .preamble(system_prompt)
-            .tools(cave_tools);
-
-        if let Some(index) = vector_index {
-            builder = builder.dynamic_context(rag_top_n, index);
-        }
-
-        Ok(ProviderAgent::OpenAiCompatible(builder.build()))
-    }
-
-    fn build_mistral(
-        api_key: &str,
-        model: &str,
-        cave_tools: Vec<Box<dyn ToolDyn>>,
-        system_prompt: &str,
-        vector_index: Option<CaveVectorIndex>,
-        rag_top_n: usize,
-    ) -> Result<ProviderAgent, AgentError> {
-        let client = mistral::Client::builder().api_key(api_key).build()?;
-
-        let mut builder = client
-            .agent(model)
-            .preamble(system_prompt)
-            .tools(cave_tools);
-
-        if let Some(index) = vector_index {
-            builder = builder.dynamic_context(rag_top_n, index);
-        }
-
-        Ok(ProviderAgent::Mistral(builder.build()))
     }
 
     /// Push a message to the conversation history, dropping the oldest
@@ -338,6 +255,22 @@ impl Agent {
             })
         })
     }
+}
+
+/// Apply the provider-independent agent configuration — preamble, toolset,
+/// and optional RAG dynamic context — to a rig agent builder.
+fn configure_agent<M: rig_core::completion::CompletionModel>(
+    builder: rig_core::agent::AgentBuilder<M>,
+    cave_tools: Vec<Box<dyn ToolDyn>>,
+    system_prompt: &str,
+    vector_index: Option<CaveVectorIndex>,
+    rag_top_n: usize,
+) -> rig_core::agent::Agent<M> {
+    let mut builder = builder.preamble(system_prompt).tools(cave_tools);
+    if let Some(index) = vector_index {
+        builder = builder.dynamic_context(rag_top_n, index);
+    }
+    builder.build()
 }
 
 /// Query the selected provider's API for available models.
