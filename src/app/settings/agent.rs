@@ -328,8 +328,8 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 let:provider_row
             >
                 {
-                    let (idx, _) = provider_row;
-                    view! { <ProviderRow form=form index=idx /> }
+                    let (_, provider) = provider_row;
+                    view! { <ProviderRow form=form id=provider.id /> }
                 }
             </For>
 
@@ -341,8 +341,14 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
 }
 
 /// A single provider editor row.
+///
+/// The row is identified by the entry's stable `id`, never by position:
+/// `<For>` is keyed on `id`, so rows are *reused* when the providers vec
+/// changes — a positional index captured at mount would go stale the moment
+/// an earlier row is removed, making this row display and edit a different
+/// provider than its key claims.
 #[component]
-fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
+fn ProviderRow(form: RwSignal<SettingsForm>, id: usize) -> impl IntoView {
     let (show_key, set_show_key) = signal(false);
     let (type_open, set_type_open) = signal(false);
 
@@ -354,31 +360,25 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
         ("openai", "OpenAI"),
     ];
 
+    let read_provider = move |f: &SettingsForm| f.providers.iter().find(|p| p.id == id).cloned();
+
     let provider_type = move || {
-        form.get()
-            .providers
-            .get(index)
+        read_provider(&form.get())
             .map(|p| p.provider_type.clone())
             .unwrap_or_default()
     };
     let needs_api_key = move || {
-        form.get()
-            .providers
-            .get(index)
+        read_provider(&form.get())
             .map(|p| p.needs_api_key())
             .unwrap_or(false)
     };
     let needs_base_url = move || {
-        form.get()
-            .providers
-            .get(index)
+        read_provider(&form.get())
             .map(|p| p.needs_base_url())
             .unwrap_or(false)
     };
     let type_label = move || {
-        form.get()
-            .providers
-            .get(index)
+        read_provider(&form.get())
             .map(|p| p.type_label().to_string())
             .unwrap_or_default()
     };
@@ -387,7 +387,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
         let new_type = new_type.to_string();
         set_type_open.set(false);
         form.update(|f| {
-            if let Some(p) = f.providers.get_mut(index) {
+            if let Some(p) = f.providers.iter_mut().find(|p| p.id == id) {
                 p.provider_type = new_type;
                 p.api_key.clear();
                 p.base_url.clear();
@@ -398,7 +398,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
     let on_name_input = move |ev: leptos::ev::Event| {
         let val = event_target_value(&ev);
         form.update(|f| {
-            if let Some(p) = f.providers.get_mut(index) {
+            if let Some(p) = f.providers.iter_mut().find(|p| p.id == id) {
                 p.name = val;
             }
         });
@@ -407,7 +407,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
     let on_base_url_input = move |ev: leptos::ev::Event| {
         let val = event_target_value(&ev);
         form.update(|f| {
-            if let Some(p) = f.providers.get_mut(index) {
+            if let Some(p) = f.providers.iter_mut().find(|p| p.id == id) {
                 p.base_url = val;
             }
         });
@@ -416,7 +416,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
     let on_api_key_input = move |ev: leptos::ev::Event| {
         let val = event_target_value(&ev);
         form.update(|f| {
-            if let Some(p) = f.providers.get_mut(index) {
+            if let Some(p) = f.providers.iter_mut().find(|p| p.id == id) {
                 p.api_key = val;
             }
         });
@@ -424,9 +424,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
 
     let on_remove = move |_| {
         form.update(|f| {
-            if index < f.providers.len() {
-                f.providers.remove(index);
-            }
+            f.providers.retain(|p| p.id != id);
         });
     };
 
@@ -475,7 +473,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                     type="text"
                     class="input input-bordered input-xs flex-1 min-w-0"
                     placeholder=move || format!("Name (default: {})", type_label())
-                    prop:value=move || form.get().providers.get(index).map(|p| p.name.clone()).unwrap_or_default()
+                    prop:value=move || read_provider(&form.get()).map(|p| p.name.clone()).unwrap_or_default()
                     on:input=on_name_input
                 />
                 <div class="tooltip tooltip-left" data-tip="Remove provider">
@@ -499,7 +497,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                     } else {
                         "Base URL (default: http://localhost:11434)"
                     }
-                    prop:value=move || form.get().providers.get(index).map(|p| p.base_url.clone()).unwrap_or_default()
+                    prop:value=move || read_provider(&form.get()).map(|p| p.base_url.clone()).unwrap_or_default()
                     on:input=on_base_url_input
                 />
             </Show>
@@ -511,7 +509,7 @@ fn ProviderRow(form: RwSignal<SettingsForm>, index: usize) -> impl IntoView {
                         type=move || if show_key.get() { "text" } else { "password" }
                         class="input input-bordered input-xs flex-1 min-w-0 font-mono"
                         placeholder="API key"
-                        prop:value=move || form.get().providers.get(index).map(|p| p.api_key.clone()).unwrap_or_default()
+                        prop:value=move || read_provider(&form.get()).map(|p| p.api_key.clone()).unwrap_or_default()
                         on:input=on_api_key_input
                     />
                     <div class="tooltip tooltip-left" data-tip=move || if show_key.get() { "Hide API key" } else { "Show API key" }>
