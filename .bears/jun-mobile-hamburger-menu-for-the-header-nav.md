@@ -1,10 +1,10 @@
 ---
 id: jun
 title: Mobile hamburger menu for the header nav
-status: in_progress
+status: done
 priority: P2
 created: "2026-06-12T15:48:23.540606229Z"
-updated: "2026-06-12T15:48:31.649002025Z"
+updated: "2026-06-12T15:52:20.774554662Z"
 tags:
   - docs
   - theme
