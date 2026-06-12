@@ -764,6 +764,8 @@ pre.mermaid svg {
 .hl-entity.hl-other.hl-attribute-name { color: #f9e2af; }
 .hl-support.hl-function { color: #89b4fa; }
 .hl-support.hl-type { color: #f9e2af; }
+.hl-function { color: #89b4fa; }
+.hl-regexp { color: #f5c2e7; }
 .hl-variable { color: #cdd6f4; }
 .hl-variable.hl-parameter { color: #f5e0dc; }
 .hl-punctuation { color: #9399b2; }
