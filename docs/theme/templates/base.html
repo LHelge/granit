@@ -4,7 +4,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#181825">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181825">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#e6e9ef">
     <title>{% block page_title %}{{ title }}{% endblock page_title %} — {{ site_title }}</title>
     <link rel="preload" href="/static/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/static/css/theme.css">
@@ -79,7 +80,7 @@
 
     {% if contains_mermaid %}
     <script src="/static/js/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+    <script>mermaid.initialize({ startOnLoad: true, theme: window.matchMedia('(prefers-color-scheme: light)').matches ? 'default' : 'dark' });</script>
     {% endif %}
 </body>
 

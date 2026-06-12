@@ -42,6 +42,21 @@
     --error: #f38ba8;
     --peach: #fab387;
     --teal: #94e2d5;
+    --primary-content: #11111b;
+    --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.35);
+
+    /* syntax highlighting */
+    --syn-keyword: #cba6f7;
+    --syn-operator: #94e2d5;
+    --syn-string: #a6e3a1;
+    --syn-comment: #6c7086;
+    --syn-constant: #fab387;
+    --syn-function: #89b4fa;
+    --syn-type: #f9e2af;
+    --syn-variable: #cdd6f4;
+    --syn-parameter: #f5e0dc;
+    --syn-punctuation: #9399b2;
+    --syn-regexp: #f5c2e7;
 
     --font-sans: "Inter", Avenir, Helvetica, Arial, sans-serif;
     --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -161,7 +176,7 @@ tbody tr:nth-child(even) {
     top: 0;
     z-index: 100;
     background: var(--primary);
-    color: var(--base-300);
+    color: var(--primary-content);
     padding: 0.5rem 1rem;
     border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
@@ -371,12 +386,12 @@ tbody tr:nth-child(even) {
 
 .btn-primary {
     background: var(--primary);
-    color: var(--base-300);
+    color: var(--primary-content);
 }
 
 .btn-primary:hover {
     background: color-mix(in srgb, var(--primary) 88%, white);
-    color: var(--base-300);
+    color: var(--primary-content);
     box-shadow: 0 6px 24px color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
@@ -433,7 +448,7 @@ tbody tr:nth-child(even) {
 .card:hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--primary) 45%, var(--neutral));
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-card);
 }
 
 .card > h2:first-child,
@@ -751,24 +766,24 @@ pre.mermaid svg {
     max-width: 100%;
 }
 
-/* Syntax highlighting — Catppuccin Mocha mapping for syntect's hl- classes */
-.hl-keyword { color: #cba6f7; }
-.hl-keyword.hl-operator { color: #94e2d5; }
-.hl-storage { color: #cba6f7; }
-.hl-string { color: #a6e3a1; }
-.hl-comment { color: #6c7086; font-style: italic; }
-.hl-constant { color: #fab387; }
-.hl-entity.hl-name.hl-function { color: #89b4fa; }
-.hl-entity.hl-name.hl-type { color: #f9e2af; }
-.hl-entity.hl-name.hl-tag { color: #cba6f7; }
-.hl-entity.hl-other.hl-attribute-name { color: #f9e2af; }
-.hl-support.hl-function { color: #89b4fa; }
-.hl-support.hl-type { color: #f9e2af; }
-.hl-function { color: #89b4fa; }
-.hl-regexp { color: #f5c2e7; }
-.hl-variable { color: #cdd6f4; }
-.hl-variable.hl-parameter { color: #f5e0dc; }
-.hl-punctuation { color: #9399b2; }
+/* Syntax highlighting — Catppuccin mapping for syntect's hl- classes */
+.hl-keyword { color: var(--syn-keyword); }
+.hl-keyword.hl-operator { color: var(--syn-operator); }
+.hl-storage { color: var(--syn-keyword); }
+.hl-string { color: var(--syn-string); }
+.hl-comment { color: var(--syn-comment); font-style: italic; }
+.hl-constant { color: var(--syn-constant); }
+.hl-entity.hl-name.hl-function { color: var(--syn-function); }
+.hl-entity.hl-name.hl-type { color: var(--syn-type); }
+.hl-entity.hl-name.hl-tag { color: var(--syn-keyword); }
+.hl-entity.hl-other.hl-attribute-name { color: var(--syn-type); }
+.hl-support.hl-function { color: var(--syn-function); }
+.hl-support.hl-type { color: var(--syn-type); }
+.hl-function { color: var(--syn-function); }
+.hl-regexp { color: var(--syn-regexp); }
+.hl-variable { color: var(--syn-variable); }
+.hl-variable.hl-parameter { color: var(--syn-parameter); }
+.hl-punctuation { color: var(--syn-punctuation); }
 
 /* ---------- Wiki links ---------- */
 
@@ -908,5 +923,66 @@ pre.mermaid svg {
     .btn,
     .card {
         transition: none;
+    }
+}
+
+/* ---------- Catppuccin Latte (light mode, follows system preference) ---------- */
+
+@media (prefers-color-scheme: light) {
+    :root {
+        color-scheme: light;
+
+        --base-100: #eff1f5;
+        --base-200: #e6e9ef;
+        --base-300: #dce0e8;
+        --base-content: #4c4f69;
+        --content-muted: #6c6f85;
+        --content-faint: #9ca0b0;
+        --primary: #8839ef;
+        --secondary: #7287fd;
+        --accent: #dc8a78;
+        --neutral: #ccd0da;
+        --neutral-strong: #bcc0cc;
+        --info: #1e66f5;
+        --success: #40a02b;
+        --warning: #df8e1d;
+        --error: #d20f39;
+        --peach: #fe640b;
+        --teal: #179299;
+        --primary-content: #eff1f5;
+        --shadow-card: 0 8px 28px rgba(76, 79, 105, 0.16);
+
+        --syn-keyword: #8839ef;
+        --syn-operator: #179299;
+        --syn-string: #40a02b;
+        --syn-comment: #9ca0b0;
+        --syn-constant: #fe640b;
+        --syn-function: #1e66f5;
+        --syn-type: #df8e1d;
+        --syn-variable: #4c4f69;
+        --syn-parameter: #dd7878;
+        --syn-punctuation: #7c7f93;
+        --syn-regexp: #ea76cb;
+    }
+
+    /* code blocks keep a slightly sunken surface in light mode */
+    pre.code-block {
+        background: var(--base-200);
+    }
+
+    .hero {
+        background:
+            radial-gradient(ellipse 60% 55% at 50% 0%,
+                color-mix(in srgb, var(--primary) 10%, transparent), transparent 70%),
+            var(--base-200);
+    }
+
+    .hero-logo {
+        filter: drop-shadow(0 8px 24px rgba(76, 79, 105, 0.3));
+    }
+
+    .hero::after,
+    .card::after {
+        opacity: 0.035;
     }
 }
