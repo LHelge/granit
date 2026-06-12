@@ -95,7 +95,7 @@ pub fn App() -> impl IntoView {
 
     // Listen for updates installed in the background; offer a restart.
     Effect::new(move |_| {
-        leptos::task::spawn_local(async move {
+        leptos::task::spawn_local_scoped_with_cancellation(async move {
             let _handle = ipc::listen_update_installed(move |version| {
                 set_installed_update.set(Some(version));
             })

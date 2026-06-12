@@ -577,11 +577,13 @@ pub async fn listen_event_simple(event: &str, cb: impl Fn() + 'static) -> Option
 ///
 /// The standard pattern — spawning a `'static` future that holds the
 /// handle and then suspends on `pending()` — is awkward to repeat. This
-/// helper consolidates it. Cancellation of the Leptos Effect on
-/// component unmount drops the future, which drops the handle, which
-/// triggers the Tauri unlisten.
+/// helper consolidates it. The future must be spawned with cancellation
+/// (`spawn_local_scoped_with_cancellation`): owner cleanup on component
+/// unmount then aborts it, dropping the handle and triggering the Tauri
+/// unlisten. Plain `spawn_local` would leak one listener per mount, with
+/// stale callbacks firing into disposed signals.
 pub fn spawn_event_listener_simple(event: &'static str, cb: impl Fn() + 'static) {
-    leptos::task::spawn_local(async move {
+    leptos::task::spawn_local_scoped_with_cancellation(async move {
         let _handle = listen_event_simple(event, cb).await;
         std::future::pending::<()>().await;
     });

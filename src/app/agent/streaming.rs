@@ -1,21 +1,26 @@
 use super::messages::DisplayItem;
 use crate::app::ipc;
 use granit_types::ChatMessage;
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{
+    prelude::*,
+    task::{spawn_local, spawn_local_scoped_with_cancellation},
+};
 
 /// Register Tauri event listeners for agent streaming.
 ///
 /// The EventHandle values returned by listen_* contain JS closures that
 /// unsubscribe on drop. We need them alive for the component's lifetime:
 ///
-///  1. `spawn_local` (leptos::task) ties the future to the current
-///     reactive owner, which is the Effect's owner (this component).
+///  1. `spawn_local_scoped_with_cancellation` ties the future to the current
+///     reactive owner (this component) and aborts it when that owner is
+///     cleaned up. Plain `spawn_local` would NOT do this — the future would
+///     outlive the component, keeping stale listeners registered whose
+///     callbacks touch disposed signals and panic on the next stream.
 ///  2. `_handles` lives inside that future's state.
 ///  3. `std::future::pending().await` suspends forever, preventing the
 ///     async block from completing and dropping `_handles`.
-///  4. On component unmount the reactive owner is cleaned up, which
-///     cancels the future, drops `_handles`, and calls the JS unlisten
-///     functions.
+///  4. On component unmount the owner cleanup aborts the future, drops
+///     `_handles`, and calls the JS unlisten functions.
 ///
 /// This is a deliberate pattern — not a forgotten await.
 pub(super) fn setup_stream_listeners(
@@ -25,7 +30,7 @@ pub(super) fn setup_stream_listeners(
     stream_error: RwSignal<Option<String>>,
 ) {
     Effect::new(move |_| {
-        spawn_local(async move {
+        spawn_local_scoped_with_cancellation(async move {
             let mut _handles = Vec::new();
 
             // chunk → append to streaming_content
