@@ -1,10 +1,10 @@
 ---
 id: yqj
 title: "Docs: installation channels (windows, brew, script, build from source)"
-status: open
+status: done
 priority: P2
 created: "2026-06-12T16:30:08.748465079Z"
-updated: "2026-06-12T16:30:23.087621857Z"
+updated: "2026-06-12T17:26:32.134208288Z"
 tags:
   - docs
   - content

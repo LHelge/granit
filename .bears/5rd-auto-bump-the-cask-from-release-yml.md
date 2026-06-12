@@ -1,10 +1,10 @@
 ---
 id: "5rd"
 title: Auto-bump the cask from release.yml
-status: open
+status: done
 priority: P2
 created: "2026-06-12T16:29:55.768747390Z"
-updated: "2026-06-12T16:30:16.007277801Z"
+updated: "2026-06-12T17:27:23.423189605Z"
 tags:
   - release
   - ci

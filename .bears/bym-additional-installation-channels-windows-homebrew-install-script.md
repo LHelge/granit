@@ -2,10 +2,10 @@
 id: bym
 title: "Additional installation channels: Windows, Homebrew, install script"
 type: epic
-status: open
+status: done
 priority: P2
 created: "2026-06-12T16:29:26.762321443Z"
-updated: "2026-06-12T16:29:26.762321443Z"
+updated: "2026-06-12T17:27:23.423433588Z"
 tags:
   - release
   - distribution

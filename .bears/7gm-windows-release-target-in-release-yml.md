@@ -1,10 +1,10 @@
 ---
 id: "7gm"
 title: Windows release target in release.yml
-status: open
+status: done
 priority: P1
 created: "2026-06-12T16:29:42.400011964Z"
-updated: "2026-06-12T16:29:42.400011964Z"
+updated: "2026-06-12T16:34:56.091677927Z"
 tags:
   - release
   - ci

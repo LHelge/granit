@@ -1,10 +1,10 @@
 ---
 id: gfq
 title: Homebrew tap with granit cask
-status: open
+status: done
 priority: P1
 created: "2026-06-12T16:29:49.741243401Z"
-updated: "2026-06-12T16:29:49.741243401Z"
+updated: "2026-06-12T17:23:08.315531328Z"
 tags:
   - release
   - distribution

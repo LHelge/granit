@@ -1,10 +1,10 @@
 ---
 id: vuk
 title: Linux install script served from the docs site
-status: open
+status: done
 priority: P2
 created: "2026-06-12T16:30:03.148612883Z"
-updated: "2026-06-12T16:30:03.148612883Z"
+updated: "2026-06-12T16:36:48.550847820Z"
 tags:
   - release
   - distribution
