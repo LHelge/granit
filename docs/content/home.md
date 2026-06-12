@@ -1,6 +1,4 @@
-Granit — a minimal, opinionated desktop note-taking app. Your notes live in a local markdown *cave* — with wiki-links, daily notes, todos, and an integrated AI agent. No plugins, no sync, no bloat.
-
-New here? Start with [[getting-started]], or jump straight to the [[download]].
+Your notes live in a local markdown *cave* — plain files on your own disk, connected by wiki-links and searchable by an integrated AI agent. New here? Start with [[getting-started]], or jump straight to the [[download]].
 
 # Local-first markdown caves
 

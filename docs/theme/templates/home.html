@@ -3,37 +3,21 @@
 {% block page_title %}{{ site_title }}{% endblock page_title %}
 
 {% block content %}
-<h1>{{ site_title }}</h1>
+<section class="hero">
+    <img src="/static/logo.png" alt="" class="hero-logo" width="96" height="96">
+    <h1>{{ site_title }}</h1>
+    {% if site_description %}
+    <p class="hero-tagline">{{ site_description }}</p>
+    {% endif %}
+    <div class="cta-row">
+        <a href="/download/" class="btn btn-primary">Download</a>
+        <a href="/wiki/" class="btn btn-ghost">Read the docs</a>
+    </div>
+</section>
+
 {% if home %}
-<div class="home-content">
+<div class="home-body">
     {{ home.content | safe }}
 </div>
-{% endif %}
-<ul class="blog-list">
-    {% for post in posts %}
-    <li class="post-card">
-        {% if post.image %}<img src="{{ post.image }}" alt="" class="post-card-image">{% endif %}
-        <a href="{{ post.url | safe }}">{{ post.title }}</a>
-        {% if post.created %}<time>{{ post.created }}</time>{% endif %}
-        {% if post.description %}<p>{{ post.description }}</p>{% endif %}
-        {% if post.tags | length > 0 %}
-        <ul class="tag-list">
-            {% for tag in post.tags %}
-            <li><a href="/tags/{{ tag.slug }}/">{{ tag.name }}</a></li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-    </li>
-    {% endfor %}
-</ul>
-{% if popular_tags | length > 0 %}
-<aside class="tag-cloud">
-    <h2>Tags</h2>
-    <ul>
-        {% for tag in popular_tags %}
-        <li><a href="/tags/{{ tag.slug }}/">{{ tag.name }}</a> <span class="tag-count">{{ tag.count }}</span></li>
-        {% endfor %}
-    </ul>
-</aside>
 {% endif %}
 {% endblock content %}

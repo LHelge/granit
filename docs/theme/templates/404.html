@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 
-{% block page_title %}Not Found{% endblock page_title %}
+{% block page_title %}Not found{% endblock page_title %}
 
 {% block content %}
-<article class="error-page">
-    <h1>404</h1>
-    {% if not_found %}{{ not_found.content | safe }}{% endif %}
+<article class="not-found">
+    <img src="/static/logo.png" alt="" class="hero-logo" width="96" height="96">
+    <h1>404 — note not found</h1>
+    <div class="not-found-body">
+        {% if not_found %}
+        {{ not_found.content | safe }}
+        {% else %}
+        <p>This note doesn't exist in the cave. Head back <a href="/">home</a> or browse the <a href="/wiki/">wiki</a>.</p>
+        {% endif %}
+    </div>
 </article>
 {% endblock content %}
