@@ -126,6 +126,16 @@ pub fn Explorer(
                 </Show>
             </div>
 
+            // Note count footer (when a cave is open)
+            <Show when=has_cave>
+                <div class="px-3 py-1 text-xs text-base-content/40 border-t border-base-content/10 shrink-0">
+                    {move || {
+                        let count = ctx.notes.get().len();
+                        format!("{count} {}", if count == 1 { "note" } else { "notes" })
+                    }}
+                </div>
+            </Show>
+
             // Bottom bar: cave selector + settings (always visible)
             <CaveSelector set_settings_open=set_settings_open set_info_open=set_info_open />
         </aside>
