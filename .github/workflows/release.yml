@@ -140,3 +140,78 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release edit "${{ github.ref_name }}" --draft=false
+
+  # Update the Homebrew tap (LHelge/homebrew-tap) cask to point at the
+  # release just published: download the macOS dmg, compute its sha256,
+  # regenerate Casks/granit.rb, and commit/push to the tap. A tap failure
+  # must never fail the release, hence continue-on-error.
+  bump-cask:
+    needs: publish
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Download release dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "${{ github.ref_name }}" --repo ${{ github.repository }} --pattern '*_aarch64.dmg'
+
+      - name: Compute sha256
+        id: sha
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          SHA=$(sha256sum "Granit_${VERSION}_aarch64.dmg" | cut -d' ' -f1)
+          {
+            echo "version=$VERSION"
+            echo "sha=$SHA"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out tap
+        uses: actions/checkout@v6
+        with:
+          repository: LHelge/homebrew-tap
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Regenerate cask
+        env:
+          VERSION: ${{ steps.sha.outputs.version }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          cat > homebrew-tap/Casks/granit.rb <<EOF
+          cask "granit" do
+            version "$VERSION"
+            sha256 "$SHA"
+
+            url "https://github.com/LHelge/granit/releases/download/v#{version}/Granit_#{version}_aarch64.dmg",
+                verified: "github.com/LHelge/granit/"
+            name "Granit"
+            desc "Minimal desktop note-taking app"
+            homepage "https://granit.lhelge.se/"
+
+            depends_on arch: :arm64
+
+            auto_updates true
+
+            app "Granit.app"
+
+            zap trash: [
+              "~/Library/Application Support/se.lhelge.granit",
+              "~/Library/Caches/se.lhelge.granit",
+              "~/Library/Saved Application State/se.lhelge.granit.savedState",
+              "~/Library/WebKit/se.lhelge.granit",
+            ]
+          end
+          EOF
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        env:
+          VERSION: ${{ steps.sha.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/granit.rb
+          git diff --cached --quiet || git commit -m "granit $VERSION"
+          git push
