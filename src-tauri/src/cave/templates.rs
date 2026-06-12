@@ -305,12 +305,26 @@ impl Cave {
         folder: &str,
         template_slug: Option<&str>,
     ) -> Result<Document, CaveError> {
+        // `date` is an arbitrary IPC string that becomes a filename — require
+        // a real date so it can never carry path separators (`../escape`)
+        // or land an unreachable slug in the note index.
+        if Self::parse_daily_note_slug(date).is_none() {
+            return Err(CaveError::InvalidName(format!(
+                "invalid daily-note date: {date}"
+            )));
+        }
+
+        // An empty folder means the cave root; anything else must be a valid
+        // relative subpath (validated even when the directory already exists,
+        // so an existing `../…` never slips through).
         let folder_path = Path::new(folder);
+        if !folder.is_empty() {
+            super::helpers::validate_folder_path(folder_path)?;
+        }
 
         // Ensure the daily folder exists.
         let abs_folder = self.path.join(folder_path);
         if !abs_folder.is_dir() {
-            super::helpers::validate_folder_path(folder_path)?;
             std::fs::create_dir_all(&abs_folder)?;
         }
 
@@ -339,7 +353,7 @@ impl Cave {
 
 #[cfg(test)]
 mod tests {
-    use crate::cave::Cave;
+    use crate::cave::{Cave, CaveError};
 
     #[test]
     fn test_templates_are_listed_separately_from_notes() {
@@ -398,6 +412,36 @@ mod tests {
         assert_eq!(note.meta.relative_path, format!("Daily/{today}.md"));
         assert!(dir.path().join("Daily").is_dir());
         assert!(dir.path().join(format!("Daily/{today}.md")).exists());
+    }
+
+    #[test]
+    fn test_open_daily_note_for_date_rejects_non_date_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // A traversal "date" must error without creating any file or
+        // leaving a stray entry in the slug index.
+        for bad in ["../escape", "../../outside", "not-a-date", "2026-13-99"] {
+            let err = cave
+                .open_daily_note_for_date(bad, "Daily", None)
+                .unwrap_err();
+            assert!(matches!(err, CaveError::InvalidName(_)), "{bad}: {err:?}");
+        }
+        assert!(!dir.path().join("escape.md").exists());
+        assert!(!dir.path().parent().unwrap().join("outside.md").exists());
+        assert!(cave.notes.is_empty());
+    }
+
+    #[test]
+    fn test_open_daily_note_for_date_rejects_invalid_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // The folder is validated even if it happens to exist already.
+        let err = cave
+            .open_daily_note_for_date("2026-06-12", "../elsewhere", None)
+            .unwrap_err();
+        assert!(matches!(err, CaveError::InvalidName(_)), "{err:?}");
     }
 
     #[test]
