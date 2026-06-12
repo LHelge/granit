@@ -1,6 +1,13 @@
 name: CI
 
 on:
+  # Pushes to main keep the default-branch Actions cache warm: tag-triggered
+  # release builds can only restore caches from their own (fresh) tag ref or
+  # from the default branch, so without this every release build starts cold.
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.bears/**'
   pull_request:
     branches: [main]
     paths-ignore:
