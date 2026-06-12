@@ -1,10 +1,10 @@
 ---
 id: uxu
 title: Manual light/dark toggle overriding system preference
-status: in_progress
+status: done
 priority: P2
 created: "2026-06-12T15:31:33.463627198Z"
-updated: "2026-06-12T15:31:49.851149344Z"
+updated: "2026-06-12T15:36:43.429026023Z"
 tags:
   - docs
   - theme
