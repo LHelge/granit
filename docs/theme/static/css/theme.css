@@ -22,41 +22,45 @@
 /* ---------- Tokens (named after the app's DaisyUI variables) ---------- */
 
 :root {
-    color-scheme: dark;
+    /* follow the system by default; the header toggle forces a scheme
+       via data-theme, which is all light-dark() needs to flip */
+    color-scheme: light dark;
 
-    /* Catppuccin Mocha, as used by the Granit app */
-    --base-100: #1e1e2e;
-    --base-200: #181825;
-    --base-300: #11111b;
-    --base-content: #cdd6f4;
-    --content-muted: #a6adc8;
-    --content-faint: #6c7086;
-    --primary: #cba6f7;
-    --secondary: #b4befe;
-    --accent: #f5e0dc;
-    --neutral: #313244;
-    --neutral-strong: #45475a;
-    --info: #89b4fa;
-    --success: #a6e3a1;
-    --warning: #f9e2af;
-    --error: #f38ba8;
-    --peach: #fab387;
-    --teal: #94e2d5;
-    --primary-content: #11111b;
-    --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.35);
+    /* Catppuccin Latte / Mocha, as used by the Granit app */
+    --base-100: light-dark(#eff1f5, #1e1e2e);
+    --base-200: light-dark(#e6e9ef, #181825);
+    --base-300: light-dark(#dce0e8, #11111b);
+    --base-content: light-dark(#4c4f69, #cdd6f4);
+    --content-muted: light-dark(#6c6f85, #a6adc8);
+    --content-faint: light-dark(#9ca0b0, #6c7086);
+    --primary: light-dark(#8839ef, #cba6f7);
+    --secondary: light-dark(#7287fd, #b4befe);
+    --accent: light-dark(#dc8a78, #f5e0dc);
+    --neutral: light-dark(#ccd0da, #313244);
+    --neutral-strong: light-dark(#bcc0cc, #45475a);
+    --info: light-dark(#1e66f5, #89b4fa);
+    --success: light-dark(#40a02b, #a6e3a1);
+    --warning: light-dark(#df8e1d, #f9e2af);
+    --error: light-dark(#d20f39, #f38ba8);
+    --peach: light-dark(#fe640b, #fab387);
+    --teal: light-dark(#179299, #94e2d5);
+    --primary-content: light-dark(#eff1f5, #11111b);
+    --shadow-color: light-dark(rgba(76, 79, 105, 0.18), rgba(0, 0, 0, 0.4));
+    --shadow-card: 0 8px 28px var(--shadow-color);
+    --code-bg: light-dark(#e6e9ef, #11111b);
 
     /* syntax highlighting */
-    --syn-keyword: #cba6f7;
-    --syn-operator: #94e2d5;
-    --syn-string: #a6e3a1;
-    --syn-comment: #6c7086;
-    --syn-constant: #fab387;
-    --syn-function: #89b4fa;
-    --syn-type: #f9e2af;
-    --syn-variable: #cdd6f4;
-    --syn-parameter: #f5e0dc;
-    --syn-punctuation: #9399b2;
-    --syn-regexp: #f5c2e7;
+    --syn-keyword: light-dark(#8839ef, #cba6f7);
+    --syn-operator: light-dark(#179299, #94e2d5);
+    --syn-string: light-dark(#40a02b, #a6e3a1);
+    --syn-comment: light-dark(#9ca0b0, #6c7086);
+    --syn-constant: light-dark(#fe640b, #fab387);
+    --syn-function: light-dark(#1e66f5, #89b4fa);
+    --syn-type: light-dark(#df8e1d, #f9e2af);
+    --syn-variable: light-dark(#4c4f69, #cdd6f4);
+    --syn-parameter: light-dark(#dd7878, #f5e0dc);
+    --syn-punctuation: light-dark(#7c7f93, #9399b2);
+    --syn-regexp: light-dark(#ea76cb, #f5c2e7);
 
     --font-sans: "Inter", Avenir, Helvetica, Arial, sans-serif;
     --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -69,6 +73,15 @@
 
     /* speckled granite grain, like the pebble itself */
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* Manual override from the header toggle */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
 }
 
 /* ---------- Reset & base ---------- */
@@ -320,7 +333,7 @@ tbody tr:nth-child(even) {
     border-radius: var(--radius);
     background:
         radial-gradient(ellipse 60% 55% at 50% 0%,
-            color-mix(in srgb, var(--primary) 14%, transparent), transparent 70%),
+            color-mix(in srgb, var(--primary) 12%, transparent), transparent 70%),
         var(--base-200);
     border: 1px solid var(--neutral);
     overflow: hidden;
@@ -332,7 +345,7 @@ tbody tr:nth-child(even) {
     position: absolute;
     inset: 0;
     background: var(--grain);
-    opacity: 0.045;
+    opacity: 0.04;
     pointer-events: none;
 }
 
@@ -344,7 +357,7 @@ tbody tr:nth-child(even) {
 .hero-logo {
     width: 96px;
     height: 96px;
-    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45));
+    filter: drop-shadow(0 8px 24px var(--shadow-color));
 }
 
 .hero h1 {
@@ -743,7 +756,7 @@ h1 code, h2 code, h3 code, h4 code {
 }
 
 pre.code-block {
-    background: var(--base-300);
+    background: var(--code-bg);
     color: var(--base-content);
     border: 1px solid var(--neutral);
     border-radius: var(--radius);
@@ -926,63 +939,38 @@ pre.mermaid svg {
     }
 }
 
-/* ---------- Catppuccin Latte (light mode, follows system preference) ---------- */
+/* ---------- Theme toggle button ---------- */
+
+.theme-toggle {
+    font: inherit;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon {
+    display: none;
+}
+
+/* show the icon for the theme a click switches to:
+   sun while dark, moon while light */
+:root[data-theme="dark"] .theme-toggle .icon-sun {
+    display: block;
+}
+
+:root[data-theme="light"] .theme-toggle .icon-moon {
+    display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) .theme-toggle .icon-sun {
+        display: block;
+    }
+}
 
 @media (prefers-color-scheme: light) {
-    :root {
-        color-scheme: light;
-
-        --base-100: #eff1f5;
-        --base-200: #e6e9ef;
-        --base-300: #dce0e8;
-        --base-content: #4c4f69;
-        --content-muted: #6c6f85;
-        --content-faint: #9ca0b0;
-        --primary: #8839ef;
-        --secondary: #7287fd;
-        --accent: #dc8a78;
-        --neutral: #ccd0da;
-        --neutral-strong: #bcc0cc;
-        --info: #1e66f5;
-        --success: #40a02b;
-        --warning: #df8e1d;
-        --error: #d20f39;
-        --peach: #fe640b;
-        --teal: #179299;
-        --primary-content: #eff1f5;
-        --shadow-card: 0 8px 28px rgba(76, 79, 105, 0.16);
-
-        --syn-keyword: #8839ef;
-        --syn-operator: #179299;
-        --syn-string: #40a02b;
-        --syn-comment: #9ca0b0;
-        --syn-constant: #fe640b;
-        --syn-function: #1e66f5;
-        --syn-type: #df8e1d;
-        --syn-variable: #4c4f69;
-        --syn-parameter: #dd7878;
-        --syn-punctuation: #7c7f93;
-        --syn-regexp: #ea76cb;
-    }
-
-    /* code blocks keep a slightly sunken surface in light mode */
-    pre.code-block {
-        background: var(--base-200);
-    }
-
-    .hero {
-        background:
-            radial-gradient(ellipse 60% 55% at 50% 0%,
-                color-mix(in srgb, var(--primary) 10%, transparent), transparent 70%),
-            var(--base-200);
-    }
-
-    .hero-logo {
-        filter: drop-shadow(0 8px 24px rgba(76, 79, 105, 0.3));
-    }
-
-    .hero::after,
-    .card::after {
-        opacity: 0.035;
+    :root:not([data-theme]) .theme-toggle .icon-moon {
+        display: block;
     }
 }

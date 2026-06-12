@@ -6,6 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181825">
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#e6e9ef">
+    {# restore a manual theme choice before first paint to avoid a flash #}
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem("granit-docs-theme");
+                if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+            } catch (e) { }
+        })();
+    </script>
     <title>{% block page_title %}{{ title }}{% endblock page_title %} — {{ site_title }}</title>
     <link rel="preload" href="/static/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/static/css/theme.css">
@@ -48,6 +57,15 @@
                 {% for p in nav_pages %}
                 <a href="{{ p.url | safe }}" class="nav-link">{{ p.title }}</a>
                 {% endfor %}
+                <button type="button" class="theme-toggle nav-icon" id="theme-toggle" aria-label="Toggle light/dark theme">
+                    <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4"/>
+                        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+                    </svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+                    </svg>
+                </button>
                 {% for s in socials %}
                 {% if s.platform == "github" %}
                 <a href="{{ s.url }}" class="nav-icon" aria-label="GitHub repository">
@@ -78,9 +96,40 @@
         </div>
     </footer>
 
+    <script>
+        (function () {
+            var btn = document.getElementById("theme-toggle");
+            if (!btn) return;
+            var mq = window.matchMedia("(prefers-color-scheme: dark)");
+            function effective() {
+                return document.documentElement.dataset.theme || (mq.matches ? "dark" : "light");
+            }
+            function syncMeta() {
+                var color = effective() === "dark" ? "#181825" : "#e6e9ef";
+                document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+                    m.removeAttribute("media");
+                    m.setAttribute("content", color);
+                });
+            }
+            btn.addEventListener("click", function () {
+                var next = effective() === "dark" ? "light" : "dark";
+                document.documentElement.dataset.theme = next;
+                try { localStorage.setItem("granit-docs-theme", next); } catch (e) { }
+                syncMeta();
+            });
+            if (document.documentElement.dataset.theme) syncMeta();
+        })();
+    </script>
+
     {% if contains_mermaid %}
     <script src="/static/js/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: true, theme: window.matchMedia('(prefers-color-scheme: light)').matches ? 'default' : 'dark' });</script>
+    <script>
+        (function () {
+            var forced = document.documentElement.dataset.theme;
+            var light = forced ? forced === "light" : window.matchMedia("(prefers-color-scheme: light)").matches;
+            mermaid.initialize({ startOnLoad: true, theme: light ? "default" : "dark" });
+        })();
+    </script>
     {% endif %}
 </body>
 
