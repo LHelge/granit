@@ -191,7 +191,6 @@ pub(crate) fn rename_note(
     new_name: String,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    spawn_index_remove(state.inner(), old_name.clone());
     // Capture inbound-link sources before the rename: their bodies are rewritten
     // to point at the new slug, so their embeddings must be refreshed too.
     let (meta, affected) = state.with_cave(|cave| {
@@ -199,6 +198,9 @@ pub(crate) fn rename_note(
         let meta = cave.rename_note(&old_name, &new_name)?;
         Ok((meta, affected))
     })?;
+    // Only after the rename succeeded: a failed rename (e.g. AlreadyExists)
+    // must not drop the embedding of a note that still exists.
+    spawn_index_remove(state.inner(), old_name.clone());
     spawn_index_update(state.inner(), meta.slug.clone());
     for slug in affected {
         spawn_index_update(state.inner(), slug);
@@ -229,9 +231,6 @@ pub(crate) fn update_note(
 ) -> Result<DocumentMeta, CaveError> {
     use tauri::Emitter;
     let renaming = old_name != new_name;
-    if renaming {
-        spawn_index_remove(state.inner(), old_name.clone());
-    }
     let (meta, affected) = state.with_cave(|cave| {
         // Only a rename rewrites inbound links in other notes; capture those
         // sources first so their embeddings can be refreshed afterwards.
@@ -243,6 +242,11 @@ pub(crate) fn update_note(
         let meta = cave.update_note(&old_name, &new_name, &content, tags, icon, favorite)?;
         Ok((meta, affected))
     })?;
+    // Only after the update succeeded: a failed rename-within-update must not
+    // drop the embedding of a note that still exists under its old slug.
+    if renaming {
+        spawn_index_remove(state.inner(), old_name.clone());
+    }
     spawn_index_update(state.inner(), meta.slug.clone());
     for slug in affected {
         spawn_index_update(state.inner(), slug);
