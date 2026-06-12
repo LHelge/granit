@@ -1,10 +1,10 @@
 ---
 id: fr4
 title: "Wiki content: Reference (configuration, themes)"
-status: open
+status: done
 priority: P2
 created: "2026-06-12T11:38:13.138122706Z"
-updated: "2026-06-12T11:38:13.138122706Z"
+updated: "2026-06-12T12:05:14.939165790Z"
 tags:
   - docs
   - content

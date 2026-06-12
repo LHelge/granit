@@ -1,10 +1,10 @@
 ---
 id: u8w
 title: "theme.css: Catppuccin Mocha tokens, layout, cards, components"
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:37:17.266004230Z"
-updated: "2026-06-12T11:37:17.266004230Z"
+updated: "2026-06-12T12:14:25.912047222Z"
 tags:
   - docs
   - theme

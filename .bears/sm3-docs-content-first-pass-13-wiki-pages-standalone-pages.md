@@ -2,10 +2,10 @@
 id: sm3
 title: Docs content — first pass (~13 wiki pages + standalone pages)
 type: epic
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:35:41.277168136Z"
-updated: "2026-06-12T11:35:41.277168136Z"
+updated: "2026-06-12T12:05:53.953996465Z"
 tags:
   - docs
   - content

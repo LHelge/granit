@@ -1,10 +1,10 @@
 ---
 id: r6f
 title: README "Documentation" section (local docs workflow)
-status: open
+status: done
 priority: P3
 created: "2026-06-12T11:38:44.921223943Z"
-updated: "2026-06-12T11:38:44.921223943Z"
+updated: "2026-06-12T12:09:45.014674115Z"
 tags:
   - docs
   - polish

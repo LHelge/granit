@@ -1,10 +1,10 @@
 ---
 id: dh5
 title: Social card image + enable social_image in aphid.toml
-status: open
+status: done
 priority: P2
 created: "2026-06-12T11:38:43.577277996Z"
-updated: "2026-06-12T11:38:43.577277996Z"
+updated: "2026-06-12T12:22:41.040425688Z"
 tags:
   - docs
   - polish

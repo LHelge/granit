@@ -1,10 +1,10 @@
 ---
 id: "92s"
 title: Configure Pages + DNS for granit.lhelge.se and run first deployment
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:38:35.466471390Z"
-updated: "2026-06-12T11:38:35.466471390Z"
+updated: "2026-06-12T14:40:47.442496355Z"
 tags:
   - docs
   - infra

@@ -1,10 +1,10 @@
 ---
 id: qpe
 title: "base.html: shell, sticky header, nav, footer, self-hosted Inter"
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:36:46.231762622Z"
-updated: "2026-06-12T11:36:46.231762622Z"
+updated: "2026-06-12T12:12:11.694626562Z"
 tags:
   - docs
   - theme

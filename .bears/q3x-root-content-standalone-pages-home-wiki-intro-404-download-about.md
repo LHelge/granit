@@ -1,10 +1,10 @@
 ---
 id: q3x
 title: "Root content + standalone pages: home, wiki intro, 404, download, about"
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:38:20.593448310Z"
-updated: "2026-06-12T11:38:20.593448310Z"
+updated: "2026-06-12T12:05:53.953727814Z"
 tags:
   - docs
   - content

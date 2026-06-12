@@ -1,10 +1,10 @@
 ---
 id: y4z
 title: home.html hero + 404 page
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:36:53.049485850Z"
-updated: "2026-06-12T11:36:53.049485850Z"
+updated: "2026-06-12T12:16:14.002609447Z"
 tags:
   - docs
   - theme

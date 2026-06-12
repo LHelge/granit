@@ -1,10 +1,10 @@
 ---
 id: fge
 title: Bootstrap pebble theme from aphid default-theme
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:36:31.522984563Z"
-updated: "2026-06-12T11:36:31.522984563Z"
+updated: "2026-06-12T12:09:03.581812653Z"
 tags:
   - docs
   - theme

@@ -2,10 +2,10 @@
 id: f9w
 title: Pebble theme — custom aphid theme matching Granit
 type: epic
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:35:35.784135954Z"
-updated: "2026-06-12T11:35:35.784135954Z"
+updated: "2026-06-12T12:20:58.315858475Z"
 tags:
   - docs
   - theme

@@ -1,10 +1,10 @@
 ---
 id: u4r
 title: "Wiki content: Getting Started (installation, getting-started, cave-rules)"
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:37:44.520616519Z"
-updated: "2026-06-12T11:37:44.520616519Z"
+updated: "2026-06-12T12:03:10.103964492Z"
 tags:
   - docs
   - content

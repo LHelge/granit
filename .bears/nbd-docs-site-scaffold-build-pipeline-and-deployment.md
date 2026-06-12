@@ -2,10 +2,10 @@
 id: nbd
 title: "Docs site: scaffold, build pipeline, and deployment"
 type: epic
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:35:31.163332523Z"
-updated: "2026-06-12T11:35:31.163332523Z"
+updated: "2026-06-12T14:40:47.442754785Z"
 tags:
   - docs
   - infra

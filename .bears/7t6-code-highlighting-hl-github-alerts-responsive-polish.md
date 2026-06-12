@@ -1,10 +1,10 @@
 ---
 id: "7t6"
 title: Code highlighting (hl-*), GitHub alerts, responsive polish
-status: open
+status: done
 priority: P2
 created: "2026-06-12T11:37:27.638552339Z"
-updated: "2026-06-12T11:37:37.092765266Z"
+updated: "2026-06-12T12:20:58.315613821Z"
 tags:
   - docs
   - theme

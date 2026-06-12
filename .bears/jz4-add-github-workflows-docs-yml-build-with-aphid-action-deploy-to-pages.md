@@ -1,10 +1,10 @@
 ---
 id: jz4
 title: Add .github/workflows/docs.yml — build with aphid action, deploy to Pages
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:36:24.385482021Z"
-updated: "2026-06-12T11:36:24.385482021Z"
+updated: "2026-06-12T12:02:26.225089977Z"
 tags:
   - docs
   - ci

@@ -1,10 +1,10 @@
 ---
 id: "4uk"
 title: Full launch verification pass
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:39:07.355238467Z"
-updated: "2026-06-12T11:39:07.355238467Z"
+updated: "2026-06-12T14:41:39.558910913Z"
 tags:
   - docs
   - verify

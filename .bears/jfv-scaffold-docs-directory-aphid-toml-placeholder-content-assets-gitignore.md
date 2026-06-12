@@ -1,10 +1,10 @@
 ---
 id: jfv
 title: "Scaffold docs/ directory: aphid.toml, placeholder content, assets, .gitignore"
-status: in_progress
+status: done
 priority: P1
 created: "2026-06-12T11:36:07.177177556Z"
-updated: "2026-06-12T11:51:19.934645489Z"
+updated: "2026-06-12T11:56:12.451348493Z"
 tags:
   - docs
   - infra

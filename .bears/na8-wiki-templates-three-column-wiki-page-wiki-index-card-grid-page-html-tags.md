@@ -1,10 +1,10 @@
 ---
 id: na8
 title: "Wiki templates: three-column wiki_page, wiki_index card grid, page.html, tags"
-status: open
+status: done
 priority: P1
 created: "2026-06-12T11:37:02.103906311Z"
-updated: "2026-06-12T11:37:02.103906311Z"
+updated: "2026-06-12T12:17:33.780556339Z"
 tags:
   - docs
   - theme
