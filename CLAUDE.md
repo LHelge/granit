@@ -93,3 +93,16 @@ All agent logic is backend-side ([src-tauri/src/agent/](src-tauri/src/agent/)), 
 - Build only what is needed now. No plugin system, sync layer, or speculative abstractions (see deferred: file watching / external reload, live-preview editor, backlinks panel, sync).
 - The repo owner is strong on Rust backend work and less experienced with Leptos/Tailwind/DaisyUI — be more explicit and cautious for frontend changes.
 - Before committing, run `cargo fmt`, `cargo clippy`, and the relevant tests.
+
+## Planning 
+
+This project uses [Bears](https://github.com/LHelge/bea-rs) for task tracking.
+Bears is registered as an MCP server — use the MCP tools to manage tasks.
+
+### Task workflow
+
+- `list_ready` — show tasks ready to work on (all dependencies done)
+- `start_task` — mark a task as in-progress before starting
+- `complete_task` — mark a task done when finished
+- `create_task` — create new tasks or epics
+- `get_graph` — visualize the dependency graph
