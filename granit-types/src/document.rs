@@ -38,6 +38,12 @@ pub struct RenderedDocument {
     pub created_display: Option<String>,
     /// Formatted modified_at in local time (e.g. "2026-03-27 14:05:00"), if present.
     pub modified_display: Option<String>,
+    /// Number of words in the plain-text body (markdown syntax and frontmatter stripped).
+    #[serde(default)]
+    pub word_count: usize,
+    /// Estimated reading time in whole minutes (~200 wpm, rounded up; 0 for an empty body).
+    #[serde(default)]
+    pub reading_minutes: usize,
 }
 
 /// Metadata for a document (note or template) in the cave.

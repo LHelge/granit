@@ -229,7 +229,14 @@ pub(super) fn Reader() -> impl IntoView {
                 let backlinks = note.backlinks;
                 let created = note.created_display;
                 let modified = note.modified_display;
-                if tags.is_empty() && created.is_none() && modified.is_none() && backlinks.is_empty() {
+                let word_count = note.word_count;
+                let reading_minutes = note.reading_minutes;
+                if tags.is_empty()
+                    && created.is_none()
+                    && modified.is_none()
+                    && backlinks.is_empty()
+                    && word_count == 0
+                {
                     return None;
                 }
                 Some(view! {
@@ -248,6 +255,14 @@ pub(super) fn Reader() -> impl IntoView {
                         })}
                         {modified.map(|ts| view! {
                             <span class="text-xs italic text-base-content/35">{format!("Modified: {ts}")}</span>
+                        })}
+                        {(word_count > 0).then(|| {
+                            let words = if word_count == 1 { "word" } else { "words" };
+                            view! {
+                                <span class="text-xs italic text-base-content/35">
+                                    {format!("{word_count} {words} · ~{reading_minutes} min read")}
+                                </span>
+                            }
                         })}
                         {(!backlinks.is_empty()).then(|| {
                             let backlink_count = backlinks.len();

@@ -20,6 +20,44 @@ impl Markdown<'_> {
         }
         plain
     }
+
+    /// Count the words in the plain-text body.
+    ///
+    /// Inline events concatenate directly (so `[link](…)` followed by `.`
+    /// stays one word), while block boundaries insert whitespace — unlike
+    /// [`Markdown::strip`], which would fuse the last word of one block with
+    /// the first word of the next.
+    pub fn word_count(&self) -> usize {
+        let mut opts = base_options();
+        opts.insert(Options::ENABLE_WIKILINKS);
+        let mut plain = String::new();
+        for event in Parser::new_ext(self.body(), opts) {
+            match event {
+                Event::Text(text) | Event::Code(text) => plain.push_str(&text),
+                Event::SoftBreak | Event::HardBreak => plain.push(' '),
+                Event::End(tag_end) => match tag_end {
+                    // Inline containers: the next event continues the same word.
+                    TagEnd::Emphasis
+                    | TagEnd::Strong
+                    | TagEnd::Strikethrough
+                    | TagEnd::Superscript
+                    | TagEnd::Subscript
+                    | TagEnd::Link
+                    | TagEnd::Image => {}
+                    // Block boundaries separate words.
+                    _ => plain.push(' '),
+                },
+                _ => {}
+            }
+        }
+        plain.split_whitespace().count()
+    }
+}
+
+/// Estimated reading time in whole minutes at ~200 words per minute,
+/// rounded up; 0 for an empty body.
+fn reading_minutes(word_count: usize) -> usize {
+    word_count.div_ceil(200)
 }
 
 impl Markdown<'_> {
@@ -73,6 +111,7 @@ impl<'a> Markdown<'a> {
         };
         let created_display = frontmatter.as_ref().and_then(|f| f.created_at).map(fmt);
         let modified_display = frontmatter.as_ref().and_then(|f| f.modified_at).map(fmt);
+        let word_count = self.word_count();
         RenderedDocument {
             title: title.to_string(),
             html,
@@ -81,6 +120,8 @@ impl<'a> Markdown<'a> {
             backlinks: Vec::new(),
             created_display,
             modified_display,
+            word_count,
+            reading_minutes: reading_minutes(word_count),
         }
     }
 
@@ -502,6 +543,59 @@ mod tests {
     fn test_empty_string() {
         let html = Markdown::new("").render_html();
         assert!(html.is_empty());
+    }
+
+    // ── word_count / reading_minutes ─────────────────────────────────
+
+    #[test]
+    fn test_word_count_ignores_markdown_syntax() {
+        let md = Markdown::new("# Heading\n\nSome **bold** text with [a link](https://x.se).");
+        // Heading, Some, bold, text, with, a, link
+        assert_eq!(md.word_count(), 7);
+    }
+
+    #[test]
+    fn test_word_count_does_not_fuse_adjacent_blocks() {
+        // Regression guard: counting over `strip()` output would fuse
+        // "Heading" and "World" into one word.
+        let md = Markdown::new("# Heading\n\nWorld");
+        assert_eq!(md.word_count(), 2);
+    }
+
+    #[test]
+    fn test_word_count_excludes_frontmatter() {
+        let md = Markdown::new("---\ntags:\n  - one\n  - two\n---\nJust three words");
+        assert_eq!(md.word_count(), 3);
+    }
+
+    #[test]
+    fn test_word_count_counts_code_and_wiki_links() {
+        let md = Markdown::new("Run `cargo test` then see [[other-note|the docs]]");
+        // Run, cargo, test, then, see, the, docs
+        assert_eq!(md.word_count(), 7);
+    }
+
+    #[test]
+    fn test_word_count_empty_body_is_zero() {
+        assert_eq!(Markdown::new("").word_count(), 0);
+        assert_eq!(Markdown::new("---\ntags: []\n---\n").word_count(), 0);
+    }
+
+    #[test]
+    fn test_reading_minutes_rounds_up() {
+        use super::reading_minutes;
+        assert_eq!(reading_minutes(0), 0);
+        assert_eq!(reading_minutes(1), 1);
+        assert_eq!(reading_minutes(200), 1);
+        assert_eq!(reading_minutes(201), 2);
+        assert_eq!(reading_minutes(1000), 5);
+    }
+
+    #[test]
+    fn test_render_populates_word_count() {
+        let result = Markdown::new("five words in this note").render("t", |_| None);
+        assert_eq!(result.word_count, 5);
+        assert_eq!(result.reading_minutes, 1);
     }
 
     // ── outgoing_links ───────────────────────────────────────────────
