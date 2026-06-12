@@ -1,4 +1,62 @@
-/* aphid default theme — minimal readable stylesheet */
+/* pebble — Granit's documentation theme.
+   Catppuccin Mocha, Inter, and a hint of granite. */
+
+/* ---------- Fonts ---------- */
+
+@font-face {
+    font-family: "Inter";
+    src: url("/static/fonts/InterVariable.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Inter";
+    src: url("/static/fonts/InterVariable-Italic.woff2") format("woff2");
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+
+/* ---------- Tokens (named after the app's DaisyUI variables) ---------- */
+
+:root {
+    color-scheme: dark;
+
+    /* Catppuccin Mocha, as used by the Granit app */
+    --base-100: #1e1e2e;
+    --base-200: #181825;
+    --base-300: #11111b;
+    --base-content: #cdd6f4;
+    --content-muted: #a6adc8;
+    --content-faint: #6c7086;
+    --primary: #cba6f7;
+    --secondary: #b4befe;
+    --accent: #f5e0dc;
+    --neutral: #313244;
+    --neutral-strong: #45475a;
+    --info: #89b4fa;
+    --success: #a6e3a1;
+    --warning: #f9e2af;
+    --error: #f38ba8;
+    --peach: #fab387;
+    --teal: #94e2d5;
+
+    --font-sans: "Inter", Avenir, Helvetica, Arial, sans-serif;
+    --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --radius: 0.75rem;
+    --radius-sm: 0.4rem;
+    --content-width: 72rem;
+    --prose-width: 70ch;
+    --header-height: 3.5rem;
+
+    /* speckled granite grain, like the pebble itself */
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* ---------- Reset & base ---------- */
 
 *,
 *::before,
@@ -6,109 +64,626 @@
     box-sizing: border-box;
 }
 
-body {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    line-height: 1.6;
-    color: #1a1a1a;
-    background: #fafafa;
-    margin: 0;
-    padding: 0;
+html {
+    scroll-behavior: smooth;
 }
 
+body {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--base-content);
+    background: var(--base-100);
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    font-weight: 650;
+    scroll-margin-top: calc(var(--header-height) + 1.5rem);
+}
+
+h1 { font-size: 2rem; }
+h2 { font-size: 1.45rem; margin-top: 2.25rem; }
+h3 { font-size: 1.15rem; margin-top: 1.75rem; }
+
 a {
-    color: #1a6fb5;
+    color: var(--primary);
     text-decoration: none;
 }
 
 a:hover {
+    color: var(--accent);
     text-decoration: underline;
+    text-underline-offset: 3px;
 }
 
-/* Nav */
-.site-nav {
+img {
+    max-width: 100%;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--neutral);
+    margin: 2.5rem 0;
+}
+
+blockquote {
+    margin: 1.25rem 0;
+    padding: 0.25rem 1.25rem;
+    border-left: 3px solid var(--neutral-strong);
+    color: var(--content-muted);
+}
+
+blockquote > :first-child { margin-top: 0.5rem; }
+blockquote > :last-child { margin-bottom: 0.5rem; }
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.25rem 0;
+    font-size: 0.95rem;
+    display: block;
+    overflow-x: auto;
+}
+
+th, td {
+    text-align: left;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--neutral);
+}
+
+th {
+    background: var(--base-200);
+    font-weight: 600;
+}
+
+tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--base-200) 55%, transparent);
+}
+
+/* Custom scrollbars, Mocha-flavored */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--neutral-strong) transparent;
+}
+
+.skip-link {
+    position: absolute;
+    left: -999px;
+    top: 0;
+    z-index: 100;
+    background: var(--primary);
+    color: var(--base-300);
+    padding: 0.5rem 1rem;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.skip-link:focus {
+    left: 1rem;
+}
+
+/* ---------- Header ---------- */
+
+.site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--base-200) 80%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--neutral);
+}
+
+.header-inner {
+    max-width: var(--content-width);
+    margin: 0 auto;
+    height: var(--header-height);
+    padding: 0 1.5rem;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-    padding: 0.75rem 2rem;
-    background: #fff;
-    border-bottom: 1px solid #e0e0e0;
-}
-
-.site-nav .nav-brand {
-    font-weight: 700;
-    font-size: 1.1rem;
-    color: #1a1a1a;
-}
-
-.site-nav ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
+    justify-content: space-between;
     gap: 1rem;
 }
 
-/* Main content */
-.content {
-    max-width: 48rem;
-    margin: 2rem auto;
-    padding: 0 1.5rem;
-}
-
-/* Blog post */
-.post-meta {
-    color: #666;
-    font-size: 0.9rem;
-    margin-bottom: 0.5rem;
-}
-
-.post-meta .author::before {
-    content: " · ";
-}
-
-.author {
+.brand {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.6rem;
+    color: var(--base-content);
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: -0.01em;
 }
 
-.author-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    vertical-align: middle;
-}
-
-.author-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    color: inherit;
+.brand:hover {
+    color: var(--base-content);
     text-decoration: none;
 }
 
-.author-link:hover {
-    text-decoration: underline;
+.brand-logo {
+    display: block;
+    border-radius: 6px;
 }
 
+.site-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.nav-link {
+    color: var(--content-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+}
+
+.nav-link:hover {
+    color: var(--base-content);
+    background: var(--neutral);
+    text-decoration: none;
+}
+
+.nav-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--content-muted);
+    padding: 0.35rem 0.5rem;
+    margin-left: 0.25rem;
+    border-radius: var(--radius-sm);
+}
+
+.nav-icon:hover {
+    color: var(--base-content);
+    background: var(--neutral);
+}
+
+/* ---------- Main column ---------- */
+
+.content {
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+}
+
+/* Single prose column for standalone pages and simple layouts */
+.prose {
+    max-width: var(--prose-width);
+}
+
+.prose-centered {
+    max-width: var(--prose-width);
+    margin: 0 auto;
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+    border-top: 1px solid var(--neutral);
+    background: var(--base-200);
+}
+
+.footer-inner {
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: 1.75rem 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 2rem;
+    color: var(--content-faint);
+    font-size: 0.85rem;
+}
+
+.site-footer p {
+    margin: 0;
+}
+
+.site-footer a {
+    color: var(--content-muted);
+}
+
+.site-footer a:hover {
+    color: var(--primary);
+}
+
+/* ---------- Hero (homepage) ---------- */
+
+.hero {
+    position: relative;
+    text-align: center;
+    padding: 4.5rem 1rem 3.5rem;
+    border-radius: var(--radius);
+    background:
+        radial-gradient(ellipse 60% 55% at 50% 0%,
+            color-mix(in srgb, var(--primary) 14%, transparent), transparent 70%),
+        var(--base-200);
+    border: 1px solid var(--neutral);
+    overflow: hidden;
+}
+
+/* the granite grain */
+.hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--grain);
+    opacity: 0.045;
+    pointer-events: none;
+}
+
+.hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-logo {
+    width: 96px;
+    height: 96px;
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45));
+}
+
+.hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.25rem);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    margin: 1.25rem 0 0.75rem;
+}
+
+.hero-tagline {
+    max-width: 38rem;
+    margin: 0 auto 2rem;
+    color: var(--content-muted);
+    font-size: 1.15rem;
+}
+
+.cta-row {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.98rem;
+    padding: 0.65rem 1.4rem;
+    border-radius: 999px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn:hover {
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: var(--base-300);
+}
+
+.btn-primary:hover {
+    background: color-mix(in srgb, var(--primary) 88%, white);
+    color: var(--base-300);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--base-content);
+    border: 1px solid var(--neutral-strong);
+}
+
+.btn-ghost:hover {
+    color: var(--base-content);
+    border-color: var(--primary);
+    background: var(--neutral);
+}
+
+/* Feature grid rendered from home.md's h2 sections */
+.home-body {
+    max-width: var(--content-width);
+    margin: 3rem auto 0;
+}
+
+.home-body > p {
+    max-width: var(--prose-width);
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+    margin-top: 2rem;
+}
+
+/* ---------- Cards (wiki index, backlinks, features) ---------- */
+
+.card {
+    position: relative;
+    background: var(--base-200);
+    border: 1px solid var(--neutral);
+    border-radius: var(--radius);
+    padding: 1.4rem 1.6rem;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    overflow: hidden;
+}
+
+.card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--grain);
+    opacity: 0.03;
+    pointer-events: none;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--neutral));
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.card > h2:first-child,
+.card > h3:first-child {
+    margin-top: 0;
+}
+
+/* Wiki index */
+.wiki-intro {
+    max-width: var(--prose-width);
+    color: var(--content-muted);
+    margin-bottom: 2rem;
+}
+
+.wiki-categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.25rem;
+}
+
+.wiki-category-card h2 {
+    font-size: 1.1rem;
+    margin: 0 0 0.4rem;
+}
+
+.wiki-category-description {
+    font-size: 0.9rem;
+    color: var(--content-muted);
+    margin: 0 0 0.9rem;
+}
+
+.wiki-category-pages {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.wiki-category-pages li a {
+    font-size: 0.92rem;
+    color: var(--secondary);
+}
+
+.wiki-category-pages li a:hover {
+    color: var(--accent);
+}
+
+/* ---------- Wiki page: three-column layout ---------- */
+
+.wiki-layout {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, var(--prose-width)) 14rem;
+    gap: 3rem;
+    align-items: start;
+}
+
+.wiki-sidenav,
+.wiki-toc {
+    position: sticky;
+    top: calc(var(--header-height) + 2rem);
+    max-height: calc(100vh - var(--header-height) - 4rem);
+    overflow-y: auto;
+    font-size: 0.88rem;
+}
+
+.sidenav-category {
+    margin-bottom: 1.4rem;
+}
+
+.sidenav-category h2 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--content-faint);
+    margin: 0 0 0.5rem;
+}
+
+.sidenav-category ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-left: 1px solid var(--neutral);
+}
+
+.sidenav-category li a {
+    display: block;
+    color: var(--content-muted);
+    padding: 0.22rem 0.85rem;
+    border-left: 2px solid transparent;
+    margin-left: -1.5px;
+}
+
+.sidenav-category li a:hover {
+    color: var(--base-content);
+    text-decoration: none;
+    border-left-color: var(--neutral-strong);
+}
+
+.sidenav-category li a.current {
+    color: var(--primary);
+    font-weight: 600;
+    border-left-color: var(--primary);
+}
+
+.wiki-toc h2 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--content-faint);
+    margin: 0 0 0.5rem;
+}
+
+.toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.toc li {
+    padding: 0.18rem 0;
+}
+
+.toc li a {
+    color: var(--content-muted);
+}
+
+.toc li a:hover {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.toc-h3 { padding-left: 0.9rem; }
+.toc-h4 { padding-left: 1.8rem; }
+.toc-h5 { padding-left: 2.7rem; }
+.toc-h6 { padding-left: 3.6rem; }
+
+/* Page meta above the title */
+.page-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.category-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+}
+
+.wiki-article > h1:first-of-type,
+.wiki-article .page-meta + h1 {
+    margin-top: 0;
+}
+
+/* Tag chips */
 .tag-list {
     list-style: none;
     padding: 0;
+    margin: 0;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.4rem;
     flex-wrap: wrap;
 }
 
 .tag-list li a {
     display: inline-block;
-    padding: 0.15rem 0.5rem;
-    background: #eef4fa;
-    border-radius: 3px;
-    font-size: 0.85rem;
+    padding: 0.12rem 0.65rem;
+    background: var(--neutral);
+    color: var(--content-muted);
+    border-radius: 999px;
+    font-size: 0.8rem;
 }
 
-/* Blog/wiki list pages */
+.tag-list li a:hover {
+    background: var(--neutral-strong);
+    color: var(--base-content);
+    text-decoration: none;
+}
+
+/* Backlinks */
+.backlinks {
+    margin-top: 3rem;
+}
+
+.backlinks h2 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--content-faint);
+    margin: 0 0 0.6rem;
+}
+
+.backlinks ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.backlinks li a {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    background: var(--base-200);
+    border: 1px solid var(--neutral);
+    border-radius: var(--radius-sm);
+    color: var(--secondary);
+    font-size: 0.88rem;
+}
+
+.backlinks li a:hover {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--neutral));
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* Mobile fallback: nav/TOC inside <details> */
+details.collapse-nav {
+    display: none;
+    margin-bottom: 1.25rem;
+    background: var(--base-200);
+    border: 1px solid var(--neutral);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 1rem;
+}
+
+details.collapse-nav summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--content-muted);
+}
+
+/* ---------- Lists (wiki/blog/tag index fallbacks) ---------- */
+
 .blog-list,
 .wiki-list,
 .tag-index {
@@ -119,97 +694,50 @@ a:hover {
 .blog-list li,
 .wiki-list li,
 .tag-index li {
-    padding: 0.4rem 0;
-    border-bottom: 1px solid #eee;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--neutral);
 }
 
 .blog-list time {
-    color: #888;
+    color: var(--content-faint);
     font-size: 0.85rem;
     margin-left: 0.75rem;
 }
 
-/* TOC sidebar */
-.toc {
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-    background: #f5f5f5;
-    border-radius: 4px;
-}
-
-.toc h2 {
+.post-meta {
+    color: var(--content-faint);
     font-size: 0.9rem;
-    margin: 0 0 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #666;
+    margin-bottom: 0.5rem;
 }
 
-.toc ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
+/* ---------- Code ---------- */
 
-.toc li {
-    padding: 0.15rem 0;
-    font-size: 0.9rem;
-}
-
-.toc-h3 {
-    padding-left: 1rem;
-}
-
-.toc-h4 {
-    padding-left: 2rem;
-}
-
-.toc-h5 {
-    padding-left: 3rem;
-}
-
-.toc-h6 {
-    padding-left: 4rem;
-}
-
-/* Backlinks */
-.backlinks {
-    margin-top: 2rem;
-    padding-top: 1rem;
-    border-top: 1px solid #e0e0e0;
-}
-
-.backlinks h2 {
-    font-size: 1rem;
-    color: #666;
-}
-
-/* Code blocks */
 code {
-    font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
-    font-size: 0.9em;
+    font-family: var(--font-mono);
+    font-size: 0.88em;
 }
 
-p code {
-    background: #f0f0f0;
-    padding: 0.15em 0.35em;
-    border-radius: 3px;
+p code,
+li code,
+td code,
+h1 code, h2 code, h3 code, h4 code {
+    background: var(--neutral);
+    color: var(--accent);
+    padding: 0.12em 0.4em;
+    border-radius: var(--radius-sm);
 }
 
 pre.code-block {
-    background: #2b2b2b;
-    color: #d4d4d4;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 1rem;
+    background: var(--base-300);
+    color: var(--base-content);
+    border: 1px solid var(--neutral);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.3rem;
     overflow-x: auto;
-    font-size: 0.9rem;
-    line-height: 1.5;
+    font-size: 0.88rem;
+    line-height: 1.6;
 }
 
-/* Mermaid diagrams. Source is kept in a <pre class="mermaid"> so it's
-   readable if JS doesn't load; once mermaid.js runs, the SVG replaces
-   the text and these styles defer to whatever mermaid emits. */
 pre.mermaid {
     background: transparent;
     border: none;
@@ -219,205 +747,164 @@ pre.mermaid {
     font-family: inherit;
 }
 
-/* Syntax highlighting */
-.hl-keyword {
-    color: #c586c0;
+pre.mermaid svg {
+    max-width: 100%;
 }
 
-.hl-keyword.hl-operator {
-    color: #d4d4d4;
-}
+/* Syntax highlighting — Catppuccin Mocha mapping for syntect's hl- classes */
+.hl-keyword { color: #cba6f7; }
+.hl-keyword.hl-operator { color: #94e2d5; }
+.hl-storage { color: #cba6f7; }
+.hl-string { color: #a6e3a1; }
+.hl-comment { color: #6c7086; font-style: italic; }
+.hl-constant { color: #fab387; }
+.hl-entity.hl-name.hl-function { color: #89b4fa; }
+.hl-entity.hl-name.hl-type { color: #f9e2af; }
+.hl-entity.hl-name.hl-tag { color: #cba6f7; }
+.hl-entity.hl-other.hl-attribute-name { color: #f9e2af; }
+.hl-support.hl-function { color: #89b4fa; }
+.hl-support.hl-type { color: #f9e2af; }
+.hl-variable { color: #cdd6f4; }
+.hl-variable.hl-parameter { color: #f5e0dc; }
+.hl-punctuation { color: #9399b2; }
 
-.hl-storage {
-    color: #569cd6;
-}
+/* ---------- Wiki links ---------- */
 
-.hl-string {
-    color: #ce9178;
-}
-
-.hl-comment {
-    color: #6a9955;
-    font-style: italic;
-}
-
-.hl-constant {
-    color: #b5cea8;
-}
-
-.hl-entity.hl-name.hl-function {
-    color: #dcdcaa;
-}
-
-.hl-entity.hl-name.hl-type {
-    color: #4ec9b0;
-}
-
-.hl-entity.hl-name.hl-tag {
-    color: #569cd6;
-}
-
-.hl-support.hl-function {
-    color: #dcdcaa;
-}
-
-.hl-support.hl-type {
-    color: #4ec9b0;
-}
-
-.hl-variable {
-    color: #9cdcfe;
-}
-
-.hl-variable.hl-parameter {
-    color: #9cdcfe;
-}
-
-.hl-punctuation {
-    color: #d4d4d4;
-}
-
-/* Wiki links */
 .wikilink {
     font-weight: 500;
 }
 
 .wikilink.broken {
-    color: #c0392b;
-    border-bottom: 1px dashed #c0392b;
+    color: var(--error);
+    border-bottom: 1px dashed var(--error);
     cursor: help;
 }
 
-/* Markdown alerts */
+/* ---------- Markdown alerts ---------- */
+
 .markdown-alert {
-    border-left: 4px solid;
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    margin: 1rem 0;
+    border-left: 3px solid;
+    border-radius: var(--radius-sm);
+    padding: 0.85rem 1.1rem;
+    margin: 1.25rem 0;
 }
 
-.markdown-alert> :last-child {
+.markdown-alert > :last-child {
     margin-bottom: 0;
 }
 
 .markdown-alert-title {
-    font-weight: 600;
-    margin: 0 0 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 650;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 0.35rem;
 }
 
 .markdown-alert-note {
-    border-color: #1a6fb5;
-    background: #eef4fa;
+    border-color: var(--info);
+    background: color-mix(in srgb, var(--info) 9%, var(--base-200));
 }
-
-.markdown-alert-note .markdown-alert-title {
-    color: #1a6fb5;
-}
+.markdown-alert-note .markdown-alert-title { color: var(--info); }
 
 .markdown-alert-tip {
-    border-color: #1a8d48;
-    background: #eef7f1;
+    border-color: var(--success);
+    background: color-mix(in srgb, var(--success) 9%, var(--base-200));
 }
-
-.markdown-alert-tip .markdown-alert-title {
-    color: #1a8d48;
-}
+.markdown-alert-tip .markdown-alert-title { color: var(--success); }
 
 .markdown-alert-important {
-    border-color: #7c3aed;
-    background: #f3eefc;
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 9%, var(--base-200));
 }
-
-.markdown-alert-important .markdown-alert-title {
-    color: #7c3aed;
-}
+.markdown-alert-important .markdown-alert-title { color: var(--primary); }
 
 .markdown-alert-warning {
-    border-color: #b58a1a;
-    background: #fdf8ea;
+    border-color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 9%, var(--base-200));
 }
-
-.markdown-alert-warning .markdown-alert-title {
-    color: #b58a1a;
-}
+.markdown-alert-warning .markdown-alert-title { color: var(--warning); }
 
 .markdown-alert-caution {
-    border-color: #c0392b;
-    background: #fdf0ee;
+    border-color: var(--error);
+    background: color-mix(in srgb, var(--error) 9%, var(--base-200));
 }
+.markdown-alert-caution .markdown-alert-title { color: var(--error); }
 
-.markdown-alert-caution .markdown-alert-title {
-    color: #c0392b;
-}
+/* ---------- 404 ---------- */
 
-/* Footer */
-.site-footer {
+.not-found {
     text-align: center;
-    padding: 2rem;
-    color: #999;
-    font-size: 0.85rem;
+    padding: 4rem 1rem;
 }
 
-/* Wiki index cards */
-.wiki-intro {
-    color: #555;
-    margin-bottom: 1.5rem;
-    line-height: 1.6;
+.not-found .hero-logo {
+    opacity: 0.85;
 }
 
-.wiki-categories {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.25rem;
+.not-found h1 {
+    margin-top: 1.5rem;
 }
 
-.wiki-category-card {
-    background: #fff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 1.25rem 1.5rem;
-    transition: border-color 0.15s, box-shadow 0.15s;
+.not-found-body {
+    max-width: 34rem;
+    margin: 0 auto;
+    color: var(--content-muted);
 }
 
-.wiki-category-card:hover {
-    border-color: #b0b0b0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+/* ---------- Responsive ---------- */
+
+@media (max-width: 64rem) {
+    .wiki-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .wiki-sidenav,
+    .wiki-toc {
+        display: none;
+    }
+
+    details.collapse-nav {
+        display: block;
+    }
 }
 
-.wiki-category-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+@media (max-width: 40rem) {
+    .header-inner {
+        padding: 0 1rem;
+    }
+
+    .nav-link {
+        padding: 0.3rem 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .content {
+        padding: 1.5rem 1rem 3rem;
+    }
+
+    .hero {
+        padding: 3rem 1rem 2.5rem;
+    }
+
+    h1 { font-size: 1.7rem; }
+
+    .footer-inner {
+        flex-direction: column;
+    }
 }
 
-.wiki-category-header h2 {
-    font-size: 1.1rem;
-    margin: 0;
-}
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
 
-.wiki-category-icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-
-.wiki-category-description {
-    font-size: 0.85rem;
-    color: #666;
-    margin-bottom: 0.75rem;
-    line-height: 1.5;
-}
-
-.wiki-category-pages {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.wiki-category-pages li a {
-    font-size: 0.85rem;
+    .btn,
+    .card {
+        transition: none;
+    }
 }
