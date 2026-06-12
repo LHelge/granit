@@ -1,10 +1,10 @@
 ---
 id: ngs
 title: Cache-bust theme.css to prevent stale-CSS windows after deploys
-status: in_progress
+status: done
 priority: P2
 created: "2026-06-12T15:42:03.207410963Z"
-updated: "2026-06-12T15:42:15.611410758Z"
+updated: "2026-06-12T15:44:51.105748534Z"
 tags:
   - docs
   - theme
