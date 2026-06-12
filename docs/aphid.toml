@@ -1,0 +1,28 @@
+title = "Granit"
+description = "A minimal, opinionated desktop note-taking app. Local markdown caves, wiki-links, and an integrated AI agent. No plugins, no sync, no bloat."
+base_url = "https://granit.lhelge.se"
+favicon = "static/icon.png"
+wiki_default_category = "Reference"
+
+# theme_dir = "theme"
+# social_image = "static/social.png"
+
+[[wiki_categories]]
+name = "Getting Started"
+description = "Install Granit, open your first cave, and learn the basics."
+
+[[wiki_categories]]
+name = "Notes & Writing"
+description = "Markdown notes, wiki-links, templates, daily notes, and todos."
+
+[[wiki_categories]]
+name = "AI Agent"
+description = "Set up providers, agent tools, and RAG over your cave."
+
+[[wiki_categories]]
+name = "Reference"
+description = "Configuration, themes, and cave rules in detail."
+
+[[socials]]
+platform = "github"
+url = "https://github.com/LHelge/granit"

@@ -1,0 +1,1 @@
+Granit is a minimal, opinionated desktop note-taking app. It opens a local directory of markdown notes — a "cave" — and gives you a clean rendered reader, an explorer sidebar, wiki-links between notes, and an integrated streaming AI agent. No plugins, no sync, no bloat.

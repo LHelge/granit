@@ -1,5 +1,7 @@
 /build/
 /dist/
+/docs/dist/
 /target/
 node_modules/
 .DS_Store
+/.claude/worktrees/
