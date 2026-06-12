@@ -133,6 +133,12 @@ impl Markdown<'_> {
         let mut opts = base_options();
         opts.insert(Options::ENABLE_WIKILINKS);
 
+        // Unicode-lowercase, matching `Cave::lookup_slug_in_notes`: a link like
+        // `[[övningar]]` resolves to the note `Övningar`, so renaming that note
+        // must rewrite it too — ASCII-only case folding would skip it and leave
+        // a permanently broken link on disk.
+        let old_lower = old_slug.to_lowercase();
+
         let mut edits: Vec<(Range<usize>, String)> = Vec::new();
         for (event, range) in Parser::new_ext(text, opts).into_offset_iter() {
             if let Event::Start(Tag::Link {
@@ -141,7 +147,7 @@ impl Markdown<'_> {
                 ..
             }) = event
             {
-                if dest_url.trim().eq_ignore_ascii_case(old_slug) {
+                if dest_url.trim().to_lowercase() == old_lower {
                     if let Some(replacement) = rewrite_wiki_span(&text[range.clone()], new_slug) {
                         edits.push((range, replacement));
                     }
@@ -783,6 +789,15 @@ mod tests {
         let input = "`[[old]]` and [[old]]";
         let out = Markdown::rename_wiki_links(input, "old", "new").unwrap();
         assert_eq!(out, "`[[old]]` and [[new]]");
+    }
+
+    #[test]
+    fn test_rename_wiki_links_case_insensitive_non_ascii_target() {
+        // Resolution is Unicode-case-insensitive ([[övningar]] resolves to
+        // note "Övningar"), so the rename rewrite must match the same way.
+        let out =
+            Markdown::rename_wiki_links("See [[övningar]] here.", "Övningar", "Träning").unwrap();
+        assert_eq!(out, "See [[Träning]] here.");
     }
 
     #[test]
