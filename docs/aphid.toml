@@ -5,7 +5,7 @@ favicon = "static/icon.png"
 wiki_default_category = "Reference"
 
 theme_dir = "theme"
-# social_image = "static/social.png"
+social_image = "static/social.png"
 
 [[wiki_categories]]
 name = "Getting Started"
