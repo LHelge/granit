@@ -62,6 +62,21 @@ Configuration is **cave-local**.
 | Errors | `thiserror` |
 | Config | `serde_yml`, `tauri-plugin-store` |
 
+## Documentation
+
+The documentation site lives at <https://granit.lhelge.se>, built from `docs/` with [aphid](https://github.com/LHelge/aphid).
+
+To work on the docs locally:
+
+```sh
+cargo install aphid --locked   # one-time
+cd docs
+aphid serve                    # live-reload preview on :3000
+aphid build                    # build + validate wiki-links
+```
+
+Scaffold new pages with `aphid wiki new "Title"` or `aphid page new "Title"`. The [Docs workflow](.github/workflows/docs.yml) deploys automatically on pushes to `main` that touch `docs/**`.
+
 ## Development
 
 ### Prerequisites
