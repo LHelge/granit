@@ -275,6 +275,57 @@ tbody tr:nth-child(even) {
     background: var(--neutral);
 }
 
+/* Hamburger menu — replaces the text links on narrow screens */
+.nav-menu {
+    display: none;
+    position: relative;
+}
+
+.nav-menu summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.nav-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.nav-menu[open] summary {
+    color: var(--base-content);
+    background: var(--neutral);
+}
+
+.nav-menu-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.6rem);
+    z-index: 60;
+    min-width: 11rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.5rem;
+    background: var(--base-200);
+    border: 1px solid var(--neutral);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-card);
+}
+
+.nav-menu-panel a {
+    display: block;
+    padding: 0.55rem 0.9rem;
+    border-radius: var(--radius-sm);
+    color: var(--content-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.nav-menu-panel a:hover {
+    color: var(--base-content);
+    background: var(--neutral);
+    text-decoration: none;
+}
+
 /* ---------- Main column ---------- */
 
 .content {
@@ -908,9 +959,12 @@ pre.mermaid svg {
         padding: 0 1rem;
     }
 
-    .nav-link {
-        padding: 0.3rem 0.5rem;
-        font-size: 0.9rem;
+    .site-nav .nav-link {
+        display: none;
+    }
+
+    .nav-menu {
+        display: block;
     }
 
     .content {
