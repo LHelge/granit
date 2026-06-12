@@ -1,1 +1,1 @@
-Browse the Granit wiki for guides on installing the app, writing notes, and working with the built-in AI agent.
+Everything about using Granit, organized by topic. Start with [[getting-started]] for the quick path from install to first note, then dig into the cave model, wiki-links, the explorer, and the AI agent. Pages cross-link liberally — follow them wherever your question leads.
