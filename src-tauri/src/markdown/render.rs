@@ -22,6 +22,33 @@ impl Markdown<'_> {
     }
 }
 
+impl Markdown<'_> {
+    /// Source line numbers (1-based, counted in the full raw document
+    /// including frontmatter) of each rendered task-list checkbox, in
+    /// render order.
+    ///
+    /// The Nth entry is the line of the checkbox the renderer tagged
+    /// `data-index="N"`, because both walk the same pulldown-cmark event
+    /// stream. The reader's toggle-by-index path must map indexes to lines
+    /// through this — counting raw `- [ ]` lines instead also counts text
+    /// inside fenced code blocks (and misses ordered-list and blockquote
+    /// checkboxes), silently toggling the wrong line.
+    pub fn checkbox_source_lines(&self) -> Vec<usize> {
+        let mut opts = base_options();
+        opts.insert(Options::ENABLE_WIKILINKS);
+        let body = self.body();
+        // `body` is a tail slice of the raw document.
+        let body_offset = self.raw.len() - body.len();
+        Parser::new_ext(body, opts)
+            .into_offset_iter()
+            .filter_map(|(event, range)| {
+                matches!(event, Event::TaskListMarker(_))
+                    .then(|| self.raw[..body_offset + range.start].matches('\n').count() + 1)
+            })
+            .collect()
+    }
+}
+
 impl<'a> Markdown<'a> {
     /// Render this markdown document to a [`RenderedDocument`].
     ///

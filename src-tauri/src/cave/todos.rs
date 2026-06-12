@@ -3,10 +3,10 @@ use super::{Cave, CaveError};
 use crate::markdown::Markdown;
 use granit_types::{TodoItem, TodoList};
 
-/// A parsed todo checkbox line, e.g. `- [ ] text` or `* [x] text`.
+/// A parsed todo checkbox line, e.g. `- [ ] text` or `1. [x] text`.
 struct Checkbox<'a> {
-    /// The list marker: `-`, `*`, or `+`.
-    marker: char,
+    /// The list marker: `-`, `*`, `+`, or an ordered marker like `3.` / `3)`.
+    marker: &'a str,
     checked: bool,
     /// The todo text after the `"[x] "` prefix (unstripped markdown).
     rest: &'a str,
@@ -14,15 +14,25 @@ struct Checkbox<'a> {
 
 /// Parse a line (already trimmed of leading whitespace) as a todo checkbox.
 ///
-/// Recognises `-`/`*`/`+` followed by ` [ ] `, ` [x] `, or ` [X] ` —
-/// the trailing space is required, matching how the markdown renderer
-/// treats task-list items.
+/// Recognises `-`/`*`/`+` and ordered markers (`1.` / `1)`, up to 9 digits
+/// per CommonMark) followed by ` [ ] `, ` [x] `, or ` [X] ` — the trailing
+/// space is required, matching how the markdown renderer treats task-list
+/// items.
 fn parse_checkbox(trimmed: &str) -> Option<Checkbox<'_>> {
-    let marker = match trimmed.chars().next() {
-        Some(m @ ('-' | '*' | '+')) => m,
+    let marker_len = match trimmed.chars().next()? {
+        '-' | '*' | '+' => 1,
+        c if c.is_ascii_digit() => {
+            let digits = trimmed
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(trimmed.len());
+            match (digits <= 9, trimmed[digits..].chars().next()) {
+                (true, Some('.' | ')')) => digits + 1,
+                _ => return None,
+            }
+        }
         _ => return None,
     };
-    let after_marker = &trimmed[1..];
+    let (marker, after_marker) = trimmed.split_at(marker_len);
     let checked = if after_marker.starts_with(" [ ] ") {
         false
     } else if after_marker.starts_with(" [x] ") || after_marker.starts_with(" [X] ") {
@@ -139,8 +149,14 @@ impl Cave {
     }
 
     /// Toggle the checkbox identified by its 0-based index among all checkboxes
-    /// in a note. This is used by the reader view, which counts checkboxes in
-    /// rendered HTML and needs to map back to a source line.
+    /// in a note. This is used by the reader view, where the renderer tags each
+    /// checkbox with `data-index` counted over pulldown-cmark events.
+    ///
+    /// The index→line mapping must therefore come from the same parse
+    /// ([`Markdown::checkbox_source_lines`]). Counting raw `- [ ]` lines here
+    /// would diverge — e.g. a checkbox-looking line inside a fenced code block
+    /// is no checkbox to the renderer, so every index after it would shift and
+    /// toggle the wrong line.
     pub fn toggle_todo_by_index(&self, slug: &str, index: usize) -> Result<(), CaveError> {
         validate_name(slug)?;
         let abs_path = self
@@ -149,20 +165,11 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
         let raw = std::fs::read_to_string(abs_path)?;
-        let mut checkbox_count = 0usize;
-        let mut target_line: Option<usize> = None;
-
-        for (idx, line) in raw.lines().enumerate() {
-            if parse_checkbox(line.trim_start()).is_some() {
-                if checkbox_count == index {
-                    target_line = Some(idx + 1); // 1-based
-                    break;
-                }
-                checkbox_count += 1;
-            }
-        }
-
-        let line = target_line.ok_or(CaveError::InvalidTodoLine(index))?;
+        let line = Markdown::new(&raw)
+            .checkbox_source_lines()
+            .get(index)
+            .copied()
+            .ok_or(CaveError::InvalidTodoLine(index))?;
         self.toggle_todo(slug, line)
     }
 }
@@ -177,9 +184,12 @@ mod tests {
     #[test]
     fn test_parse_checkbox_markers_and_state() {
         for (line, checked, marker) in [
-            ("- [ ] task", false, '-'),
-            ("* [x] task", true, '*'),
-            ("+ [X] task", true, '+'),
+            ("- [ ] task", false, "-"),
+            ("* [x] task", true, "*"),
+            ("+ [X] task", true, "+"),
+            // The renderer emits checkboxes for ordered task items too.
+            ("1. [ ] task", false, "1."),
+            ("12) [x] task", true, "12)"),
         ] {
             let cb = parse_checkbox(line).unwrap();
             assert_eq!(cb.checked, checked, "{line}");
@@ -198,7 +208,9 @@ mod tests {
     fn test_parse_checkbox_rejects_non_checkbox_lines() {
         assert!(parse_checkbox("plain text").is_none());
         assert!(parse_checkbox("- regular list item").is_none());
-        assert!(parse_checkbox("1. [ ] numbered").is_none());
+        assert!(parse_checkbox("1.[ ] no space after marker").is_none());
+        // CommonMark caps ordered markers at 9 digits.
+        assert!(parse_checkbox("1234567890. [ ] too many digits").is_none());
         assert!(parse_checkbox("").is_none());
     }
 
@@ -387,6 +399,60 @@ mod tests {
         assert!(content.contains("- [ ] first"));
         assert!(content.contains("- [x] second"));
         assert!(content.contains("- [ ] third"));
+    }
+
+    #[test]
+    fn test_toggle_todo_by_index_skips_checkbox_inside_code_block() {
+        // The renderer does not render a checkbox for the code-block line, so
+        // data-index 0 is the first *real* checkbox. The old raw-line counter
+        // would have toggled the line inside the code block instead.
+        let dir = tempfile::tempdir().unwrap();
+        let content = "```\n- [ ] example in code\n```\n\n- [ ] real first\n- [ ] real second\n";
+        std::fs::write(dir.path().join("note.md"), content).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.toggle_todo_by_index("note", 0).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert!(
+            content.contains("- [ ] example in code"),
+            "code block must be untouched: {content}"
+        );
+        assert!(content.contains("- [x] real first"), "{content}");
+        assert!(content.contains("- [ ] real second"), "{content}");
+    }
+
+    #[test]
+    fn test_toggle_todo_by_index_counts_frontmatter_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "---\ntags:\n  - daily\n---\n# Title\n\n- [ ] after frontmatter\n";
+        std::fs::write(dir.path().join("note.md"), content).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.toggle_todo_by_index("note", 0).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert!(content.contains("- [x] after frontmatter"), "{content}");
+        assert!(content.contains("tags:"), "frontmatter intact: {content}");
+    }
+
+    #[test]
+    fn test_toggle_todo_by_index_ordered_list_checkbox() {
+        // pulldown-cmark treats `1. [ ] x` as a task-list item, so the reader
+        // shows an interactive checkbox for it — toggling must work.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "1. [ ] ordered first\n2. [x] ordered second\n",
+        )
+        .unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.toggle_todo_by_index("note", 1).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert!(content.contains("1. [ ] ordered first"), "{content}");
+        assert!(content.contains("2. [ ] ordered second"), "{content}");
     }
 
     #[test]
