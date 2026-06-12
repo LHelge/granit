@@ -4,6 +4,22 @@ Granit is a minimal, opinionated desktop note-taking app. It manages a local mar
 
 Built for personal use. No plugins, no sync, no bloat.
 
+## Installation
+
+Prebuilt bundles are published on the [GitHub releases page](https://github.com/LHelge/granit/releases). Quick install:
+
+```sh
+# macOS (Apple Silicon) — Homebrew
+brew install --cask lhelge/tap/granit
+
+# Linux (x86_64) — install script
+curl -fsSL https://granit.lhelge.se/static/install.sh | sh
+
+# Windows — download the .exe or .msi from the releases page
+```
+
+See <https://granit.lhelge.se/wiki/installation/> for per-platform notes, automatic updates, and building from source.
+
 ## Current Features
 
 - **Cave-based storage** — Any directory can be opened as a cave, and each cave stores its own settings in `.granit/config.yml`.
