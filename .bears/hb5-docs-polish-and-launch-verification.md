@@ -2,10 +2,10 @@
 id: hb5
 title: Docs polish and launch verification
 type: epic
-status: open
+status: done
 priority: P2
 created: "2026-06-12T11:35:44.564007062Z"
-updated: "2026-06-12T11:35:44.564007062Z"
+updated: "2026-06-12T14:47:52.820950291Z"
 tags:
   - docs
   - polish

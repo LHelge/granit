@@ -1,10 +1,10 @@
 ---
 id: abd
 title: "Optional: Catppuccin Latte light mode via prefers-color-scheme"
-status: open
+status: done
 priority: P3
 created: "2026-06-12T11:39:10.613089914Z"
-updated: "2026-06-12T11:39:10.613089914Z"
+updated: "2026-06-12T14:47:52.820700187Z"
 tags:
   - docs
   - polish
