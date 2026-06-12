@@ -61,6 +61,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
+      # The linuxdeploy build tauri pins predates the excludelist entries for
+      # libwayland, so the AppImage ships Ubuntu's libwayland-* and the host
+      # EGL stack dlopens them, aborting with EGL_BAD_PARAMETER on rolling
+      # distros (Arch/Hyprland reproduced). tauri-bundler only downloads
+      # linuxdeploy-plugin-gtk.sh when it is absent from its tool cache, so we
+      # pre-seed a patched copy that strips libwayland from the AppDir before
+      # packaging and signing. Drop this once tauri updates its linuxdeploy.
+      - name: Patch AppImage gtk plugin to exclude libwayland
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          mkdir -p ~/.cache/tauri
+          curl -fsSL https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh -o ~/.cache/tauri/linuxdeploy-plugin-gtk.sh
+          cat >> ~/.cache/tauri/linuxdeploy-plugin-gtk.sh <<'PATCH'
+
+          # granit patch: never ship libwayland — bundled copies break host EGL
+          # display creation (EGL_BAD_PARAMETER) on hosts newer than the runner.
+          echo "granit patch: removing bundled libwayland from AppDir"
+          rm -f "$APPDIR"/usr/lib/libwayland-*.so*
+          PATCH
+          chmod +x ~/.cache/tauri/linuxdeploy-plugin-gtk.sh
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
