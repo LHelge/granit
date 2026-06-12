@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Granit",
+  "version": "0.4.0",
+  "identifier": "se.lhelge.granit",
+  "build": {
+    "beforeDevCommand": "npm run build && trunk serve",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build && trunk build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Granit",
+        "width": 1200,
+        "height": 800,
+        "maximized": true,
+        "theme": "Dark",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc0M0FBREE5Qzc0NkFCODgKUldTSXEwYkhxYTA2ZFBoYnZNMDhNRUFCeXAwaUtOK0tGa2pManQvZWdMZkhwR2lCdzlRZGpCZG4K",
+      "endpoints": [
+        "https://github.com/LHelge/granit/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/models/all-MiniLM-L6-v2-onnx/*"
+    ]
+  }
+}

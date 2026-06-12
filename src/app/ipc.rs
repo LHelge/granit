@@ -1,0 +1,588 @@
+use granit_types::{
+    AppConfig, AppMetadata, AttachedNote, ContentMatch, Document, DocumentMeta, ReleaseNotes,
+    RenderedDocument, SidebarConfig, TodoList, ToolCallInfo, ToolInfo, UpdateCheckStatus,
+};
+use serde::{de::DeserializeOwned, Serialize};
+use std::collections::HashMap;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
+
+// ── Tauri IPC binding ──────────────────────────────────────────────
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
+    pub(crate) async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+}
+
+// ── Generic invoke helpers ─────────────────────────────────────────
+
+fn js_err_to_string(e: JsValue) -> String {
+    if let Some(s) = e.as_string() {
+        return s;
+    }
+    js_sys::Reflect::get(&e, &JsValue::from_str("message"))
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| {
+            js_sys::JSON::stringify(&e)
+                .ok()
+                .and_then(|s| s.as_string())
+                .unwrap_or_else(|| "Unknown IPC error".to_string())
+        })
+}
+
+/// Invoke a Tauri command with typed args and a typed return value.
+async fn invoke_cmd<A: Serialize, R: DeserializeOwned>(cmd: &str, args: &A) -> Result<R, String> {
+    let args = serde_wasm_bindgen::to_value(args).map_err(|e| format!("{e}"))?;
+    let val = invoke(cmd, args).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+/// Invoke a Tauri command with no args and a typed return value.
+async fn invoke_no_args<R: DeserializeOwned>(cmd: &str) -> Result<R, String> {
+    let val = invoke(cmd, JsValue::NULL).await.map_err(js_err_to_string)?;
+    serde_wasm_bindgen::from_value(val).map_err(|e| format!("{e}"))
+}
+
+/// Invoke a Tauri command with typed args and no return value.
+async fn invoke_unit<A: Serialize>(cmd: &str, args: &A) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(args).map_err(|e| format!("{e}"))?;
+    invoke(cmd, args).await.map_err(js_err_to_string)?;
+    Ok(())
+}
+
+// ── Config ─────────────────────────────────────────────────────────
+
+pub async fn fetch_config() -> Result<AppConfig, String> {
+    invoke_no_args("get_config").await
+}
+
+pub async fn fetch_app_metadata() -> Result<AppMetadata, String> {
+    invoke_no_args("get_app_metadata").await
+}
+
+pub async fn list_system_fonts() -> Result<Vec<String>, String> {
+    invoke_no_args("list_system_fonts").await
+}
+
+pub async fn save_config(config: AppConfig) -> Result<AppConfig, String> {
+    #[derive(Serialize)]
+    struct Args {
+        config: AppConfig,
+    }
+    invoke_cmd("save_config", &Args { config }).await
+}
+
+pub async fn save_sidebar_state(
+    sidebar: SidebarConfig,
+    agent_panel: SidebarConfig,
+) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args {
+        sidebar: SidebarConfig,
+        agent_panel: SidebarConfig,
+    }
+    invoke_unit(
+        "save_sidebar_state",
+        &Args {
+            sidebar,
+            agent_panel,
+        },
+    )
+    .await
+}
+
+// ── Provider / Model selection ──────────────────────────────────────
+
+pub async fn select_provider(index: usize) -> Result<AppConfig, String> {
+    invoke_cmd("select_provider", &HashMap::from([("index", index)])).await
+}
+
+pub async fn list_models() -> Result<Vec<granit_types::ModelInfo>, String> {
+    invoke_no_args("list_models").await
+}
+
+pub async fn select_model(model_id: &str) -> Result<AppConfig, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        model_id: &'a str,
+    }
+    invoke_cmd("select_model", &Args { model_id }).await
+}
+
+pub async fn select_mode(mode: granit_types::AgentMode) -> Result<AppConfig, String> {
+    #[derive(Serialize)]
+    struct Args {
+        mode: granit_types::AgentMode,
+    }
+    invoke_cmd("select_mode", &Args { mode }).await
+}
+
+// ── Cave ───────────────────────────────────────────────────────────
+
+pub async fn open_cave(path: &str) -> Result<AppConfig, String> {
+    invoke_cmd("open_cave", &HashMap::from([("path", path)])).await
+}
+
+pub async fn fetch_notes() -> Result<Vec<DocumentMeta>, String> {
+    invoke_no_args("list_notes").await
+}
+
+/// Heading anchor ids (`# Heading {#id}` targets) for wiki-link completion.
+pub async fn fetch_anchors() -> Result<Vec<String>, String> {
+    invoke_no_args("list_anchors").await
+}
+
+pub async fn search_content(query: &str) -> Result<Vec<ContentMatch>, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        query: &'a str,
+        max_results: Option<usize>,
+    }
+    invoke_cmd(
+        "search_content",
+        &Args {
+            query,
+            max_results: Some(40),
+        },
+    )
+    .await
+}
+
+pub async fn fetch_folders() -> Result<Vec<String>, String> {
+    invoke_no_args("list_folders").await
+}
+
+pub async fn fetch_templates() -> Result<Vec<DocumentMeta>, String> {
+    invoke_no_args("list_templates").await
+}
+
+// ── Notes ──────────────────────────────────────────────────────────
+
+pub async fn create_note(
+    name: &str,
+    folder: Option<&str>,
+    template: Option<&str>,
+) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        name: &'a str,
+        folder: Option<&'a str>,
+        template: Option<&'a str>,
+    }
+    invoke_cmd(
+        "create_note",
+        &Args {
+            name,
+            folder,
+            template,
+        },
+    )
+    .await
+}
+
+pub async fn read_note(name: &str) -> Result<Document, String> {
+    invoke_cmd("read_note", &HashMap::from([("name", name)])).await
+}
+
+pub async fn open_daily_note() -> Result<Document, String> {
+    invoke_no_args("open_daily_note").await
+}
+
+pub async fn open_daily_note_for_date(date: &str) -> Result<Document, String> {
+    invoke_cmd("open_daily_note_for_date", &HashMap::from([("date", date)])).await
+}
+
+pub async fn create_template(name: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd("create_template", &HashMap::from([("name", name)])).await
+}
+
+pub async fn read_template(name: &str) -> Result<Document, String> {
+    invoke_cmd("read_template", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_template(name: &str) -> Result<RenderedDocument, String> {
+    invoke_cmd("render_template", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_note(name: &str) -> Result<RenderedDocument, String> {
+    invoke_cmd("render_note", &HashMap::from([("name", name)])).await
+}
+
+pub async fn set_active_note(slug: Option<&str>) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: Option<&'a str>,
+    }
+    invoke_unit("set_active_note", &Args { slug }).await
+}
+
+pub async fn update_note(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+    favorite: Option<bool>,
+) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+        tags: Option<Vec<String>>,
+        icon: Option<String>,
+        favorite: Option<bool>,
+    }
+    invoke_cmd(
+        "update_note",
+        &Args {
+            old_name,
+            new_name,
+            content,
+            tags,
+            icon,
+            favorite,
+        },
+    )
+    .await
+}
+
+pub async fn rename_note(old_name: &str, new_name: &str) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+    }
+    invoke_cmd("rename_note", &Args { old_name, new_name }).await
+}
+
+pub async fn delete_note(slug: &str) -> Result<(), String> {
+    invoke_unit("delete_note", &HashMap::from([("name", slug)])).await
+}
+
+pub async fn update_template(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+    tags: Option<Vec<String>>,
+    icon: Option<String>,
+) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+        tags: Option<Vec<String>>,
+        icon: Option<String>,
+    }
+    invoke_cmd(
+        "update_template",
+        &Args {
+            old_name,
+            new_name,
+            content,
+            tags,
+            icon,
+        },
+    )
+    .await
+}
+
+pub async fn delete_template(slug: &str) -> Result<(), String> {
+    invoke_unit("delete_template", &HashMap::from([("name", slug)])).await
+}
+
+pub async fn move_note(slug: &str, destination: Option<&str>) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        name: &'a str,
+        destination: Option<&'a str>,
+    }
+    invoke_cmd(
+        "move_note",
+        &Args {
+            name: slug,
+            destination,
+        },
+    )
+    .await
+}
+
+// ── Folders ────────────────────────────────────────────────────────
+
+pub async fn create_folder(path: &str) -> Result<(), String> {
+    invoke_unit("create_folder", &HashMap::from([("path", path)])).await
+}
+
+pub async fn delete_folder(path: &str) -> Result<(), String> {
+    invoke_unit("delete_folder", &HashMap::from([("path", path)])).await
+}
+
+pub async fn rename_folder(source: &str, new_name: &str) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        source: &'a str,
+        new_name: &'a str,
+    }
+    invoke_unit("rename_folder", &Args { source, new_name }).await
+}
+
+pub async fn move_folder(source: &str, destination: Option<&str>) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        source: &'a str,
+        destination: Option<&'a str>,
+    }
+    invoke_unit(
+        "move_folder",
+        &Args {
+            source,
+            destination,
+        },
+    )
+    .await
+}
+
+// ── Agent ──────────────────────────────────────────────────────────
+
+pub async fn render_markdown(content: &str) -> Result<String, String> {
+    let args = serde_wasm_bindgen::to_value(&HashMap::from([("content", content)]))
+        .map_err(|e| format!("{e}"))?;
+    let val = invoke("render_markdown", args)
+        .await
+        .map_err(js_err_to_string)?;
+    val.as_string()
+        .ok_or_else(|| "invalid response".to_string())
+}
+
+pub async fn send_message(msg: &str, attached_notes: Vec<AttachedNote>) -> Result<(), String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        msg: &'a str,
+        attached_notes: Vec<AttachedNote>,
+    }
+
+    invoke_unit(
+        "send_message",
+        &Args {
+            msg,
+            attached_notes,
+        },
+    )
+    .await
+}
+
+pub async fn clear_chat() -> Result<(), String> {
+    invoke_unit("clear_chat", &()).await
+}
+
+pub async fn list_tools() -> Result<Vec<ToolInfo>, String> {
+    invoke_no_args("list_tools").await
+}
+
+pub async fn open_url(url: &str) -> Result<(), String> {
+    invoke_unit("plugin:opener|open_url", &HashMap::from([("url", url)])).await
+}
+
+// ── Updater ────────────────────────────────────────────────────────
+
+/// Release notes pending display after an automatic update, if the running
+/// version is the one the update installed.
+pub async fn fetch_pending_release_notes() -> Result<Option<ReleaseNotes>, String> {
+    invoke_no_args("get_pending_release_notes").await
+}
+
+/// Mark the pending release notes as seen so they are not shown again.
+pub async fn acknowledge_release_notes() -> Result<(), String> {
+    invoke_unit("acknowledge_release_notes", &()).await
+}
+
+/// Check for an update and install it if one is available. The new version
+/// applies on the next launch (or an explicit restart).
+pub async fn check_for_updates() -> Result<UpdateCheckStatus, String> {
+    invoke_no_args("check_for_updates").await
+}
+
+pub async fn restart_app() -> Result<(), String> {
+    invoke_unit("restart_app", &()).await
+}
+
+// ── Todos ──────────────────────────────────────────────────────────
+
+pub async fn list_todos() -> Result<TodoList, String> {
+    invoke_no_args("list_todos").await
+}
+
+// ── Tags ───────────────────────────────────────────────────────────
+
+pub async fn list_tags() -> Result<granit_types::TagMap, String> {
+    invoke_no_args("list_tags").await
+}
+
+pub async fn toggle_todo(slug: &str, line: usize) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: &'a str,
+        line: usize,
+    }
+    invoke_unit("toggle_todo", &Args { slug, line }).await
+}
+
+pub async fn toggle_todo_by_index(slug: &str, index: usize) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        slug: &'a str,
+        index: usize,
+    }
+    invoke_unit("toggle_todo_by_index", &Args { slug, index }).await
+}
+
+// ── Folder picker ──────────────────────────────────────────────────
+
+pub async fn pick_folder() -> Option<String> {
+    let tauri =
+        js_sys::Reflect::get(&web_sys::window()?.into(), &JsValue::from_str("__TAURI__")).ok()?;
+    let dialog = js_sys::Reflect::get(&tauri, &JsValue::from_str("dialog")).ok()?;
+    let open_fn = js_sys::Reflect::get(&dialog, &JsValue::from_str("open")).ok()?;
+    let open_fn = js_sys::Function::from(open_fn);
+
+    #[derive(Serialize)]
+    struct OpenDialogOptions {
+        directory: bool,
+        multiple: bool,
+    }
+
+    let opts = serde_wasm_bindgen::to_value(&OpenDialogOptions {
+        directory: true,
+        multiple: false,
+    })
+    .ok()?;
+
+    let promise = open_fn.call1(&JsValue::NULL, &opts).ok()?;
+    let result: JsValue = JsFuture::from(js_sys::Promise::from(promise)).await.ok()?;
+    result.as_string()
+}
+
+// ── Event listening (agent streaming) ──────────────────────────────
+
+/// Register a closure to be called for each streaming text chunk.
+/// Returns an [`EventHandle`] — drop it to remove the listener.
+pub async fn listen_stream_chunk(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
+    listen_event("agent:stream-chunk", move |payload: JsValue| {
+        // Tauri 2 event payload: { payload: <data> }
+        let text = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        cb(text);
+    })
+    .await
+}
+
+/// Register a closure called when streaming is done.
+pub async fn listen_stream_done(cb: impl Fn() + 'static) -> Option<EventHandle> {
+    listen_event("agent:stream-done", move |_| cb()).await
+}
+
+/// Register a closure called on a streaming error.
+pub async fn listen_stream_error(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
+    listen_event("agent:stream-error", move |payload: JsValue| {
+        let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown error".to_string());
+        cb(msg);
+    })
+    .await
+}
+
+/// Register a closure called when the agent invokes a tool.
+pub async fn listen_tool_call(cb: impl Fn(ToolCallInfo) + 'static) -> Option<EventHandle> {
+    listen_event("agent:tool-call", move |payload: JsValue| {
+        let inner = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .unwrap_or(payload);
+        if let Ok(info) = serde_wasm_bindgen::from_value::<ToolCallInfo>(inner) {
+            cb(info);
+        }
+    })
+    .await
+}
+
+/// Register a closure called after an update has been downloaded and
+/// installed. The payload is the new version string.
+pub async fn listen_update_installed(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
+    listen_event("updater:installed", move |payload: JsValue| {
+        let version = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        cb(version);
+    })
+    .await
+}
+
+/// Handle returned by `listen_event`. Dropping this calls the unlisten
+/// function and frees the JS closure — no leaked memory.
+pub struct EventHandle {
+    _closure: Closure<dyn Fn(JsValue)>,
+    unlisten: js_sys::Function,
+}
+
+impl Drop for EventHandle {
+    fn drop(&mut self) {
+        let _ = self.unlisten.call0(&JsValue::NULL);
+    }
+}
+
+/// Internal helper: call `window.__TAURI__.event.listen(event, handler)`.
+/// Returns an [`EventHandle`] that keeps the closure alive. Dropping
+/// the handle calls the Tauri unlisten function and frees the closure.
+async fn listen_event(event: &str, cb: impl Fn(JsValue) + 'static) -> Option<EventHandle> {
+    let win: JsValue = web_sys::window()?.into();
+    let tauri = js_sys::Reflect::get(&win, &JsValue::from_str("__TAURI__")).ok()?;
+    let event_ns = js_sys::Reflect::get(&tauri, &JsValue::from_str("event")).ok()?;
+    let listen_fn = js_sys::Reflect::get(&event_ns, &JsValue::from_str("listen")).ok()?;
+    let listen_fn = js_sys::Function::from(listen_fn);
+
+    let handler = Closure::wrap(Box::new(cb) as Box<dyn Fn(JsValue)>);
+    let promise = listen_fn
+        .call2(&event_ns, &JsValue::from_str(event), handler.as_ref())
+        .ok()?;
+
+    let unlisten = JsFuture::from(js_sys::Promise::from(promise)).await.ok()?;
+    Some(EventHandle {
+        _closure: handler,
+        unlisten: js_sys::Function::from(unlisten),
+    })
+}
+
+/// Listen for a Tauri event that carries no meaningful payload.
+/// Calls `cb` on every occurrence. Returns an [`EventHandle`].
+pub async fn listen_event_simple(event: &str, cb: impl Fn() + 'static) -> Option<EventHandle> {
+    listen_event(event, move |_| cb()).await
+}
+
+/// Register a Tauri event listener and keep the [`EventHandle`] alive
+/// for the current reactive owner's lifetime.
+///
+/// The standard pattern — spawning a `'static` future that holds the
+/// handle and then suspends on `pending()` — is awkward to repeat. This
+/// helper consolidates it. Cancellation of the Leptos Effect on
+/// component unmount drops the future, which drops the handle, which
+/// triggers the Tauri unlisten.
+pub fn spawn_event_listener_simple(event: &'static str, cb: impl Fn() + 'static) {
+    leptos::task::spawn_local(async move {
+        let _handle = listen_event_simple(event, cb).await;
+        std::future::pending::<()>().await;
+    });
+}

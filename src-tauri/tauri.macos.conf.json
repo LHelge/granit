@@ -1,0 +1,17 @@
+{
+    "app": {
+        "windows": [
+            {
+                "title": "Granit",
+                "width": 1200,
+                "height": 800,
+                "maximized": true,
+                "theme": "Dark",
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true,
+                "decorations": true,
+                "dragDropEnabled": false
+            }
+        ]
+    }
+}

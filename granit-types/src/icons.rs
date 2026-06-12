@@ -1,0 +1,166 @@
+use icondata_core::IconData;
+
+/// A single entry in the curated note icon catalog.
+pub struct NoteIconEntry {
+    /// PascalCase id stored in frontmatter (e.g. `"Star"`).
+    pub id: &'static str,
+    /// Human-readable label shown in the picker.
+    pub label: &'static str,
+    /// Extra search terms (space-separated, lowercase) for fuzzy matching.
+    pub tags: &'static str,
+    /// SVG icon data for rendering via `leptos_icons`.
+    pub icon: &'static IconData,
+}
+
+/// Curated subset of icons suitable for note labelling. Currently the Lucide and Material design icon sets, 
+/// but could be expanded in the future with custom icons or other libraries. For a list of all availible icons:
+/// [icondata](https://carloskiki.github.io/icondata/)
+///
+/// This is the single source of truth for the icon catalog. To add an icon:
+/// 1. Add a new `NoteIconEntry` row here.
+/// 2. That's it — the picker, tree view, reader, writer, and agent system
+///    prompt all derive from this table automatically.
+#[rustfmt::skip]
+pub static NOTE_ICONS: &[NoteIconEntry] = &[
+    NoteIconEntry { id: "AlarmClock",     label: "Alarm clock",     tags: "time alarm reminder",                    icon: icondata_lu::LuAlarmClock     },
+    NoteIconEntry { id: "Anchor",         label: "Anchor",          tags: "sea marine weight stable",               icon: icondata_lu::LuAnchor         },
+    NoteIconEntry { id: "Angry",          label: "Angry",           tags: "emotion face mood",                      icon: icondata_lu::LuAngry          },
+    NoteIconEntry { id: "Apple",          label: "Apple",           tags: "food fruit health",                      icon: icondata_lu::LuApple          },
+    NoteIconEntry { id: "AtSign",         label: "At sign",         tags: "email contact mention",                  icon: icondata_lu::LuAtSign         },
+    NoteIconEntry { id: "Banana",         label: "Banana",          tags: "food fruit",                             icon: icondata_lu::LuBanana         },
+    NoteIconEntry { id: "Beer",           label: "Beer",            tags: "drink alcohol beverage",                 icon: icondata_lu::LuBeer           },
+    NoteIconEntry { id: "BicepsFlexed",   label: "Biceps",          tags: "fitness strength gym",                   icon: icondata_lu::LuBicepsFlexed   },
+    NoteIconEntry { id: "Bike",           label: "Bike",            tags: "cycling sport transport",                icon: icondata_lu::LuBike           },
+    NoteIconEntry { id: "Binoculars",     label: "Binoculars",      tags: "view search observe",                    icon: icondata_lu::LuBinoculars     },
+    NoteIconEntry { id: "Bomb",           label: "Bomb",            tags: "danger urgent",                          icon: icondata_lu::LuBomb           },
+    NoteIconEntry { id: "Book",           label: "Book",            tags: "read reference manual guide",            icon: icondata_lu::LuBook           },
+    NoteIconEntry { id: "BookOpen",       label: "Open book",       tags: "reading study",                          icon: icondata_lu::LuBookOpen       },
+    NoteIconEntry { id: "Bookmark",       label: "Bookmark",        tags: "saved reference important",              icon: icondata_lu::LuBookmark       },
+    NoteIconEntry { id: "Bot",            label: "Bot",             tags: "robot ai automation",                    icon: icondata_lu::LuBot            },
+    NoteIconEntry { id: "Brain",          label: "Brain",           tags: "knowledge ideas memory thought",         icon: icondata_lu::LuBrain          },
+    NoteIconEntry { id: "Bug",            label: "Bug",             tags: "issue error debugging",                  icon: icondata_lu::LuBug            },
+    NoteIconEntry { id: "Building",       label: "Building",        tags: "office company place",                   icon: icondata_lu::LuBuilding       },
+    NoteIconEntry { id: "Cake",           label: "Cake",            tags: "celebration birthday food",              icon: icondata_lu::LuCake           },
+    NoteIconEntry { id: "Calendar",       label: "Calendar",        tags: "date meeting schedule event log",        icon: icondata_lu::LuCalendar       },
+    NoteIconEntry { id: "Camera",         label: "Camera",          tags: "photo image picture visual",             icon: icondata_lu::LuCamera         },
+    NoteIconEntry { id: "Candy",          label: "Candy",           tags: "sweet food treat",                       icon: icondata_lu::LuCandy          },
+    NoteIconEntry { id: "Car",            label: "Car",             tags: "vehicle transport drive",                icon: icondata_lu::LuCar            },
+    NoteIconEntry { id: "Carrot",         label: "Carrot",          tags: "food vegetable health",                  icon: icondata_lu::LuCarrot         },
+    NoteIconEntry { id: "Cat",            label: "Cat",             tags: "animal pet",                             icon: icondata_lu::LuCat            },
+    NoteIconEntry { id: "Cctv",           label: "CCTV",            tags: "camera security surveillance",           icon: icondata_lu::LuCctv           },
+    NoteIconEntry { id: "Clapperboard",   label: "Clapperboard",    tags: "film movie video media",                 icon: icondata_lu::LuClapperboard   },
+    NoteIconEntry { id: "Clock",          label: "Clock",           tags: "time hour schedule",                     icon: icondata_lu::LuClock          },
+    NoteIconEntry { id: "Cloud",          label: "Cloud",           tags: "weather sync storage",                   icon: icondata_lu::LuCloud          },
+    NoteIconEntry { id: "Code",           label: "Code",            tags: "programming dev technical",              icon: icondata_lu::LuCode           },
+    NoteIconEntry { id: "Coffee",         label: "Coffee",          tags: "break journal casual daily",             icon: icondata_lu::LuCoffee         },
+    NoteIconEntry { id: "Cog",            label: "Cog",             tags: "settings gear system config",            icon: icondata_lu::LuCog            },
+    NoteIconEntry { id: "Compass",        label: "Compass",         tags: "direction navigation explore",           icon: icondata_lu::LuCompass        },
+    NoteIconEntry { id: "Cpu",            label: "CPU",             tags: "hardware processor computer",            icon: icondata_lu::LuCpu            },
+    NoteIconEntry { id: "Crown",          label: "Crown",           tags: "royalty premium best top",               icon: icondata_lu::LuCrown          },
+    NoteIconEntry { id: "Database",       label: "Database",        tags: "data storage sql",                       icon: icondata_lu::LuDatabase       },
+    NoteIconEntry { id: "Dog",            label: "Dog",             tags: "animal pet",                             icon: icondata_lu::LuDog            },
+    NoteIconEntry { id: "DollarSign",     label: "Dollar",          tags: "money finance cost price",               icon: icondata_lu::LuDollarSign     },
+    NoteIconEntry { id: "EthernetPort",   label: "Ethernet",        tags: "network cable connection",               icon: icondata_lu::LuEthernetPort   },
+    NoteIconEntry { id: "Factory",        label: "Factory",         tags: "industry manufacturing production",      icon: icondata_lu::LuFactory        },
+    NoteIconEntry { id: "FileText",       label: "Note",            tags: "default file document",                  icon: icondata_lu::LuFileText       },
+    NoteIconEntry { id: "Fish",           label: "Fish",            tags: "animal food sea",                        icon: icondata_lu::LuFish           },
+    NoteIconEntry { id: "Flag",           label: "Flag",            tags: "milestone marker important",             icon: icondata_lu::LuFlag           },
+    NoteIconEntry { id: "Flame",          label: "Flame",           tags: "hot urgent priority fire",               icon: icondata_lu::LuFlame          },
+    NoteIconEntry { id: "FlaskConical",   label: "Flask",           tags: "science lab experiment",                 icon: icondata_lu::LuFlaskConical   },
+    NoteIconEntry { id: "Footprints",     label: "Footprints",      tags: "sport shoe walk run steps",              icon: icondata_lu::LuFootprints     },
+    NoteIconEntry { id: "Forklift",       label: "Forklift",        tags: "vehicle warehouse logistics",            icon: icondata_lu::LuForklift       },
+    NoteIconEntry { id: "Frown",          label: "Frown",           tags: "emotion sad unhappy face",               icon: icondata_lu::LuFrown          },
+    NoteIconEntry { id: "Gamepad2",       label: "Gamepad",         tags: "gaming fun play",                        icon: icondata_lu::LuGamepad2       },
+    NoteIconEntry { id: "Gauge",          label: "Gauge",           tags: "speed performance metric",               icon: icondata_lu::LuGauge          },
+    NoteIconEntry { id: "Gem",            label: "Gem",             tags: "precious value quality",                 icon: icondata_lu::LuGem            },
+    NoteIconEntry { id: "Ghost",          label: "Ghost",           tags: "fun halloween",                          icon: icondata_lu::LuGhost          },
+    NoteIconEntry { id: "Gift",           label: "Gift",            tags: "present birthday celebration",           icon: icondata_lu::LuGift           },
+    NoteIconEntry { id: "Globe",          label: "Globe",           tags: "public web world internet",              icon: icondata_lu::LuGlobe          },
+    NoteIconEntry { id: "GraduationCap",  label: "Graduation cap",  tags: "education learning school university",   icon: icondata_lu::LuGraduationCap  },
+    NoteIconEntry { id: "Guitar",         label: "Guitar",          tags: "music instrument",                       icon: icondata_lu::LuGuitar         },
+    NoteIconEntry { id: "Hammer",         label: "Hammer",          tags: "build tool work",                        icon: icondata_lu::LuHammer         },
+    NoteIconEntry { id: "Hand",           label: "Hand",            tags: "gesture stop help",                      icon: icondata_lu::LuHand           },
+    NoteIconEntry { id: "HandMetal",      label: "Hand metal",      tags: "rock music gesture",                     icon: icondata_lu::LuHandMetal      },
+    NoteIconEntry { id: "Handshake",      label: "Handshake",       tags: "agreement partnership deal",             icon: icondata_lu::LuHandshake      },
+    NoteIconEntry { id: "Headphones",     label: "Headphones",      tags: "audio music listen",                     icon: icondata_lu::LuHeadphones     },
+    NoteIconEntry { id: "Heart",          label: "Heart",           tags: "personal love favourite",                icon: icondata_lu::LuHeart          },
+    NoteIconEntry { id: "Hiragana",       label: "Hiragana",        tags: "japanese language character",            icon: icondata_mdi::MdiSyllabaryHiragana},
+    NoteIconEntry { id: "Hotel",          label: "Hotel",           tags: "travel accommodation stay",              icon: icondata_lu::LuHotel          },
+    NoteIconEntry { id: "House",          label: "House",           tags: "home personal",                          icon: icondata_lu::LuHouse          },
+    NoteIconEntry { id: "IceCreamCone",   label: "Ice cream",       tags: "food dessert sweet",                     icon: icondata_lu::LuIceCreamCone   },
+    NoteIconEntry { id: "Image",          label: "Image",           tags: "photo picture visual media",             icon: icondata_lu::LuImage          },
+    NoteIconEntry { id: "Infinity",       label: "Infinity",        tags: "forever endless loop",                   icon: icondata_lu::LuInfinity       },
+    NoteIconEntry { id: "JapaneseYen",    label: "Japanese yen",    tags: "money currency japan finance",           icon: icondata_lu::LuJapaneseYen    },
+    NoteIconEntry { id: "KeyRound",       label: "Key",             tags: "access secret password",                 icon: icondata_lu::LuKeyRound       },
+    NoteIconEntry { id: "Keyboard",       label: "Keyboard",        tags: "typing input computer",                  icon: icondata_lu::LuKeyboard       },
+    NoteIconEntry { id: "Laptop",         label: "Laptop",          tags: "computer work device",                   icon: icondata_lu::LuLaptop         },
+    NoteIconEntry { id: "Laugh",          label: "Laugh",           tags: "emotion happy funny face",               icon: icondata_lu::LuLaugh          },
+    NoteIconEntry { id: "Lightbulb",      label: "Lightbulb",       tags: "idea brainstorm concept",                icon: icondata_lu::LuLightbulb      },
+    NoteIconEntry { id: "Link",           label: "Link",            tags: "url reference connection",               icon: icondata_lu::LuLink           },
+    NoteIconEntry { id: "ListChecks",     label: "Checklist",       tags: "todo task list action",                  icon: icondata_lu::LuListChecks     },
+    NoteIconEntry { id: "Lock",           label: "Lock",            tags: "private secret secure",                  icon: icondata_lu::LuLock           },
+    NoteIconEntry { id: "Mail",           label: "Mail",            tags: "email message inbox",                    icon: icondata_lu::LuMail           },
+    NoteIconEntry { id: "MapPin",         label: "Map pin",         tags: "place location travel",                  icon: icondata_lu::LuMapPin         },
+    NoteIconEntry { id: "Meh",            label: "Meh",             tags: "emotion neutral face",                   icon: icondata_lu::LuMeh            },
+    NoteIconEntry { id: "MessageSquare",  label: "Message",         tags: "chat comment reply",                     icon: icondata_lu::LuMessageSquare  },
+    NoteIconEntry { id: "Monitor",        label: "Monitor",         tags: "screen display computer",                icon: icondata_lu::LuMonitor        },
+    NoteIconEntry { id: "Music",          label: "Music",           tags: "audio song playlist",                    icon: icondata_lu::LuMusic          },
+    NoteIconEntry { id: "Network",        label: "Network",         tags: "connection topology infrastructure",     icon: icondata_lu::LuNetwork        },
+    NoteIconEntry { id: "Package",        label: "Package",         tags: "box container shipping",                 icon: icondata_lu::LuPackage        },
+    NoteIconEntry { id: "Paperclip",      label: "Paperclip",       tags: "attachment file document",               icon: icondata_lu::LuPaperclip      },
+    NoteIconEntry { id: "PartyPopper",    label: "Party",           tags: "celebration event fun",                  icon: icondata_lu::LuPartyPopper    },
+    NoteIconEntry { id: "Pencil",         label: "Pencil",          tags: "write draft edit",                       icon: icondata_lu::LuPencil         },
+    NoteIconEntry { id: "Pickaxe",        label: "Pickaxe",         tags: "mine dig tool",                          icon: icondata_lu::LuPickaxe        },
+    NoteIconEntry { id: "Plane",          label: "Plane",           tags: "travel flight trip",                     icon: icondata_lu::LuPlane          },
+    NoteIconEntry { id: "Presentation",   label: "Presentation",    tags: "slides meeting talk",                    icon: icondata_lu::LuPresentation   },
+    NoteIconEntry { id: "Printer",        label: "Printer",         tags: "print output document",                  icon: icondata_lu::LuPrinter        },
+    NoteIconEntry { id: "Puzzle",         label: "Puzzle",          tags: "problem solving challenge",              icon: icondata_lu::LuPuzzle         },
+    NoteIconEntry { id: "Rocket",         label: "Rocket",          tags: "project launch startup",                 icon: icondata_lu::LuRocket         },
+    NoteIconEntry { id: "Save",           label: "Save",            tags: "disk storage persist file",              icon: icondata_lu::LuSave           },
+    NoteIconEntry { id: "School",         label: "School",          tags: "education learning institution",         icon: icondata_lu::LuSchool         },
+    NoteIconEntry { id: "Scooter",        label: "Scooter",         tags: "vehicle transport ride",                 icon: icondata_mdi::MdiScooter        },
+    NoteIconEntry { id: "ScooterElectric",label: "Scooter Electric",tags: "vehicle transport ride",                 icon: icondata_mdi::MdiScooterElectric },
+    NoteIconEntry { id: "Section",        label: "Section",         tags: "paragraph structure document",           icon: icondata_lu::LuSection        },
+    NoteIconEntry { id: "Settings",       label: "Settings",        tags: "config options preferences",             icon: icondata_lu::LuSettings       },
+    NoteIconEntry { id: "Shield",         label: "Shield",          tags: "security protection safety",             icon: icondata_lu::LuShield         },
+    NoteIconEntry { id: "Ship",           label: "Ship",            tags: "vessel travel sea",                      icon: icondata_lu::LuShip           },
+    NoteIconEntry { id: "ShipWheel",      label: "Ship wheel",      tags: "navigation captain sea",                 icon: icondata_lu::LuShipWheel      },
+    NoteIconEntry { id: "Shirt",          label: "Shirt",           tags: "clothes fashion",                        icon: icondata_lu::LuShirt          },
+    NoteIconEntry { id: "ShoppingBasket", label: "Shopping basket", tags: "cart purchase buy",                      icon: icondata_lu::LuShoppingBasket },
+    NoteIconEntry { id: "Shovel",         label: "Shovel",          tags: "dig garden tool",                        icon: icondata_lu::LuShovel         },
+    NoteIconEntry { id: "Skull",          label: "Skull",           tags: "danger warning death",                   icon: icondata_lu::LuSkull          },
+    NoteIconEntry { id: "Smartphone",     label: "Smartphone",      tags: "phone mobile device",                    icon: icondata_lu::LuSmartphone     },
+    NoteIconEntry { id: "Smile",          label: "Smile",           tags: "emotion happy face",                     icon: icondata_lu::LuSmile          },
+    NoteIconEntry { id: "Snail",          label: "Snail",           tags: "slow animal",                            icon: icondata_lu::LuSnail          },
+    NoteIconEntry { id: "Star",           label: "Star",            tags: "favourite important highlight",          icon: icondata_lu::LuStar           },
+    NoteIconEntry { id: "Sun",            label: "Sun",             tags: "day bright weather",                     icon: icondata_lu::LuSun            },
+    NoteIconEntry { id: "Sword",          label: "Sword",           tags: "battle game fantasy",                    icon: icondata_lu::LuSword          },
+    NoteIconEntry { id: "Tag",            label: "Tag",             tags: "label category taxonomy",                icon: icondata_lu::LuTag            },
+    NoteIconEntry { id: "Target",         label: "Target",          tags: "goal objective milestone",               icon: icondata_lu::LuTarget         },
+    NoteIconEntry { id: "Telescope",      label: "Telescope",       tags: "observe explore astronomy",              icon: icondata_lu::LuTelescope      },
+    NoteIconEntry { id: "Thermometer",    label: "Thermometer",     tags: "temperature health weather",             icon: icondata_lu::LuThermometer    },
+    NoteIconEntry { id: "ThumbsDown",     label: "Thumbs down",     tags: "dislike reject feedback",                icon: icondata_lu::LuThumbsDown     },
+    NoteIconEntry { id: "ThumbsUp",       label: "Thumbs up",       tags: "like approve feedback",                  icon: icondata_lu::LuThumbsUp       },
+    NoteIconEntry { id: "TrainFront",     label: "Train",           tags: "transport public commute",               icon: icondata_lu::LuTrainFront     },
+    NoteIconEntry { id: "Trash2",         label: "Trash",           tags: "delete remove bin",                      icon: icondata_lu::LuTrash2         },
+    NoteIconEntry { id: "Trophy",         label: "Trophy",          tags: "achievement win success award",          icon: icondata_lu::LuTrophy         },
+    NoteIconEntry { id: "User",           label: "User",            tags: "person account profile",                 icon: icondata_lu::LuUser           },
+    NoteIconEntry { id: "UserPlus",       label: "Add user",        tags: "invite member team",                     icon: icondata_lu::LuUserPlus       },
+    NoteIconEntry { id: "Users",          label: "Users",           tags: "group team people",                      icon: icondata_lu::LuUsers          },
+    NoteIconEntry { id: "Utensils",       label: "Utensils",        tags: "food restaurant meal",                   icon: icondata_lu::LuUtensils       },
+    NoteIconEntry { id: "Video",          label: "Video",           tags: "recording film media",                   icon: icondata_lu::LuVideo          },
+    NoteIconEntry { id: "Wrench",         label: "Wrench",          tags: "tool maintenance fix",                   icon: icondata_lu::LuWrench         },
+    NoteIconEntry { id: "Zap",            label: "Zap",             tags: "quick idea flash energy",                icon: icondata_lu::LuZap            },
+];
+
+/// Resolve a frontmatter icon id (e.g. `"Star"`) to its `IconData`.
+///
+/// Falls back to `LuFileText` for unknown or empty ids so broken/missing
+/// icons never cause rendering failures.
+pub fn resolve_note_icon(id: &str) -> &'static IconData {
+    NOTE_ICONS
+        .iter()
+        .find(|e| e.id == id)
+        .map(|e| e.icon)
+        .unwrap_or(icondata_lu::LuFileText)
+}

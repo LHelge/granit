@@ -1,0 +1,223 @@
+use granit_types::DocumentMeta;
+use std::collections::HashSet;
+
+/// A node in the display tree built from flat `DocumentMeta` list.
+#[derive(Clone, Debug)]
+pub(super) enum TreeNode {
+    Note(DocumentMeta),
+    Folder {
+        name: String,
+        /// Relative path from cave root, e.g. `"projects/2026"`.
+        path: String,
+        children: Vec<TreeNode>,
+    },
+}
+
+/// Build a display tree from a flat list of DocumentMeta and folder paths.
+/// Each `relative_path` like `"a/b/note.md"` is split on `/` to produce the hierarchy.
+/// `folders` ensures empty directories also appear in the tree.
+pub(super) fn build_tree(notes: Vec<DocumentMeta>, folders: Vec<String>) -> Vec<TreeNode> {
+    let mut roots: Vec<TreeNode> = Vec::new();
+
+    // Ensure all folder paths exist in the tree (including empty ones).
+    let mut sorted_folders = folders;
+    sorted_folders.sort_by_key(|a| a.to_lowercase());
+    for folder_path in sorted_folders {
+        let parts: Vec<&str> = folder_path.split('/').collect();
+        ensure_folder(&mut roots, &parts, 0);
+    }
+
+    // Sort so folders and notes appear deterministically.
+    let mut sorted = notes;
+    sorted.sort_by(|a, b| {
+        a.relative_path
+            .to_lowercase()
+            .cmp(&b.relative_path.to_lowercase())
+    });
+
+    for meta in sorted {
+        let relative_path = meta.relative_path.clone();
+        let parts: Vec<&str> = relative_path.split('/').collect();
+        insert_node(&mut roots, &parts, 0, meta);
+    }
+
+    roots
+}
+
+/// Return note slugs in displayed (top-to-bottom) order, skipping notes inside
+/// collapsed folders — i.e. the order the user visually sees and can click.
+///
+/// Used to resolve the endpoints of a shift-click range selection.
+pub(super) fn visible_note_slugs(
+    notes: Vec<DocumentMeta>,
+    folders: Vec<String>,
+    expanded: &HashSet<String>,
+) -> Vec<String> {
+    let tree = build_tree(notes, folders);
+    let mut out = Vec::new();
+    collect_visible(&tree, expanded, &mut out);
+    out
+}
+
+fn collect_visible(nodes: &[TreeNode], expanded: &HashSet<String>, out: &mut Vec<String>) {
+    for node in nodes {
+        match node {
+            TreeNode::Note(meta) => out.push(meta.slug.clone()),
+            TreeNode::Folder { path, children, .. } => {
+                if expanded.contains(path) {
+                    collect_visible(children, expanded, out);
+                }
+            }
+        }
+    }
+}
+
+/// Ensure a folder path exists in the tree, creating empty folder nodes as needed.
+fn ensure_folder(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize) {
+    if depth >= parts.len() {
+        return;
+    }
+    let folder_name = parts[depth].to_string();
+    let folder_path = parts[0..=depth].join("/");
+    if let Some(TreeNode::Folder { children, .. }) = nodes
+        .iter_mut()
+        .find(|n| matches!(n, TreeNode::Folder { name, .. } if *name == folder_name))
+    {
+        ensure_folder(children, parts, depth + 1);
+    } else {
+        let mut children = Vec::new();
+        ensure_folder(&mut children, parts, depth + 1);
+        nodes.push(TreeNode::Folder {
+            name: folder_name,
+            path: folder_path,
+            children,
+        });
+    }
+}
+
+fn insert_node(nodes: &mut Vec<TreeNode>, parts: &[&str], depth: usize, meta: DocumentMeta) {
+    if depth == parts.len().saturating_sub(1) {
+        // Leaf — a note.
+        nodes.push(TreeNode::Note(meta));
+        return;
+    }
+    // Intermediate — a folder.
+    let folder_name = parts[depth].to_string();
+    let folder_path = parts[0..=depth].join("/");
+    if let Some(TreeNode::Folder { children, .. }) = nodes
+        .iter_mut()
+        .find(|n| matches!(n, TreeNode::Folder { name, .. } if *name == folder_name))
+    {
+        insert_node(children, parts, depth + 1, meta);
+    } else {
+        let mut children = Vec::new();
+        insert_node(&mut children, parts, depth + 1, meta);
+        nodes.push(TreeNode::Folder {
+            name: folder_name,
+            path: folder_path,
+            children,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    fn note(slug: &str, relative_path: &str) -> DocumentMeta {
+        DocumentMeta {
+            slug: slug.into(),
+            relative_path: relative_path.into(),
+            icon: None,
+            favorite: None,
+        }
+    }
+
+    fn folder<'a>(nodes: &'a [TreeNode], path: &str) -> &'a TreeNode {
+        nodes.iter()
+            .find(|node| matches!(node, TreeNode::Folder { path: node_path, .. } if node_path == path))
+            .unwrap_or_else(|| panic!("missing folder: {path}"))
+    }
+
+    fn note_slugs(nodes: &[TreeNode]) -> Vec<&str> {
+        nodes
+            .iter()
+            .filter_map(|node| match node {
+                TreeNode::Note(meta) => Some(meta.slug.as_str()),
+                TreeNode::Folder { .. } => None,
+            })
+            .collect()
+    }
+
+    #[wasm_bindgen_test]
+    fn build_tree_creates_missing_folder_hierarchy_from_notes() {
+        let tree = build_tree(
+            vec![note("deep-note", "projects/2026/deep-note.md")],
+            vec![],
+        );
+
+        let TreeNode::Folder { children, .. } = folder(&tree, "projects") else {
+            unreachable!();
+        };
+        let TreeNode::Folder { children, .. } = folder(children, "projects/2026") else {
+            unreachable!();
+        };
+
+        assert_eq!(note_slugs(children), vec!["deep-note"]);
+    }
+
+    #[wasm_bindgen_test]
+    fn build_tree_keeps_empty_folders_from_folder_list() {
+        let tree = build_tree(vec![], vec!["empty/subfolder".into()]);
+
+        let TreeNode::Folder { children, .. } = folder(&tree, "empty") else {
+            unreachable!();
+        };
+        let TreeNode::Folder { children, .. } = folder(children, "empty/subfolder") else {
+            unreachable!();
+        };
+
+        assert!(children.is_empty());
+    }
+
+    #[wasm_bindgen_test]
+    fn visible_note_slugs_skips_collapsed_folders() {
+        let notes = vec![
+            note("root-note", "root-note.md"),
+            note("child", "projects/child.md"),
+        ];
+        let folders = vec!["projects".to_string()];
+
+        // Collapsed: only the root note is visible.
+        let collapsed = visible_note_slugs(notes.clone(), folders.clone(), &HashSet::new());
+        assert_eq!(collapsed, vec!["root-note".to_string()]);
+
+        // Expanded: the child becomes visible. Folders render above
+        // root-level notes, so the child comes first.
+        let mut expanded = HashSet::new();
+        expanded.insert("projects".to_string());
+        let shown = visible_note_slugs(notes, folders, &expanded);
+        assert_eq!(shown, vec!["child".to_string(), "root-note".to_string()]);
+    }
+
+    #[wasm_bindgen_test]
+    fn build_tree_sorts_notes_case_insensitively_within_a_folder() {
+        let tree = build_tree(
+            vec![
+                note("Zulu", "projects/Zulu.md"),
+                note("alpha", "projects/alpha.md"),
+                note("Bravo", "projects/Bravo.md"),
+            ],
+            vec![],
+        );
+
+        let TreeNode::Folder { children, .. } = folder(&tree, "projects") else {
+            unreachable!();
+        };
+
+        assert_eq!(note_slugs(children), vec!["alpha", "Bravo", "Zulu"]);
+    }
+}

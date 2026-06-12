@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '.bears/**'
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  ci:
+    name: Check (fmt, clippy, test)
+    # Needs glibc >= 2.38: the onnxruntime binary pulled in via
+    # fastembed -> ort references __isoc23_strtol* symbols absent from
+    # older glibc, so linking the test binary failed on ubuntu-22.04.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (backend)
+        run: cargo clippy -p granit --all-targets -- -D warnings
+
+      - name: Clippy (frontend)
+        run: cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Run tests
+        run: cargo test -p granit
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Run frontend WASM tests
+        run: wasm-pack test --headless --firefox

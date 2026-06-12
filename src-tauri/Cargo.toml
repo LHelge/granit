@@ -1,0 +1,48 @@
+[package]
+name = "granit"
+version.workspace = true
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "granit_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.18"
+serde_yml = "0.0.13"
+tauri-plugin-dialog = "2.7.1"
+granit-types = { path = "../granit-types" }
+pulldown-cmark = "0.13.4"
+chrono = { version = "0.4.45", features = ["serde"] }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }
+rig-core = "0.38.2"
+futures = "0.3.32"
+font-kit = "0.14.3"
+reqwest = { version = "0.13.4", features = ["json", "query"] }
+html-to-markdown-rs = "3.5.7"
+tauri-plugin-store = "2.4.3"
+tauri-plugin-updater = "2"
+tera = "1.20.1"
+log = "0.4"
+fastembed = "5"
+rkyv = { version = "0.8", features = ["alloc"] }
+tauri-plugin-log = "2"
+atomic-write-file = { version = "0.3", features = ["unnamed-tmpfile"] }
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Granit pre-commit hook: verify formatting (fast).
+# Mirrors the "Check formatting" step in .github/workflows/ci.yml.
+#
+# Heavier checks (clippy, tests) run in pre-push.
+
+echo "pre-commit: cargo fmt --all -- --check"
+if ! cargo fmt --all -- --check; then
+    echo >&2
+    echo "✗ Formatting issues found. Run 'cargo fmt --all', then re-stage and commit." >&2
+    exit 1
+fi

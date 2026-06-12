@@ -1,0 +1,22 @@
+#!/bin/sh
+# Granit pre-push hook: clippy (backend + frontend), backend tests, and
+# frontend WASM tests. Mirrors the clippy/test steps in .github/workflows/ci.yml.
+
+set -e
+
+echo "pre-push: cargo clippy -p granit (backend)"
+cargo clippy -p granit --all-targets -- -D warnings
+
+echo "pre-push: cargo clippy -p granit-ui (frontend, wasm32)"
+cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
+
+echo "pre-push: cargo test -p granit"
+cargo test -p granit
+
+# CI runs these in Firefox; Chrome is the local default because macOS
+# Gatekeeper kills wasm-pack's cached geckodriver. Override with e.g.
+# GRANIT_WASM_TEST_BROWSER=firefox.
+echo "pre-push: wasm-pack test (frontend)"
+wasm-pack test --headless "--${GRANIT_WASM_TEST_BROWSER:-chrome}"
+
+echo "✓ pre-push checks passed"
