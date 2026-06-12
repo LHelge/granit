@@ -54,8 +54,10 @@ jobs:
       - name: Run tests
         run: cargo test -p granit
 
+      # The rustwasm.github.io installer serves a stale version (the project
+      # moved to the drager org); install-action tracks the latest release.
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@wasm-pack
 
       - name: Run frontend WASM tests
         run: wasm-pack test --headless --firefox
