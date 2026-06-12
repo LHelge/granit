@@ -1,8 +1,9 @@
 [package]
 name = "granit"
 version.workspace = true
-description = "A Tauri App"
-authors = ["you"]
+license.workspace = true
+description = "Minimal desktop note-taking app with an integrated AI agent"
+authors = ["LHelge"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
