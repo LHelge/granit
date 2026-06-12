@@ -2,37 +2,98 @@
 
 {% block content %}
 <article class="wiki-page">
-    <header>
-        <h1>{{ title }}</h1>
-        <p class="wiki-category"><a href="/wiki/">Wiki</a> &rsaquo; {{ category }}</p>
-    </header>
 
-    <div class="wiki-layout">
-        {% if toc | length > 0 %}
-        <aside class="toc">
-            <h2>Contents</h2>
+    {# Mobile: collapsed navigation and contents above the article #}
+    {% if wiki_categories is defined and wiki_categories | length > 0 %}
+    <details class="collapse-nav">
+        <summary>Wiki pages</summary>
+        {% for cat in wiki_categories %}
+        <div class="sidenav-category">
+            <h2>{{ cat.name | default(value="Other") }}</h2>
+            <ul>
+                {% for page in cat.pages %}
+                <li><a href="{{ page.url | safe }}" {% if page.url == url %}class="current" aria-current="page"{% endif %}>{{ page.title }}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </details>
+    {% endif %}
+    {% if toc | length > 0 %}
+    <details class="collapse-nav">
+        <summary>On this page</summary>
+        <div class="toc">
             <ul>
                 {% for entry in toc %}
                 <li class="toc-h{{ entry.level }}"><a href="#{{ entry.id }}">{{ entry.text }}</a></li>
                 {% endfor %}
             </ul>
-        </aside>
-        {% endif %}
-
-        <div class="wiki-body">
-            {{ content | safe }}
         </div>
-    </div>
-
-    {% if backlinks | length > 0 %}
-    <section class="backlinks">
-        <h2>Pages that link here</h2>
-        <ul>
-            {% for link in backlinks %}
-            <li><a href="{{ link.url | safe }}">{{ link.title }}</a></li>
-            {% endfor %}
-        </ul>
-    </section>
+    </details>
     {% endif %}
+
+    <div class="wiki-layout">
+        {# Left: all wiki pages grouped by category, current page highlighted #}
+        <nav class="wiki-sidenav" aria-label="Wiki pages">
+            {% if wiki_categories is defined %}
+            {% for cat in wiki_categories %}
+            <div class="sidenav-category">
+                <h2>{{ cat.name | default(value="Other") }}</h2>
+                <ul>
+                    {% for page in cat.pages %}
+                    <li><a href="{{ page.url | safe }}" {% if page.url == url %}class="current" aria-current="page"{% endif %}>{{ page.title }}</a></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </nav>
+
+        {# Center: the article #}
+        <div class="wiki-article">
+            <header>
+                <div class="page-meta">
+                    {% if category %}
+                    <a href="/wiki/" class="category-badge">{{ category }}</a>
+                    {% endif %}
+                    {% if tags is defined and tags | length > 0 %}
+                    <ul class="tag-list">
+                        {% for tag in tags %}
+                        <li><a href="/tags/{{ tag.slug }}/">{{ tag.name }}</a></li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+                <h1>{{ title }}</h1>
+            </header>
+
+            {{ content | safe }}
+
+            {% if backlinks | length > 0 %}
+            <section class="backlinks">
+                <h2>Linked from</h2>
+                <ul>
+                    {% for link in backlinks %}
+                    <li><a href="{{ link.url | safe }}">{{ link.title }}</a></li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+        </div>
+
+        {# Right: sticky table of contents #}
+        <aside class="wiki-toc">
+            {% if toc | length > 0 %}
+            <h2>On this page</h2>
+            <div class="toc">
+                <ul>
+                    {% for entry in toc %}
+                    <li class="toc-h{{ entry.level }}"><a href="#{{ entry.id }}">{{ entry.text }}</a></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </aside>
+    </div>
 </article>
 {% endblock content %}

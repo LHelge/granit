@@ -1,10 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<article class="standalone-page">
+<article class="standalone-page prose-centered">
     <h1>{{ title }}</h1>
-    <div class="page-body">
-        {{ content | safe }}
-    </div>
+    {{ content | safe }}
 </article>
 {% endblock content %}

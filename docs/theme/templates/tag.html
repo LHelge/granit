@@ -1,48 +1,42 @@
 {% extends "base.html" %}
 
-{% block page_title %}Posts tagged #{{ tag }}{% endblock page_title %}
+{% block page_title %}Tagged #{{ tag }}{% endblock page_title %}
 
 {% block content %}
-<h1>Posts tagged #{{ tag }}</h1>
-{% if blog_posts | length > 0 %}
-<section class="tag-section">
-    <h2>Blog</h2>
-    <ul class="blog-list">
-        {% for post in blog_posts %}
-        <li class="post-card">
-            {% if post.image %}<img src="{{ post.image }}" alt="" class="post-card-image">{% endif %}
-            <a href="{{ post.url | safe }}">{{ post.title }}</a>
-            {% if post.created %}<time>{{ post.created }}</time>{% endif %}
-            {% if post.description %}<p>{{ post.description }}</p>{% endif %}
-            {% if post.tags | length > 0 %}
-            <ul class="tag-list">
-                {% for t in post.tags %}
-                <li><a href="/tags/{{ t.slug }}/">{{ t.name }}</a></li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-        </li>
-        {% endfor %}
-    </ul>
-</section>
-{% endif %}
-{% if wiki_pages | length > 0 %}
-<section class="tag-section">
-    <h2>Wiki</h2>
-    <ul class="blog-list">
-        {% for post in wiki_pages %}
-        <li class="post-card">
-            <a href="{{ post.url | safe }}">{{ post.title }}</a>
-            {% if post.tags | length > 0 %}
-            <ul class="tag-list">
-                {% for t in post.tags %}
-                <li><a href="/tags/{{ t.slug }}/">{{ t.name }}</a></li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-        </li>
-        {% endfor %}
-    </ul>
-</section>
-{% endif %}
+<div class="prose">
+    <h1>Tagged <span class="category-badge">#{{ tag }}</span></h1>
+    {% if blog_posts | length > 0 %}
+    <section class="tag-section">
+        <h2>Blog</h2>
+        <ul class="blog-list">
+            {% for post in blog_posts %}
+            <li>
+                <a href="{{ post.url | safe }}">{{ post.title }}</a>
+                {% if post.created %}<time>{{ post.created }}</time>{% endif %}
+                {% if post.description %}<p>{{ post.description }}</p>{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+    {% if wiki_pages | length > 0 %}
+    <section class="tag-section">
+        <h2>Wiki</h2>
+        <ul class="wiki-list">
+            {% for post in wiki_pages %}
+            <li>
+                <a href="{{ post.url | safe }}">{{ post.title }}</a>
+                {% if post.tags | length > 0 %}
+                <ul class="tag-list">
+                    {% for t in post.tags %}
+                    <li><a href="/tags/{{ t.slug }}/">{{ t.name }}</a></li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+</div>
 {% endblock content %}
