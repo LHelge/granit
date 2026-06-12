@@ -4,7 +4,7 @@ base_url = "https://granit.lhelge.se"
 favicon = "static/icon.png"
 wiki_default_category = "Reference"
 
-# theme_dir = "theme"
+theme_dir = "theme"
 # social_image = "static/social.png"
 
 [[wiki_categories]]

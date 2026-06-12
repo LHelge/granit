@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block page_title %}Wiki{% endblock page_title %}
+
+{% block content %}
+<h1>Wiki</h1>
+{% if wiki_intro %}
+<div class="wiki-intro">
+{{ wiki_intro.content | safe }}
+</div>
+{% endif %}
+<div class="wiki-categories">
+{% for category in categories %}
+<div class="wiki-category-card">
+  <div class="wiki-category-header">
+    {% if category.icon %}
+    <img class="wiki-category-icon" src="{{ category.icon | safe }}" alt="">
+    {% endif %}
+    <h2>{{ category.name }}</h2>
+  </div>
+  {% if category.description %}
+  <p class="wiki-category-description">{{ category.description }}</p>
+  {% endif %}
+  <ul class="wiki-category-pages">
+    {% for page in category.pages %}
+    <li><a href="{{ page.url | safe }}">{{ page.title }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endfor %}
+</div>
+{% endblock content %}

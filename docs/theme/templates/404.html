@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block page_title %}Not Found{% endblock page_title %}
+
+{% block content %}
+<article class="error-page">
+    <h1>404</h1>
+    {% if not_found %}{{ not_found.content | safe }}{% endif %}
+</article>
+{% endblock content %}

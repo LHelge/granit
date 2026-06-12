@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block page_title %}{{ title }}{% endblock page_title %} — {{ site_title }}</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    {{ favicon_tags | safe }}
+    <link rel="alternate" type="application/atom+xml" title="{{ site_title }} - Atom" href="{{ feed_atom_url }}">
+    <link rel="alternate" type="application/rss+xml" title="{{ site_title }} - RSS" href="{{ feed_rss_url }}">
+
+    {# Social / SEO meta — derived once, then emitted as OpenGraph + Twitter card tags #}
+    {% set meta_title = title | default(value=site_title) %}
+    {% set meta_desc = description | default(value=site_description | default(value="")) %}
+    {% set meta_image = og_image | default(value=social_image_url | default(value="")) %}
+    {% if meta_desc %}<meta name="description" content="{{ meta_desc }}">{% endif %}
+
+    <meta property="og:type" content="{% block og_type %}website{% endblock og_type %}">
+    <meta property="og:site_name" content="{{ site_title }}">
+    <meta property="og:title" content="{{ meta_title }}">
+    {% if meta_desc %}<meta property="og:description" content="{{ meta_desc }}">{% endif %}
+    {% if canonical_url is defined %}<meta property="og:url" content="{{ canonical_url | safe }}">{% endif %}
+    {% if meta_image %}<meta property="og:image" content="{{ meta_image | safe }}">{% endif %}
+
+    <meta name="twitter:card" content="{% if meta_image %}summary_large_image{% else %}summary{% endif %}">
+    <meta name="twitter:title" content="{{ meta_title }}">
+    {% if meta_desc %}<meta name="twitter:description" content="{{ meta_desc }}">{% endif %}
+    {% if meta_image %}<meta name="twitter:image" content="{{ meta_image | safe }}">{% endif %}
+
+    {% block article_meta %}{% endblock article_meta %}
+</head>
+
+<body>
+    <nav class="site-nav">
+        <a href="/" class="nav-brand">{{ site_title }}</a>
+        <ul>
+            <li><a href="/blog/">Blog</a></li>
+            <li><a href="/wiki/">Wiki</a></li>
+            {% for p in nav_pages %}
+            <li><a href="{{ p.url | safe }}">{{ p.title }}</a></li>
+            {% endfor %}
+        </ul>
+    </nav>
+
+    <main class="content">
+        {% block content %}{% endblock content %}
+    </main>
+
+    <footer class="site-footer">
+        <p>Built with <a href="https://github.com/LHelge/aphid">aphid</a></p>
+        <p><a href="{{ feed_atom_url }}">Atom</a> · <a href="{{ feed_rss_url }}">RSS</a></p>
+        {% if socials | length > 0 %}
+        <ul class="socials">
+            {% for s in socials %}
+            <li><a href="{{ s.url }}">{{ s.platform }}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </footer>
+
+    {% if contains_mermaid %}
+    <script src="/static/js/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true });</script>
+    {% endif %}
+</body>
+
+</html>
