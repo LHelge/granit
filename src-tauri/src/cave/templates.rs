@@ -1,6 +1,6 @@
 use super::helpers::{
-    ensure_md_extension, template_meta_from_path, template_meta_with_icon, validate_name,
-    write_atomic, write_new,
+    ensure_md_extension, normalize_note_name, template_meta_from_path, template_meta_with_icon,
+    validate_name, write_atomic, write_new,
 };
 use super::{Cave, CaveError};
 use chrono::{Datelike, NaiveDate};
@@ -10,6 +10,9 @@ use std::path::Path;
 impl Cave {
     /// Create a new template in `.granit/templates`.
     pub fn create_template(&mut self, name: &str) -> Result<DocumentMeta, CaveError> {
+        // The slug is the filename stem: "foo.md" must mean the template
+        // "foo", not a template indexed under the slug "foo.md".
+        let name = normalize_note_name(name);
         validate_name(name)?;
 
         let templates_dir = self.ensure_templates_dir()?;
@@ -117,6 +120,7 @@ impl Cave {
         old_slug: &str,
         new_name: &str,
     ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
         validate_name(old_slug)?;
         validate_name(new_name)?;
 
@@ -156,6 +160,7 @@ impl Cave {
         tags: Option<Vec<String>>,
         icon: Option<String>,
     ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
         validate_name(old_slug)?;
         validate_name(new_name)?;
 

@@ -1,6 +1,6 @@
 use super::helpers::{
-    ensure_md_extension, note_meta_from_relative_path, note_meta_with_frontmatter, validate_name,
-    write_atomic, write_new,
+    ensure_md_extension, normalize_note_name, note_meta_from_relative_path,
+    note_meta_with_frontmatter, validate_name, write_atomic, write_new,
 };
 use super::{Cave, CaveError};
 use granit_types::{Document, DocumentMeta};
@@ -69,6 +69,9 @@ impl Cave {
         folder: Option<&Path>,
         template_slug: Option<&str>,
     ) -> Result<DocumentMeta, CaveError> {
+        // The slug is the filename stem: "foo.md" must mean the note "foo",
+        // not a note indexed under the slug "foo.md".
+        let name = normalize_note_name(name);
         validate_name(name)?;
 
         let (filename, slug) = self.resolve_new_slug(name)?;
@@ -268,6 +271,7 @@ impl Cave {
         old_slug: &str,
         new_name: &str,
     ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
         validate_name(old_slug)?;
         validate_name(new_name)?;
 
@@ -321,6 +325,7 @@ impl Cave {
         icon: Option<String>,
         favorite: Option<bool>,
     ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
         validate_name(old_slug)?;
         validate_name(new_name)?;
 
@@ -562,6 +567,40 @@ mod tests {
 
         cave.delete_note("world").unwrap();
         assert!(cave.read_note("world").is_err());
+    }
+
+    #[test]
+    fn test_create_note_with_md_suffix_normalizes_slug() {
+        // "foo.md" must create the note "foo" — indexing it under the slug
+        // "foo.md" would desync from the file stem on the next rescan.
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let meta = cave.create_note("foo.md", None, None).unwrap();
+        assert_eq!(meta.slug, "foo");
+        assert_eq!(meta.relative_path, "foo.md");
+        // The note is immediately reachable under its real slug.
+        assert!(cave.read_note("foo").is_ok());
+        assert!(cave.read_note("foo.md").is_err());
+        // Doubled suffixes collapse too.
+        let meta = cave.create_note("bar.md.md", None, None).unwrap();
+        assert_eq!(meta.slug, "bar");
+    }
+
+    #[test]
+    fn test_rename_note_with_md_suffix_rewrites_links_to_real_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "body").unwrap();
+        std::fs::write(dir.path().join("linker.md"), "See [[target]].").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let meta = cave.rename_note("target", "renamed.md").unwrap();
+
+        assert_eq!(meta.slug, "renamed");
+        assert!(cave.read_note("renamed").is_ok());
+        // Inbound links must point at the real slug, not "renamed.md".
+        let linker = std::fs::read_to_string(dir.path().join("linker.md")).unwrap();
+        assert_eq!(linker, "See [[renamed]].");
     }
 
     #[test]

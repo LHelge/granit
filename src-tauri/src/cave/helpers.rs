@@ -190,6 +190,21 @@ pub(crate) fn ensure_md_extension(name: &str) -> String {
     }
 }
 
+/// Strip any trailing `.md` extension(s) from a user-supplied note/template name.
+///
+/// The slug is always the filename stem, so a name like `"foo.md"` must become
+/// the slug `"foo"` (file `foo.md`). Without this, the index would key the note
+/// under `"foo.md"` while every rescan derives `"foo"` from the file stem — and
+/// a rename to `"bar.md"` would rewrite inbound wiki-links to the bogus
+/// `[[bar.md]]` on disk, permanently breaking them after the next restart.
+pub(crate) fn normalize_note_name(name: &str) -> &str {
+    let mut name = name;
+    while let Some(stripped) = name.strip_suffix(".md") {
+        name = stripped;
+    }
+    name
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
