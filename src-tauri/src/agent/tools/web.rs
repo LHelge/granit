@@ -1,7 +1,6 @@
 use granit_types::{WebFetchConfig, WebSearchConfig};
 use html_to_markdown_rs::{convert, ConversionOptions, PreprocessingPreset};
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
@@ -46,29 +45,29 @@ pub enum WebFetchError {
     Other(String),
 }
 
-impl Tool for WebFetchTool {
+impl PortableTool for WebFetchTool {
     const NAME: &'static str = "web_fetch";
     type Error = WebFetchError;
     type Args = WebFetchArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Fetch a webpage and return its content as markdown. Use this to read \
+    fn description(&self) -> String {
+        "Fetch a webpage and return its content as markdown. Use this to read \
                           the full content of a specific URL found via web search."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the webpage to fetch"
-                    }
-                },
-                "required": ["url"]
-            }),
-        }
+            .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the webpage to fetch"
+                }
+            },
+            "required": ["url"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -184,29 +183,29 @@ pub enum WebSearchError {
     Other(String),
 }
 
-impl Tool for WebSearchTool {
+impl PortableTool for WebSearchTool {
     const NAME: &'static str = "web_search";
     type Error = WebSearchError;
     type Args = WebSearchArgs;
     type Output = String;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Search the web using Brave Search. Returns a list of relevant results \
+    fn description(&self) -> String {
+        "Search the web using Brave Search. Returns a list of relevant results \
                           with titles, URLs, and descriptions."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query to look up on the web"
-                    }
-                },
-                "required": ["query"]
-            }),
-        }
+            .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to look up on the web"
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

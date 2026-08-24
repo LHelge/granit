@@ -11,74 +11,42 @@ use granit_types::AttachedNote;
 use std::collections::{HashSet, VecDeque};
 
 use granit_types::{AgentConfig, AgentMode, ProviderConfig, ToolCallInfo};
-use rig_core::client::{CompletionClient, Nothing};
+use rig_agent::client::{AgentClientExt, AgentModelExt};
+use rig_agent::tool::server::ToolServer;
+use rig_core::client::Nothing;
 use rig_core::completion::message::Message;
 use rig_core::providers::{anthropic, mistral, ollama, openai};
-use rig_core::tool::ToolDyn;
 
 use self::vectordb::CaveVectorIndex;
 
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
+
+/// `max_tokens` used for Anthropic models whose output limit rig does not
+/// know. 64k matches the output limit of the claude-4-generation models and
+/// is accepted by every current Anthropic model.
+const ANTHROPIC_FALLBACK_MAX_TOKENS: u64 = 64_000;
 use granit_types::default_system_prompt;
 
-/// Provider-agnostic agent wrapping different rig-core agent types.
-pub(crate) enum ProviderAgent {
-    Ollama(rig_core::agent::Agent<ollama::CompletionModel>),
-    Anthropic(rig_core::agent::Agent<anthropic::completion::CompletionModel>),
-    Mistral(rig_core::agent::Agent<mistral::CompletionModel>),
-    OpenAiCompatible(rig_core::agent::Agent<openai::completion::CompletionModel>),
-}
-
-/// Dispatch a single expression over all `ProviderAgent` variants.
-/// The body is identical for every arm; `$agent` is bound to the inner value.
-macro_rules! provider_dispatch {
-    ($self:expr, $agent:ident => $body:expr) => {
-        match $self {
-            ProviderAgent::Ollama($agent) => $body,
-            ProviderAgent::Anthropic($agent) => $body,
-            ProviderAgent::Mistral($agent) => $body,
-            ProviderAgent::OpenAiCompatible($agent) => $body,
-        }
-    };
-}
-
-/// Map the inner value of a `ProviderAgent`, preserving the variant.
-macro_rules! provider_map {
-    ($self:expr, $agent:ident => $expr:expr) => {
-        match $self {
-            ProviderAgent::Ollama($agent) => ProviderAgent::Ollama($expr),
-            ProviderAgent::Anthropic($agent) => ProviderAgent::Anthropic($expr),
-            ProviderAgent::Mistral($agent) => ProviderAgent::Mistral($expr),
-            ProviderAgent::OpenAiCompatible($agent) => ProviderAgent::OpenAiCompatible($expr),
-        }
-    };
-}
-
-impl Clone for ProviderAgent {
-    fn clone(&self) -> Self {
-        provider_map!(self, a => a.clone())
-    }
-}
-
-impl std::fmt::Debug for ProviderAgent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            Self::Ollama(_) => "Ollama",
-            Self::Anthropic(_) => "Anthropic",
-            Self::Mistral(_) => "Mistral",
-            Self::OpenAiCompatible(_) => "OpenAiCompatible",
-        };
-        write!(f, "ProviderAgent::{name}")
-    }
-}
-
 /// An agent backed by a configurable LLM provider, with session conversation history.
-#[derive(Clone, Debug)]
+///
+/// Since rig 0.41 the agent runtime erases the provider's model type at
+/// construction, so a single `rig_agent::Agent` covers every provider.
+#[derive(Clone)]
 pub struct Agent {
-    inner: ProviderAgent,
+    inner: rig_agent::Agent,
     pub history: VecDeque<Message>,
     max_history: usize,
     max_turns: usize,
+}
+
+impl std::fmt::Debug for Agent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agent")
+            .field("history_len", &self.history.len())
+            .field("max_history", &self.max_history)
+            .field("max_turns", &self.max_turns)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Agent {
@@ -139,46 +107,46 @@ impl Agent {
                     .api_key(Nothing)
                     .base_url(base_url)
                     .build()?;
-                ProviderAgent::Ollama(configure_agent(
+                configure_agent(
                     client.agent(model),
                     cave_tools,
                     &system_prompt,
                     vector_index,
                     rag_top_n,
-                ))
+                )
             }
             ProviderConfig::Anthropic { api_key } => {
                 let client = anthropic::Client::builder().api_key(api_key).build()?;
-                ProviderAgent::Anthropic(configure_agent(
-                    client.agent(model),
+                configure_agent(
+                    anthropic_completion_model(client, model).into_agent_builder(),
                     cave_tools,
                     &system_prompt,
                     vector_index,
                     rag_top_n,
-                ))
+                )
             }
             ProviderConfig::Mistral { api_key } => {
                 let client = mistral::Client::builder().api_key(api_key).build()?;
-                ProviderAgent::Mistral(configure_agent(
+                configure_agent(
                     client.agent(model),
                     cave_tools,
                     &system_prompt,
                     vector_index,
                     rag_top_n,
-                ))
+                )
             }
             ProviderConfig::OpenAiCompatible { api_key, base_url } => {
                 let client = openai::CompletionsClient::builder()
                     .api_key(api_key)
                     .base_url(base_url)
                     .build()?;
-                ProviderAgent::OpenAiCompatible(configure_agent(
+                configure_agent(
                     client.agent(model),
                     cave_tools,
                     &system_prompt,
                     vector_index,
                     rag_top_n,
-                ))
+                )
             }
         };
 
@@ -219,10 +187,10 @@ impl Agent {
         history: Vec<Message>,
     ) -> Result<AgentStream, AgentError> {
         use futures::StreamExt;
-        use rig_core::streaming::StreamingPrompt;
+        use rig_agent::streaming::StreamingChat;
 
-        fn map_item<R>(item: rig_core::agent::MultiTurnStreamItem<R>) -> AgentStreamItem {
-            use rig_core::agent::MultiTurnStreamItem;
+        fn map_item(item: rig_agent::agent::MultiTurnStreamItem) -> AgentStreamItem {
+            use rig_agent::agent::MultiTurnStreamItem;
             use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent};
 
             match item {
@@ -241,36 +209,51 @@ impl Agent {
             }
         }
 
-        provider_dispatch!(&self.inner, agent => {
-            let stream = agent
-                .stream_prompt(prompt)
-                .with_history(history)
-                .multi_turn(self.max_turns)
-                .await;
-            Ok(AgentStream {
-                inner: Box::pin(stream.map(|item| {
-                    item.map(map_item)
-                        .map_err(|e| AgentError::Stream(e.to_string()))
-                })),
-            })
+        let stream = self
+            .inner
+            .stream_chat(prompt, history)
+            .max_turns(self.max_turns)
+            .await;
+        Ok(AgentStream {
+            inner: Box::pin(stream.map(|item| {
+                item.map(map_item)
+                    .map_err(|e| AgentError::Stream(e.to_string()))
+            })),
         })
     }
 }
 
+/// Build the Anthropic completion model, ensuring `max_tokens` will be set.
+///
+/// Anthropic requires `max_tokens` on every request. rig only knows per-model
+/// defaults for a fixed list of model ids and otherwise leaves it unset, which
+/// fails at request time — so fill in a fallback for model ids rig doesn't
+/// recognize.
+fn anthropic_completion_model(
+    client: anthropic::Client,
+    model: &str,
+) -> anthropic::completion::CompletionModel {
+    let mut completion_model = anthropic::completion::CompletionModel::new(client, model);
+    if completion_model.default_max_tokens.is_none() {
+        completion_model.default_max_tokens = Some(ANTHROPIC_FALLBACK_MAX_TOKENS);
+    }
+    completion_model
+}
+
 /// Apply the provider-independent agent configuration — preamble, toolset,
 /// and optional RAG dynamic context — to a rig agent builder.
-fn configure_agent<M: rig_core::completion::CompletionModel>(
-    builder: rig_core::agent::AgentBuilder<M>,
-    cave_tools: Vec<Box<dyn ToolDyn>>,
+fn configure_agent(
+    builder: rig_agent::AgentBuilder,
+    cave_tools: ToolServer,
     system_prompt: &str,
     vector_index: Option<CaveVectorIndex>,
     rag_top_n: usize,
-) -> rig_core::agent::Agent<M> {
-    let mut builder = builder.preamble(system_prompt).tools(cave_tools);
+) -> rig_agent::Agent {
+    let mut builder = builder.preamble(system_prompt);
     if let Some(index) = vector_index {
         builder = builder.dynamic_context(rag_top_n, index);
     }
-    builder.build()
+    builder.tool_server_handle(cave_tools.run()).build()
 }
 
 /// Query the selected provider's API for available models.
@@ -595,6 +578,29 @@ mod tests {
             result.is_ok(),
             "Agent should build with OpenAI-compatible config"
         );
+    }
+
+    #[test]
+    fn anthropic_model_gets_fallback_max_tokens_for_unknown_ids() {
+        let client = || {
+            anthropic::Client::builder()
+                .api_key("test-key")
+                .build()
+                .expect("client should build")
+        };
+
+        // A model id rig's table doesn't know must get the fallback,
+        // otherwise every request fails with "`max_tokens` must be set".
+        let unknown = anthropic_completion_model(client(), "claude-fable-5");
+        assert_eq!(
+            unknown.default_max_tokens,
+            Some(ANTHROPIC_FALLBACK_MAX_TOKENS)
+        );
+
+        // A model id rig knows keeps rig's own default (128k for opus-4-8),
+        // not the fallback.
+        let known = anthropic_completion_model(client(), "claude-opus-4-8");
+        assert!(unknown.default_max_tokens < known.default_max_tokens);
     }
 
     #[test]

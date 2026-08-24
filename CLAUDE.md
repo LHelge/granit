@@ -72,9 +72,9 @@ Rendered in the backend with `pulldown-cmark` ([src-tauri/src/markdown/](src-tau
 
 ## AI agent
 
-All agent logic is backend-side ([src-tauri/src/agent/](src-tauri/src/agent/)), built on `rig-core`.
+All agent logic is backend-side ([src-tauri/src/agent/](src-tauri/src/agent/)), built on `rig-core` + `rig-agent`.
 
-- **Providers**: Ollama, Anthropic, Mistral, and any OpenAI/ChatGPT-compatible endpoint (custom base URL + API key, built on rig's `openai` client). `ProviderAgent` is an enum over the four `rig` agent types; the `provider_dispatch!` / `provider_map!` macros fan one expression across all variants. Add a provider by extending the enum, the macros, a `build_*` constructor, and `ProviderConfig`.
+- **Providers**: Ollama, Anthropic, Mistral, and any OpenAI/ChatGPT-compatible endpoint (custom base URL + API key, built on rig's `openai` client). The rig agent runtime erases the provider's model type at construction, so every provider arm produces the same `rig_agent::Agent`. Add a provider by adding match arms in `Agent::from_config` and `list_models`, and extending `ProviderConfig`.
 - The `Agent` is built lazily by `AppState::ensure_agent` and torn down (`reset_agent`, bumping the generation counter) whenever config/provider/model/mode changes mid-stream.
 - **Tools** ([src-tauri/src/agent/tools/](src-tauri/src/agent/tools/)) cover notes, folders, templates, daily notes, todos, search, web fetch, and web search. `build_toolset` filters out `disabled_tools` from config.
 - **Modes**: `Ask` and `Agent` (`AgentMode`). RAG context is injected only in `Ask` mode.

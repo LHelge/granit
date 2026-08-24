@@ -1,5 +1,4 @@
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -33,27 +32,27 @@ pub struct ListTodosTool {
     pub cave: SharedCave,
 }
 
-impl Tool for ListTodosTool {
+impl PortableTool for ListTodosTool {
     const NAME: &'static str = "list_todos";
     type Error = CaveError;
     type Args = ListTodosArgs;
     type Output = ListTodosOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "list_todos".to_string(),
-            description: "List todo items (checkboxes) from notes in the cave, pre-split into incomplete and completed. Optionally filter by note slug.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "Only return todos from this note slug. Omit to list todos from all notes."
-                    }
-                },
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "List todo items (checkboxes) from notes in the cave, pre-split into incomplete and completed. Optionally filter by note slug.".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "Only return todos from this note slug. Omit to list todos from all notes."
+                }
+            },
+            "required": []
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -104,31 +103,31 @@ pub struct ToggleTodoTool {
     pub cave: SharedCave,
 }
 
-impl Tool for ToggleTodoTool {
+impl PortableTool for ToggleTodoTool {
     const NAME: &'static str = "toggle_todo";
     type Error = CaveError;
     type Args = ToggleTodoArgs;
     type Output = ToggleTodoOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "toggle_todo".to_string(),
-            description: "Toggle the completion status of a todo checkbox in a note. Use list_todos to find the slug and line number.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug of the note containing the todo"
-                    },
-                    "line": {
-                        "type": "integer",
-                        "description": "The 1-based line number of the todo checkbox in the note file"
-                    }
+    fn description(&self) -> String {
+        "Toggle the completion status of a todo checkbox in a note. Use list_todos to find the slug and line number.".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug of the note containing the todo"
                 },
-                "required": ["slug", "line"]
-            }),
-        }
+                "line": {
+                    "type": "integer",
+                    "description": "The 1-based line number of the todo checkbox in the note file"
+                }
+            },
+            "required": ["slug", "line"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

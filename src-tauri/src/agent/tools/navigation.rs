@@ -1,5 +1,4 @@
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -26,22 +25,22 @@ pub struct ListNotesTool {
     pub cave: SharedCave,
 }
 
-impl Tool for ListNotesTool {
+impl PortableTool for ListNotesTool {
     const NAME: &'static str = "list_notes";
     type Error = CaveError;
     type Args = ListNotesArgs;
     type Output = ListNotesOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "list_notes".to_string(),
-            description: "List all notes in the cave with their slugs and paths".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "List all notes in the cave with their slugs and paths".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -74,22 +73,22 @@ pub struct ListFoldersTool {
     pub cave: SharedCave,
 }
 
-impl Tool for ListFoldersTool {
+impl PortableTool for ListFoldersTool {
     const NAME: &'static str = "list_folders";
     type Error = CaveError;
     type Args = ListFoldersArgs;
     type Output = ListFoldersOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "list_folders".to_string(),
-            description: "List all folders in the cave (relative paths from cave root)".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "List all folders in the cave (relative paths from cave root)".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -123,28 +122,27 @@ pub struct SearchNotesTool {
     pub cave: SharedCave,
 }
 
-impl Tool for SearchNotesTool {
+impl PortableTool for SearchNotesTool {
     const NAME: &'static str = "search_notes";
     type Error = CaveError;
     type Args = SearchNotesArgs;
     type Output = SearchNotesOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "search_notes".to_string(),
-            description: "Search for notes by slug/filename (case-insensitive substring match)"
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query to match against note filenames"
-                    }
-                },
-                "required": ["query"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Search for notes by slug/filename (case-insensitive substring match)".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query to match against note filenames"
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -187,29 +185,28 @@ pub struct SearchContentTool {
     pub cave: SharedCave,
 }
 
-impl Tool for SearchContentTool {
+impl PortableTool for SearchContentTool {
     const NAME: &'static str = "search_content";
     type Error = CaveError;
     type Args = SearchContentArgs;
     type Output = SearchContentOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "search_content".to_string(),
-            description:
-                "Search for text inside note bodies (case-insensitive full-text search). Returns matching notes with a context snippet."
-                    .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Text to search for inside note bodies"
-                    }
-                },
-                "required": ["query"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Search for text inside note bodies (case-insensitive full-text search). Returns matching notes with a context snippet."
+                    .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Text to search for inside note bodies"
+                }
+            },
+            "required": ["query"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

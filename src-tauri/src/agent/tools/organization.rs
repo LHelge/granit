@@ -1,5 +1,4 @@
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -26,31 +25,31 @@ pub struct MoveNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for MoveNoteTool {
+impl PortableTool for MoveNoteTool {
     const NAME: &'static str = "move_note";
     type Error = CaveError;
     type Args = MoveNoteArgs;
     type Output = MoveNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "move_note".to_string(),
-            description: "Move a note to a different folder within the cave".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug (filename without .md) of the note to move"
-                    },
-                    "destination": {
-                        "type": "string",
-                        "description": "Target folder path relative to cave root (empty or omitted for cave root)"
-                    }
+    fn description(&self) -> String {
+        "Move a note to a different folder within the cave".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug (filename without .md) of the note to move"
                 },
-                "required": ["slug"]
-            }),
-        }
+                "destination": {
+                    "type": "string",
+                    "description": "Target folder path relative to cave root (empty or omitted for cave root)"
+                }
+            },
+            "required": ["slug"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -91,31 +90,31 @@ pub struct RenameNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for RenameNoteTool {
+impl PortableTool for RenameNoteTool {
     const NAME: &'static str = "rename_note";
     type Error = CaveError;
     type Args = RenameNoteArgs;
     type Output = RenameNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "rename_note".to_string(),
-            description: "Rename a note in-place (same folder, new filename/slug)".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The current slug (filename without .md) of the note"
-                    },
-                    "new_name": {
-                        "type": "string",
-                        "description": "The new name for the note (becomes the new slug)"
-                    }
+    fn description(&self) -> String {
+        "Rename a note in-place (same folder, new filename/slug)".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The current slug (filename without .md) of the note"
                 },
-                "required": ["slug", "new_name"]
-            }),
-        }
+                "new_name": {
+                    "type": "string",
+                    "description": "The new name for the note (becomes the new slug)"
+                }
+            },
+            "required": ["slug", "new_name"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -148,27 +147,27 @@ pub struct DeleteNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for DeleteNoteTool {
+impl PortableTool for DeleteNoteTool {
     const NAME: &'static str = "delete_note";
     type Error = CaveError;
     type Args = DeleteNoteArgs;
     type Output = DeleteNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "delete_note".to_string(),
-            description: "Delete a note from the cave by its slug".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug (filename without .md) of the note to delete"
-                    }
-                },
-                "required": ["slug"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Delete a note from the cave by its slug".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug (filename without .md) of the note to delete"
+                }
+            },
+            "required": ["slug"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -197,27 +196,27 @@ pub struct CreateFolderTool {
     pub cave: SharedCave,
 }
 
-impl Tool for CreateFolderTool {
+impl PortableTool for CreateFolderTool {
     const NAME: &'static str = "create_folder";
     type Error = CaveError;
     type Args = CreateFolderArgs;
     type Output = CreateFolderOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "create_folder".to_string(),
-            description: "Create a new folder (subdirectory) in the cave".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path of the folder to create (e.g. \"projects\" or \"notes/2026\")"
-                    }
-                },
-                "required": ["path"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Create a new folder (subdirectory) in the cave".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path of the folder to create (e.g. \"projects\" or \"notes/2026\")"
+                }
+            },
+            "required": ["path"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -250,31 +249,31 @@ pub struct RenameFolderTool {
     pub cave: SharedCave,
 }
 
-impl Tool for RenameFolderTool {
+impl PortableTool for RenameFolderTool {
     const NAME: &'static str = "rename_folder";
     type Error = CaveError;
     type Args = RenameFolderArgs;
     type Output = RenameFolderOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "rename_folder".to_string(),
-            description: "Rename a folder in-place (same parent, new name)".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path of the folder to rename"
-                    },
-                    "new_name": {
-                        "type": "string",
-                        "description": "New name for the folder (just the name, not a path)"
-                    }
+    fn description(&self) -> String {
+        "Rename a folder in-place (same parent, new name)".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path of the folder to rename"
                 },
-                "required": ["path", "new_name"]
-            }),
-        }
+                "new_name": {
+                    "type": "string",
+                    "description": "New name for the folder (just the name, not a path)"
+                }
+            },
+            "required": ["path", "new_name"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -308,31 +307,31 @@ pub struct MoveFolderTool {
     pub cave: SharedCave,
 }
 
-impl Tool for MoveFolderTool {
+impl PortableTool for MoveFolderTool {
     const NAME: &'static str = "move_folder";
     type Error = CaveError;
     type Args = MoveFolderArgs;
     type Output = MoveFolderOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "move_folder".to_string(),
-            description: "Move a folder under a new parent directory within the cave".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path of the folder to move"
-                    },
-                    "destination": {
-                        "type": "string",
-                        "description": "Destination parent folder (relative path, empty or omitted for cave root)"
-                    }
+    fn description(&self) -> String {
+        "Move a folder under a new parent directory within the cave".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path of the folder to move"
                 },
-                "required": ["path"]
-            }),
-        }
+                "destination": {
+                    "type": "string",
+                    "description": "Destination parent folder (relative path, empty or omitted for cave root)"
+                }
+            },
+            "required": ["path"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -368,27 +367,27 @@ pub struct DeleteFolderTool {
     pub cave: SharedCave,
 }
 
-impl Tool for DeleteFolderTool {
+impl PortableTool for DeleteFolderTool {
     const NAME: &'static str = "delete_folder";
     type Error = CaveError;
     type Args = DeleteFolderArgs;
     type Output = DeleteFolderOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "delete_folder".to_string(),
-            description: "Delete a folder and all notes within it from the cave".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative path of the folder to delete"
-                    }
-                },
-                "required": ["path"]
-            }),
-        }
+    fn description(&self) -> String {
+        "Delete a folder and all notes within it from the cave".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path of the folder to delete"
+                }
+            },
+            "required": ["path"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
