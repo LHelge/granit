@@ -1,5 +1,4 @@
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -27,28 +26,28 @@ pub struct ReadNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for ReadNoteTool {
+impl PortableTool for ReadNoteTool {
     const NAME: &'static str = "read_note";
     type Error = CaveError;
     type Args = ReadNoteArgs;
     type Output = ReadNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "read_note".to_string(),
-            description: "Read the body of a note (markdown without frontmatter) and the slugs of notes linking to it. Pass a slug (filename without .md) to read a specific note, or omit it to read the note currently open in the editor."
-                .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug (filename without .md) of the note to read. Omit to read the active note."
-                    }
-                },
-                "required": []
-            }),
-        }
+    fn description(&self) -> String {
+        "Read the body of a note (markdown without frontmatter) and the slugs of notes linking to it. Pass a slug (filename without .md) to read a specific note, or omit it to read the note currently open in the editor."
+                .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug (filename without .md) of the note to read. Omit to read the active note."
+                }
+            },
+            "required": []
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

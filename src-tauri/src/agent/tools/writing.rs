@@ -1,5 +1,4 @@
-use rig_core::completion::ToolDefinition;
-use rig_core::tool::Tool;
+use rig_core::tool::PortableTool;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -28,35 +27,35 @@ pub struct CreateNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for CreateNoteTool {
+impl PortableTool for CreateNoteTool {
     const NAME: &'static str = "create_note";
     type Error = CaveError;
     type Args = CreateNoteArgs;
     type Output = CreateNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "create_note".to_string(),
-            description: "Create a new markdown note in the cave".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "The name for the new note (without .md extension)"
-                    },
-                    "folder": {
-                        "type": "string",
-                        "description": "Optional subfolder path (relative to cave root) to create the note in"
-                    },
-                    "icon": {
-                        "type": "string",
-                        "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
-                    }
+    fn description(&self) -> String {
+        "Create a new markdown note in the cave".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name for the new note (without .md extension)"
                 },
-                "required": ["name"]
-            }),
-        }
+                "folder": {
+                    "type": "string",
+                    "description": "Optional subfolder path (relative to cave root) to create the note in"
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
+                }
+            },
+            "required": ["name"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -99,35 +98,35 @@ pub struct UpdateNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for UpdateNoteTool {
+impl PortableTool for UpdateNoteTool {
     const NAME: &'static str = "update_note";
     type Error = CaveError;
     type Args = UpdateNoteArgs;
     type Output = UpdateNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "update_note".to_string(),
-            description: "Update the content of an existing note by slug. Overwrites the note body. Frontmatter is managed automatically — do not include it.".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug (filename without .md) of the note to update"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "The new markdown body (no frontmatter)"
-                    },
-                    "icon": {
-                        "type": "string",
-                        "description": "Optional icon ID to set (e.g. \"Star\", \"Book\", \"Code\"). Omit to preserve the existing icon."
-                    }
+    fn description(&self) -> String {
+        "Update the content of an existing note by slug. Overwrites the note body. Frontmatter is managed automatically — do not include it.".to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug (filename without .md) of the note to update"
                 },
-                "required": ["slug", "content"]
-            }),
-        }
+                "content": {
+                    "type": "string",
+                    "description": "The new markdown body (no frontmatter)"
+                },
+                "icon": {
+                    "type": "string",
+                    "description": "Optional icon ID to set (e.g. \"Star\", \"Book\", \"Code\"). Omit to preserve the existing icon."
+                }
+            },
+            "required": ["slug", "content"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -164,37 +163,36 @@ pub struct EditNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for EditNoteTool {
+impl PortableTool for EditNoteTool {
     const NAME: &'static str = "edit_note";
     type Error = CaveError;
     type Args = EditNoteArgs;
     type Output = EditNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "edit_note".to_string(),
-            description:
-                "Replace text in a note (find and replace on the body only, excluding frontmatter). Pass a slug to target a specific note, or omit it to edit the note currently open in the editor. Fails if the text is not found."
-                    .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "slug": {
-                        "type": "string",
-                        "description": "The slug (filename without .md) of the note to edit. Omit to edit the active note."
-                    },
-                    "old_text": {
-                        "type": "string",
-                        "description": "The exact text to find in the note"
-                    },
-                    "new_text": {
-                        "type": "string",
-                        "description": "The replacement text"
-                    }
+    fn description(&self) -> String {
+        "Replace text in a note (find and replace on the body only, excluding frontmatter). Pass a slug to target a specific note, or omit it to edit the note currently open in the editor. Fails if the text is not found."
+                    .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "slug": {
+                    "type": "string",
+                    "description": "The slug (filename without .md) of the note to edit. Omit to edit the active note."
                 },
-                "required": ["old_text", "new_text"]
-            }),
-        }
+                "old_text": {
+                    "type": "string",
+                    "description": "The exact text to find in the note"
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "The replacement text"
+                }
+            },
+            "required": ["old_text", "new_text"]
+        })
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
@@ -235,23 +233,22 @@ pub struct OpenDailyNoteTool {
     pub cave: SharedCave,
 }
 
-impl Tool for OpenDailyNoteTool {
+impl PortableTool for OpenDailyNoteTool {
     const NAME: &'static str = "open_daily_note";
     type Error = CaveError;
     type Args = OpenDailyNoteArgs;
     type Output = OpenDailyNoteOutput;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: "open_daily_note".to_string(),
-            description:
-                "Open or create today's daily note using the configured daily note folder. Creates the folder and note if they don't exist."
-                    .to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {}
-            }),
-        }
+    fn description(&self) -> String {
+        "Open or create today's daily note using the configured daily note folder. Creates the folder and note if they don't exist."
+                    .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {}
+        })
     }
 
     async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
