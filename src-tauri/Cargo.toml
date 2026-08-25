@@ -45,6 +45,7 @@ tauri-plugin-log = "2"
 atomic-write-file = { version = "0.3", features = ["unnamed-tmpfile"] }
 parking_lot = "0.12"
 rig-agent = "0.42.0"
+tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 tempfile = "3.27.0"

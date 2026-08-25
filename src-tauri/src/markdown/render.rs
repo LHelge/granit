@@ -138,6 +138,42 @@ impl<'a> Markdown<'a> {
         render_core(self.body(), Some(&resolve), false).0
     }
 
+    /// Render markdown to standalone HTML for use outside the app (clipboard
+    /// export). Wiki-links flatten to their label text — in-app hrefs are
+    /// meaningless elsewhere — task checkboxes become text symbols (rich-text
+    /// targets drop `<input>` elements), and raw HTML is sanitized. Regular
+    /// markdown links are kept.
+    pub fn render_for_export(&self) -> String {
+        let mut options = base_options();
+        options.insert(Options::ENABLE_WIKILINKS);
+        let parser = Parser::new_ext(self.body(), options);
+
+        let mut in_wiki_link = false;
+        let events = parser.flat_map(|event| match event {
+            // Drop the link tags; the label text between them flows through.
+            Event::Start(Tag::Link {
+                link_type: LinkType::WikiLink { .. },
+                ..
+            }) => {
+                in_wiki_link = true;
+                vec![]
+            }
+            Event::End(TagEnd::Link) if in_wiki_link => {
+                in_wiki_link = false;
+                vec![]
+            }
+            Event::TaskListMarker(checked) => {
+                vec![Event::Text(if checked { "☑ " } else { "☐ " }.into())]
+            }
+            Event::Html(raw) | Event::InlineHtml(raw) => sanitize_html_event_vec(raw),
+            other => vec![other],
+        });
+
+        let mut html = String::new();
+        html::push_html(&mut html, events);
+        html
+    }
+
     /// Collect the raw wiki-link targets in the body, unresolved and in
     /// document order (`[[target]]` / `[[target|label]]` both yield `target`).
     ///
@@ -590,6 +626,36 @@ mod tests {
         let targets =
             Markdown::new("[[Target]] and [[Other|label]] but not `[[code]]`").wiki_link_targets();
         assert_eq!(targets, vec!["Target".to_string(), "Other".to_string()]);
+    }
+
+    // ── render_for_export ────────────────────────────────────────────
+
+    #[test]
+    fn test_render_for_export_flattens_wiki_links_to_text() {
+        let html = Markdown::new("See [[Other Note]] and [[note|the label]].").render_for_export();
+        assert!(
+            html.contains("See Other Note and the label."),
+            "got: {html}"
+        );
+        assert!(!html.contains("[["), "got: {html}");
+        assert!(!html.contains("<a "), "got: {html}");
+    }
+
+    #[test]
+    fn test_render_for_export_keeps_regular_links() {
+        let html = Markdown::new("[ext](https://example.com)").render_for_export();
+        assert!(
+            html.contains(r#"<a href="https://example.com">ext</a>"#),
+            "got: {html}"
+        );
+    }
+
+    #[test]
+    fn test_render_for_export_renders_checkboxes_as_text() {
+        let html = Markdown::new("- [ ] open\n- [x] done\n").render_for_export();
+        assert!(html.contains("☐ open"), "got: {html}");
+        assert!(html.contains("☑ done"), "got: {html}");
+        assert!(!html.contains("<input"), "got: {html}");
     }
 
     // ── wiki-link resolution ──────────────────────────────────────────

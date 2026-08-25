@@ -570,6 +570,29 @@ pub fn Editor() -> impl IntoView {
     let has_document =
         move || ctx.active_note.get().is_some() || ctx.active_template.get().is_some();
 
+    // Copy-button feedback: shows a checkmark briefly after a copy.
+    let copied = RwSignal::new(false);
+    let on_copy = move |_| {
+        let content = ctx.content.get_untracked();
+        leptos::task::spawn_local(async move {
+            match ipc::copy_note_html(&content).await {
+                Ok(()) => {
+                    copied.set(true);
+                    let _ = set_timeout_with_handle(
+                        move || {
+                            copied.try_set(false);
+                        },
+                        Duration::from_millis(1500),
+                    );
+                }
+                Err(e) => {
+                    ctx.app
+                        .push_error("editor", format!("Failed to copy note: {e}"));
+                }
+            }
+        });
+    };
+
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
         // Note: Escape deliberately has no binding here — CodeMirror uses it
         // to close the completion popup, and an outer exit-edit-mode binding
@@ -606,6 +629,25 @@ pub fn Editor() -> impl IntoView {
             // Floating action buttons — always top-right, no layout impact
             <Show when=has_document>
                 <div class="absolute top-3 right-4 z-10 flex items-center gap-1">
+                    // Copy rendered note (both modes): rich text for Word/
+                    // Teams-style targets, markdown as plain-text fallback
+                    <div
+                        class="tooltip tooltip-bottom"
+                        data-tip=move || if copied.get() { "Copied!" } else { "Copy note" }
+                    >
+                        <button class="btn btn-ghost btn-xs btn-square" on:click=on_copy>
+                            <Show
+                                when=move || copied.get()
+                                fallback=|| view! {
+                                    <Icon icon=icondata_lu::LuCopy width="1rem" height="1rem"/>
+                                }
+                            >
+                                <span class="text-success inline-flex">
+                                    <Icon icon=icondata_lu::LuCheck width="1rem" height="1rem"/>
+                                </span>
+                            </Show>
+                        </button>
+                    </div>
                     <Show
                         when=move || ctx.editing.get()
                         fallback=move || view! {

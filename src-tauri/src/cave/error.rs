@@ -48,6 +48,9 @@ pub enum CaveError {
 
     #[error("Template render error: {0}")]
     TemplateRender(String),
+
+    #[error("Clipboard error: {0}")]
+    Clipboard(String),
 }
 
 impl From<std::io::Error> for CaveError {

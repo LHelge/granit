@@ -136,6 +136,12 @@ pub async fn fetch_anchors() -> Result<Vec<String>, String> {
     invoke_no_args("list_anchors").await
 }
 
+/// Render `content` and put it on the clipboard as rich text (HTML), with
+/// the raw markdown as the plain-text fallback.
+pub async fn copy_note_html(content: &str) -> Result<(), String> {
+    invoke_unit("copy_note_html", &HashMap::from([("content", content)])).await
+}
+
 /// Broken wiki-link targets used across the cave, for wiki-link completion.
 pub async fn fetch_broken_links() -> Result<Vec<String>, String> {
     invoke_no_args("list_broken_links").await

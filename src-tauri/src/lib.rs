@@ -16,6 +16,7 @@ pub fn run() {
                 .level(log::LevelFilter::Debug)
                 .build(),
         )
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -40,6 +41,7 @@ pub fn run() {
             move_note,
             move_folder,
             list_notes,
+            copy_note_html,
             list_anchors,
             list_broken_links,
             resolve_wiki_link,
