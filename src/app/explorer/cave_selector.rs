@@ -5,6 +5,7 @@ use leptos::prelude::*;
 pub fn CaveSelector(
     set_settings_open: WriteSignal<bool>,
     set_info_open: WriteSignal<bool>,
+    set_keybinds_open: WriteSignal<bool>,
 ) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
 
@@ -56,6 +57,16 @@ pub fn CaveSelector(
                         <span class="inline-flex w-3.5 h-3.5 ml-1 shrink-0 text-base-content/50">
                             <Icon icon=icondata_lu::LuFolderOpen width="100%" height="100%"/>
                         </span>
+                    </button>
+                </div>
+
+                // Keyboard shortcuts icon
+                <div class="tooltip tooltip-top z-50" data-tip="Keyboard shortcuts">
+                    <button
+                        class="btn btn-ghost btn-xs btn-square"
+                        on:click=move |_| set_keybinds_open.set(true)
+                    >
+                        <Icon icon=icondata_lu::LuKeyboard width="1rem" height="1rem"/>
                     </button>
                 </div>
 

@@ -5,6 +5,7 @@ mod editor;
 mod explorer;
 mod info;
 pub(crate) mod ipc;
+mod keybinds;
 mod markdown_links;
 mod settings;
 
@@ -18,6 +19,7 @@ use editor::{EditOpen, Editor, OpenInEdit};
 use explorer::Explorer;
 use granit_types::{ReleaseNotes, SidebarConfig};
 use info::InfoModal;
+use keybinds::KeybindsModal;
 use settings::SettingsModal;
 
 // ── Sidebar resize constants ───────────────────────────────────────
@@ -38,6 +40,7 @@ pub fn App() -> impl IntoView {
     let (agent_visible, set_agent_visible) = signal(false);
     let (agent_width, set_agent_width) = signal(320u16);
     let (info_open, set_info_open) = signal(false);
+    let (keybinds_open, set_keybinds_open) = signal(false);
     let (settings_open, set_settings_open) = signal(false);
     // Release notes pending display after an automatic update.
     let (release_notes, set_release_notes) = signal(None::<ReleaseNotes>);
@@ -257,6 +260,7 @@ pub fn App() -> impl IntoView {
                     <Explorer
                         set_settings_open=set_settings_open
                         set_info_open=set_info_open
+                        set_keybinds_open=set_keybinds_open
                         width=sidebar_width
                     />
                     // Resize handle
@@ -287,6 +291,10 @@ pub fn App() -> impl IntoView {
 
             <Show when=move || info_open.get()>
                 <InfoModal set_open=set_info_open />
+            </Show>
+
+            <Show when=move || keybinds_open.get()>
+                <KeybindsModal set_open=set_keybinds_open />
             </Show>
 
             // Release notes after an automatic update
