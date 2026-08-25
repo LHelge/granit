@@ -44,6 +44,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
         let mut tags = ctx.tags.get_untracked();
         add_tag(&mut tags, &input);
         ctx.tags.set(tags);
+        ctx.schedule_autosave();
         set_tag_input.set(String::new());
     };
 
@@ -51,6 +52,7 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
         let mut tags = ctx.tags.get_untracked();
         remove_tag(&mut tags, &tag);
         ctx.tags.set(tags);
+        ctx.schedule_autosave();
     };
 
     view! {

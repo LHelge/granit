@@ -6,12 +6,17 @@ mod writer;
 
 use crate::app::{components::icons::Icon, ipc};
 use granit_types::{AppConfig, Document, DocumentMeta, RenderedDocument};
+use leptos::leptos_dom::helpers::{set_timeout_with_handle, TimeoutHandle};
 use leptos::prelude::*;
 use reader::Reader;
 use save_queue::{DocumentKind, PersistSnapshot, SaveQueue};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 use writer::Writer;
+
+/// Debounce holdoff between the last edit and the automatic save to disk.
+const AUTOSAVE_HOLDOFF_MS: u64 = 2000;
 
 enum PersistedMeta {
     Note(DocumentMeta),
@@ -73,6 +78,10 @@ pub(super) struct EditorCtx {
     render_request_id: RwSignal<u64>,
     /// Latest-wins queue of pending saves, processed one at a time.
     save_queue: StoredValue<Rc<RefCell<SaveQueue>>, LocalStorage>,
+    /// Whether the editor holds changes not yet persisted to disk.
+    pub dirty: RwSignal<bool>,
+    /// Pending debounced-autosave timer, if armed.
+    autosave_timer: StoredValue<Cell<Option<TimeoutHandle>>, LocalStorage>,
 }
 
 impl EditorCtx {
@@ -160,6 +169,26 @@ impl EditorCtx {
         });
     }
 
+    /// Whether the current editor signals still match a persisted snapshot.
+    /// Used to clear `dirty` after an auto-save: if the user kept typing
+    /// while the save was in flight, the document stays dirty.
+    fn snapshot_matches_current(self, snapshot: &PersistSnapshot) -> bool {
+        if self.current_doc_key_untracked().as_deref() != Some(snapshot.doc_key().as_str()) {
+            return false;
+        }
+        let title = self.title_input.get_untracked().trim().to_string();
+        let effective_name = if title.is_empty() {
+            snapshot.slug.clone()
+        } else {
+            title
+        };
+        snapshot.name == effective_name
+            && snapshot.content == self.content.get_untracked()
+            && snapshot.tags.as_ref() == Some(&self.tags.get_untracked())
+            && snapshot.icon == self.icon.get_untracked()
+            && snapshot.favorite == self.favorite.get_untracked()
+    }
+
     fn apply_persist_result(
         self,
         snapshot: &PersistSnapshot,
@@ -168,16 +197,20 @@ impl EditorCtx {
         match result {
             Ok(PersistedMeta::Note(meta)) => {
                 if snapshot.explicit {
+                    self.dirty.set(false);
                     self.prev_doc_key.set(Some(format!("note:{}", meta.slug)));
                     self.app.set_active_note_document(Document {
                         meta,
                         content: snapshot.content.clone(),
                     });
                     self.editing.set(false);
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
                 }
             }
             Ok(PersistedMeta::Template(meta)) => {
                 if snapshot.explicit {
+                    self.dirty.set(false);
                     self.prev_doc_key
                         .set(Some(format!("template:{}", meta.slug)));
                     self.app.set_active_template_document(Document {
@@ -185,6 +218,8 @@ impl EditorCtx {
                         content: snapshot.content.clone(),
                     });
                     self.editing.set(false);
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
                 }
             }
             Err(e) => {
@@ -271,6 +306,56 @@ impl EditorCtx {
         self.enqueue_persist(snapshot);
     }
 
+    /// Mark the document dirty and (re)arm the debounced autosave timer.
+    /// Called on every edit; the save fires once typing pauses.
+    pub fn schedule_autosave(self) {
+        self.dirty.set(true);
+        self.cancel_autosave_timer();
+        let handle = set_timeout_with_handle(
+            move || {
+                // try_* variants: the timer may outlive the reactive owner
+                // during app teardown.
+                self.autosave_timer.try_with_value(|cell| cell.set(None));
+                if self.editing.try_get_untracked() == Some(true)
+                    && self.dirty.try_get_untracked() == Some(true)
+                {
+                    self.autosave_content();
+                }
+            },
+            Duration::from_millis(AUTOSAVE_HOLDOFF_MS),
+        );
+        if let Ok(handle) = handle {
+            self.autosave_timer
+                .with_value(|cell| cell.set(Some(handle)));
+        }
+    }
+
+    pub fn cancel_autosave_timer(self) {
+        if let Some(handle) = self
+            .autosave_timer
+            .try_with_value(|cell| cell.take())
+            .flatten()
+        {
+            handle.clear();
+        }
+    }
+
+    /// Debounced autosave: persists content, tags, icon, and favorite, but
+    /// never renames — a half-typed title must not rename the file (and
+    /// rewrite inbound wiki-links) on every pause. A pending rename keeps
+    /// the document dirty and is applied by the full save when the user
+    /// leaves edit mode, saves explicitly, or switches notes.
+    fn autosave_content(self) {
+        let Some(doc_key) = self.current_doc_key_untracked() else {
+            return;
+        };
+        let Some(mut snapshot) = self.snapshot_for(&doc_key, false) else {
+            return;
+        };
+        snapshot.name = snapshot.slug.clone();
+        self.enqueue_persist(snapshot);
+    }
+
     /// Save the current note (user-triggered via button).
     pub fn save(self) {
         let Some(doc_key) = self.current_doc_key_untracked() else {
@@ -290,8 +375,20 @@ impl EditorCtx {
     }
 
     /// Toggle between edit and preview mode.
+    ///
+    /// Leaving edit mode with unsaved changes runs a full save (including a
+    /// pending rename); on success the save flow switches to preview and the
+    /// preview renders the saved state. On failure (e.g. empty filename) the
+    /// editor stays in edit mode with the error shown.
     pub fn toggle_mode(self) {
         let was_editing = self.editing.get_untracked();
+        if was_editing {
+            self.cancel_autosave_timer();
+            if self.dirty.get_untracked() {
+                self.save();
+                return;
+            }
+        }
         self.editing.update(|v| *v = !*v);
         // Re-render when switching back to preview (content may have been edited)
         if was_editing {
@@ -370,6 +467,8 @@ pub fn Editor() -> impl IntoView {
         favorite: RwSignal::new(None),
         render_request_id: RwSignal::new(0),
         save_queue: StoredValue::new_local(Rc::new(RefCell::new(SaveQueue::new()))),
+        dirty: RwSignal::new(false),
+        autosave_timer: StoredValue::new_local(Cell::new(None)),
     };
     provide_context(ctx);
 
@@ -395,7 +494,11 @@ pub fn Editor() -> impl IntoView {
         let is_switch = old_key != new_key;
 
         if is_switch {
-            // Auto-save the previous note when switching away in edit mode
+            // Auto-save the previous note when switching away in edit mode.
+            // The debounce timer is cancelled first: `auto_save` snapshots
+            // synchronously, and the new document must not inherit the timer.
+            ctx.cancel_autosave_timer();
+            ctx.dirty.set(false);
             if was_editing {
                 if let Some(doc_key) = old_key {
                     ctx.auto_save(doc_key);
@@ -527,7 +630,7 @@ pub fn Editor() -> impl IntoView {
                                 <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
                             </button>
                         </div>
-                        <div class="tooltip tooltip-bottom" data-tip="Cancel editing">
+                        <div class="tooltip tooltip-bottom" data-tip="Close editor">
                             <button
                                 class="btn btn-ghost btn-xs btn-square"
                                 on:click=move |_| ctx.toggle_mode()

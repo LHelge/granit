@@ -120,6 +120,7 @@ pub(super) fn Writer() -> impl IntoView {
             move |new_content: String| {
                 internal_version.with_value(|c| c.set(c.get().wrapping_add(1)));
                 ctx.content.set(new_content);
+                ctx.schedule_autosave();
             },
             // onSelectionChange — track selected text for agent panel
             move |selected: String| {
@@ -193,6 +194,7 @@ pub(super) fn Writer() -> impl IntoView {
 
     // Destroy the CM6 editor on unmount.
     on_cleanup(move || {
+        ctx.cancel_autosave_timer();
         editor_handle.with_value(|cell| {
             if let Some(h) = cell.get() {
                 codemirror::destroy(h);
@@ -205,7 +207,10 @@ pub(super) fn Writer() -> impl IntoView {
         <div class="not-prose flex items-center gap-2 mb-2">
             <IconPicker
                 value=Signal::derive(move || ctx.icon.get())
-                on_change=move |v| ctx.icon.set(v)
+                on_change=move |v| {
+                    ctx.icon.set(v);
+                    ctx.schedule_autosave();
+                }
             />
             <Show when=move || ctx.active_note.get().is_some()>
                 <button
@@ -227,6 +232,7 @@ pub(super) fn Writer() -> impl IntoView {
                     on:click=move |_| {
                         let next = !ctx.favorite.get_untracked().unwrap_or(false);
                         ctx.favorite.set(Some(next));
+                        ctx.schedule_autosave();
                     }
                 >
                     <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
@@ -238,7 +244,13 @@ pub(super) fn Writer() -> impl IntoView {
                 class="w-full bg-transparent text-base-content text-4xl font-extrabold leading-[1.111] outline-none p-0"
                 placeholder="Untitled"
                 prop:value=move || ctx.title_input.get()
-                on:input=move |ev| ctx.title_input.set(event_target_value(&ev))
+                // Title edits mark dirty but don't arm the debounce timer:
+                // the debounced save never renames, so the rename is applied
+                // by the full save when leaving edit mode or saving.
+                on:input=move |ev| {
+                    ctx.title_input.set(event_target_value(&ev));
+                    ctx.dirty.set(true);
+                }
                 on:keydown=move |ev: leptos::ev::KeyboardEvent| {
                     if ev.key() == "Enter" {
                         ev.prevent_default();
