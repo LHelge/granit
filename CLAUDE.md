@@ -91,6 +91,7 @@ All agent logic is backend-side ([src-tauri/src/agent/](src-tauri/src/agent/)), 
 
 - All code, comments, and docs in English.
 - Build only what is needed now. No plugin system, sync layer, or speculative abstractions (see deferred: file watching / external reload, live-preview editor, backlinks panel, sync).
+- **Release notes are generated from commit messages**, so each feature should land as one focused commit. Don't commit after a first implementation pass — present the result, iterate on feedback, and commit only once the feature is agreed done. If a committed feature needs follow-up tweaks in the same session, amend or squash into the feature commit rather than adding `fix`/`refactor` commits that would clutter the changelog (never amend commits that are already merged or that others may have pulled).
 - The repo owner is strong on Rust backend work and less experienced with Leptos/Tailwind/DaisyUI — be more explicit and cautious for frontend changes.
 - Before committing, run `cargo fmt`, `cargo clippy`, and the relevant tests.
 
