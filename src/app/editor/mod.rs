@@ -468,12 +468,9 @@ pub fn Editor() -> impl IntoView {
         move || ctx.active_note.get().is_some() || ctx.active_template.get().is_some();
 
     let on_keydown = move |ev: leptos::ev::KeyboardEvent| {
-        // Escape → cancel editing (no modifier needed)
-        if ev.key() == "Escape" && ctx.editing.get_untracked() {
-            ev.prevent_default();
-            ctx.toggle_mode();
-            return;
-        }
+        // Note: Escape deliberately has no binding here — CodeMirror uses it
+        // to close the completion popup, and an outer exit-edit-mode binding
+        // would also fire on that same keypress.
 
         // Cmd on macOS, Ctrl on Linux/Windows.
         let is_mac = expect_context::<crate::app::AppCtx>().is_mac;
