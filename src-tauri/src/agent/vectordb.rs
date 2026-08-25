@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use log::{debug, info, warn};
 use parking_lot::Mutex;
@@ -53,7 +53,20 @@ struct CaveVectorIndexInner {
     /// change). An in-flight [`rebuild`] checks it between embedding chunks
     /// and aborts instead of racing the successor on the cache file.
     cancelled: std::sync::atomic::AtomicBool,
+    /// Slugs with pending (debounced) embedding updates; drained by the
+    /// flush task armed via [`CaveVectorIndex::schedule_note_update`].
+    pending_updates: Mutex<HashSet<String>>,
+    /// Whether a flush task is currently armed for `pending_updates`.
+    flush_armed: std::sync::atomic::AtomicBool,
 }
+
+/// Holdoff between a note mutation and the embedding update. Saves arriving
+/// while the flush is armed coalesce into the same pass, so continuous
+/// editing (debounced autosave) costs at most one re-embed per holdoff
+/// instead of one per save. A missed update (e.g. app quit before the
+/// flush) is repaired by the mtime-based [`CaveVectorIndex::rebuild`] on
+/// the next cave open.
+const EMBED_UPDATE_HOLDOFF: Duration = Duration::from_secs(30);
 
 impl CaveVectorIndex {
     /// Create a new vector index for the given cave.
@@ -110,8 +123,43 @@ impl CaveVectorIndex {
                 cave,
                 cache_path,
                 cancelled: std::sync::atomic::AtomicBool::new(false),
+                pending_updates: Mutex::new(HashSet::new()),
+                flush_armed: std::sync::atomic::AtomicBool::new(false),
             }),
         })
+    }
+
+    /// Queue a debounced embedding update for `slug`.
+    ///
+    /// The first call arms a flush task that sleeps for
+    /// [`EMBED_UPDATE_HOLDOFF`], then embeds every slug queued in the
+    /// meantime; repeated saves of the same note collapse into one update.
+    pub(crate) fn schedule_note_update(&self, slug: String) {
+        self.inner.pending_updates.lock().insert(slug);
+        let already_armed = self
+            .inner
+            .flush_armed
+            .swap(true, std::sync::atomic::Ordering::SeqCst);
+        if already_armed {
+            return;
+        }
+        let index = self.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(EMBED_UPDATE_HOLDOFF).await;
+            // Disarm before draining: a save landing after the drain arms a
+            // fresh flush instead of being silently dropped.
+            index
+                .inner
+                .flush_armed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            let slugs: Vec<String> = {
+                let mut pending = index.inner.pending_updates.lock();
+                pending.drain().collect()
+            };
+            for slug in slugs {
+                index.update_note(&slug).await;
+            }
+        });
     }
 
     /// Mark this index as superseded, aborting any in-flight rebuild at the
