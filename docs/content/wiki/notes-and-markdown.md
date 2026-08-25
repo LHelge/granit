@@ -14,6 +14,29 @@ The **reader** shows the note as formatted HTML rendered by the backend. Heading
 
 The **editor** is a CodeMirror editing surface for the raw Markdown source. Switch to it when you want to change a note's text. Granit does not use a live-preview editor — you write in the editor and read in the reader, rather than seeing both at once.
 
+## Saving is automatic
+
+You never need to save manually. While you edit, Granit persists your changes a couple of seconds after typing pauses, and closing the editor saves anything still pending before showing the updated preview. Explicit save (`Cmd/Ctrl+S`) still works and also returns you to the reader.
+
+Renaming is the one deliberate exception: a changed title is applied when you leave the editor, save explicitly, or switch notes — not mid-typing — because a rename also rewrites every wiki-link pointing at the note (see [[cave-rules]]).
+
+# Editing shortcuts
+
+The editor carries markdown-aware keybindings:
+
+- **Structure** — `Enter` continues lists, task lists, and blockquotes (numbered lists renumber); `Backspace` on an empty item dissolves the marker.
+- **Formatting** — `Cmd/Ctrl+B` and `Cmd/Ctrl+I` toggle bold and italic around the selection or the word under the cursor. `Cmd/Ctrl+K` wraps the selection as a wiki-link (a selected URL becomes a markdown link instead). `Cmd/Ctrl+L` toggles the task checkbox on the selected lines.
+- **Find and replace** — `Cmd/Ctrl+F` opens a search popover in the editor's top-right corner with match-case, regular-expression, and whole-word toggles. `Cmd/Ctrl+G` / `Shift+Cmd/Ctrl+G` step through matches, and `Cmd/Ctrl+D` selects the next occurrence of the selection for multi-cursor edits.
+- **Links** — hold `Cmd/Ctrl` and click any link to follow it; see [[wiki-links#following-links-while-editing]].
+
+The full list is always available in the app: the keyboard icon in the sidebar footer opens a shortcuts reference.
+
+# Copying a note
+
+The copy button in the top-right action bar (available in both reader and editor) puts the rendered note on the clipboard as rich text. Pasting into Word, Teams, or a presentation keeps headings, lists, and formatting; pasting into a plain-text target yields the raw Markdown source instead.
+
+Because wiki-links only mean something inside your cave, they are flattened to their visible text in the copied rich text, while regular web links stay clickable. Task checkboxes are converted to ☐/☑ symbols so their state survives the paste.
+
 # Frontmatter
 
 Notes may begin with a YAML frontmatter block delimited by `---`. Granit parses the frontmatter separately from the body and recognizes these fields:

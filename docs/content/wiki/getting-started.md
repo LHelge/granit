@@ -58,7 +58,7 @@ A compact daily-note calendar strip sits alongside the tabs for jumping to [[dai
 
 Selecting a note opens it in the rendered reader, which displays your markdown as formatted HTML — headings, lists, tables, code blocks, and resolved [[wiki-links]]. Task-list checkboxes in the reader are interactive and can be toggled directly.
 
-Switching to edit mode replaces the reader with a CodeMirror text editor for writing raw markdown. For more on the note format, frontmatter, and supported syntax, see [[notes-and-markdown]].
+Switching to edit mode replaces the reader with a CodeMirror text editor for writing raw markdown. Edits save automatically as you type, and the editor carries markdown-aware shortcuts for formatting, lists, links, and find/replace — the keyboard icon in the sidebar footer lists them all. For more on the note format, frontmatter, and supported syntax, see [[notes-and-markdown]].
 
 ## Agent panel
 
