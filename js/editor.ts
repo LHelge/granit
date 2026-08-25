@@ -6,23 +6,31 @@ import {
     keymap,
     drawSelection,
     highlightActiveLine,
+    scrollPastEnd,
     ViewUpdate,
     ViewPlugin,
     Decoration,
     DecorationSet,
 } from "@codemirror/view";
-import { EditorState, Compartment, StateField, RangeSetBuilder } from "@codemirror/state";
+import {
+    EditorState,
+    EditorSelection,
+    Compartment,
+    StateField,
+    RangeSetBuilder,
+} from "@codemirror/state";
 import {
     defaultKeymap,
     indentWithTab,
     history,
     historyKeymap,
 } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
 import {
     autocompletion,
     closeBrackets,
     closeBracketsKeymap,
+    startCompletion,
     CompletionContext,
     CompletionResult,
 } from "@codemirror/autocomplete";
@@ -120,6 +128,11 @@ const granitTheme = EditorView.theme({
         color: "var(--color-primary)",
         textDecoration: "underline",
     },
+    // Unresolved targets: muted like the reader's `.broken-link` style
+    ".cm-wiki-link-broken": {
+        color: "color-mix(in oklch, var(--color-base-content) 40%, transparent)",
+        textDecoration: "none",
+    },
     // Pointer cursor while the follow-link modifier (Cmd/Ctrl) is held
     "&.cm-mod-down .cm-wiki-link, &.cm-mod-down .cm-md-link": {
         cursor: "pointer",
@@ -203,6 +216,128 @@ const markdownBlockSpacing = ViewPlugin.fromClass(
     { decorations: (v) => v.decorations }
 );
 
+// ── Editing commands (formatting, links, tasks) ────────────────────
+
+// Toggle an inline mark (e.g. `**` for bold) around each selection range.
+// An empty range expands to the word under the cursor; a range already
+// wrapped (or selected including the marks) is unwrapped.
+function toggleInlineMark(view: EditorView, mark: string): boolean {
+    if (view.state.readOnly) return false;
+    const changes = view.state.changeByRange((range) => {
+        let { from, to } = range;
+        if (from === to) {
+            const word = view.state.wordAt(from);
+            if (word) ({ from, to } = word);
+        }
+        const before = view.state.sliceDoc(Math.max(0, from - mark.length), from);
+        const after = view.state.sliceDoc(to, Math.min(view.state.doc.length, to + mark.length));
+        if (before === mark && after === mark) {
+            return {
+                changes: [
+                    { from: from - mark.length, to: from },
+                    { from: to, to: to + mark.length },
+                ],
+                range: EditorSelection.range(from - mark.length, to - mark.length),
+            };
+        }
+        const inner = view.state.sliceDoc(from, to);
+        if (inner.length >= 2 * mark.length && inner.startsWith(mark) && inner.endsWith(mark)) {
+            return {
+                changes: [
+                    { from, to: from + mark.length },
+                    { from: to - mark.length, to },
+                ],
+                range: EditorSelection.range(from, to - 2 * mark.length),
+            };
+        }
+        return {
+            changes: [
+                { from, insert: mark },
+                { from: to, insert: mark },
+            ],
+            range: EditorSelection.range(from + mark.length, to + mark.length),
+        };
+    });
+    view.dispatch(changes, { scrollIntoView: true, userEvent: "input" });
+    return true;
+}
+
+// Wrap the selection as a link. Plain text becomes a wiki-link (nearly all
+// links in a cave are internal references); a selected URL becomes a
+// markdown link with the cursor in the empty label. An empty selection
+// inserts `[[]]` and opens slug completion.
+function insertLink(view: EditorView): boolean {
+    if (view.state.readOnly) return false;
+    let completeSlug = false;
+    const changes = view.state.changeByRange((range) => {
+        const text = view.state.sliceDoc(range.from, range.to);
+        if (isUrl(text)) {
+            return {
+                changes: { from: range.from, to: range.to, insert: `[](${text})` },
+                range: EditorSelection.cursor(range.from + 1),
+            };
+        }
+        if (text.length === 0) {
+            completeSlug = true;
+            return {
+                changes: { from: range.from, insert: "[[]]" },
+                range: EditorSelection.cursor(range.from + 2),
+            };
+        }
+        return {
+            changes: { from: range.from, to: range.to, insert: `[[${text}]]` },
+            range: EditorSelection.cursor(range.from + text.length + 4),
+        };
+    });
+    view.dispatch(changes, { scrollIntoView: true, userEvent: "input" });
+    if (completeSlug) startCompletion(view);
+    return true;
+}
+
+// Matches the line prefix: indent, optional list marker, optional checkbox.
+const taskLineRegex = /^(\s*)(?:([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?)?/;
+
+// Toggle the task checkbox on every selected line: `[ ]` ⇄ `[x]`, adding
+// `[ ]` to plain list items and `- [ ] ` to non-list lines.
+function toggleTask(view: EditorView): boolean {
+    if (view.state.readOnly) return false;
+    const changes: { from: number; to?: number; insert?: string }[] = [];
+    const seen = new Set<number>();
+    for (const range of view.state.selection.ranges) {
+        const first = view.state.doc.lineAt(range.from).number;
+        const last = view.state.doc.lineAt(range.to).number;
+        for (let n = first; n <= last; n++) {
+            if (seen.has(n)) continue;
+            seen.add(n);
+            const line = view.state.doc.line(n);
+            const m = line.text.match(taskLineRegex)!;
+            const [full, indent, marker, box] = m;
+            if (box) {
+                const stateIdx = full.length - box.length + 1;
+                const checked = line.text[stateIdx] !== " ";
+                changes.push({
+                    from: line.from + stateIdx,
+                    to: line.from + stateIdx + 1,
+                    insert: checked ? " " : "x",
+                });
+            } else if (marker) {
+                changes.push({ from: line.from + full.length, insert: "[ ] " });
+            } else {
+                changes.push({ from: line.from + indent.length, insert: "- [ ] " });
+            }
+        }
+    }
+    view.dispatch({ changes, userEvent: "input" });
+    return true;
+}
+
+const editingKeymap = [
+    { key: "Mod-b", run: (view: EditorView) => toggleInlineMark(view, "**") },
+    { key: "Mod-i", run: (view: EditorView) => toggleInlineMark(view, "*") },
+    { key: "Mod-k", run: insertLink },
+    { key: "Mod-l", run: toggleTask },
+];
+
 // ── Clickable links (Cmd/Ctrl+click to follow) ─────────────────────
 
 // Matches `[[target]]` / `[[target|label]]` on a single line.
@@ -279,12 +414,19 @@ function urlTargetAt(state: EditorState, pos: number): string | null {
 // cursor can target them while the follow-link modifier is held.
 const mdLinkDeco = Decoration.mark({ class: "cm-md-link" });
 const wikiLinkDeco = Decoration.mark({ class: "cm-wiki-link" });
+const wikiLinkBrokenDeco = Decoration.mark({ class: "cm-wiki-link cm-wiki-link-broken" });
 
 function buildLinkDecorations(view: EditorView): DecorationSet {
+    // Targets that resolve to a note or heading anchor (case-insensitive,
+    // matching the backend resolver); everything else styles as broken.
+    const resolved = new Set(
+        view.state.field(slugsField).slugs.map((s) => s.toLowerCase())
+    );
     const ranges: { from: number; to: number; deco: Decoration }[] = [];
     for (const { from, to } of view.visibleRanges) {
         for (const m of wikiLinksIn(view.state, from, to)) {
-            ranges.push({ from: m.from, to: m.to, deco: wikiLinkDeco });
+            const deco = resolved.has(m.target.toLowerCase()) ? wikiLinkDeco : wikiLinkBrokenDeco;
+            ranges.push({ from: m.from, to: m.to, deco });
         }
         syntaxTree(view.state).iterate({
             from,
@@ -312,7 +454,13 @@ const linkDecorations = ViewPlugin.fromClass(
             this.decorations = buildLinkDecorations(view);
         }
         update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged || update.startState.tree !== syntaxTree(update.state)) {
+            if (
+                update.docChanged ||
+                update.viewportChanged ||
+                update.startState.tree !== syntaxTree(update.state) ||
+                // Slug lists changed (setSlugs): broken-ness may have changed
+                update.startState.field(slugsField, false) !== update.state.field(slugsField, false)
+            ) {
                 this.decorations = buildLinkDecorations(update.view);
             }
         }
@@ -600,6 +748,7 @@ export function create(
             history(),
             drawSelection(),
             highlightActiveLine(),
+            scrollPastEnd(),
             EditorView.lineWrapping,
             markdownBlockSpacing,
             linkDecorations,
@@ -607,7 +756,11 @@ export function create(
             ...(config.onLinkClick ? [linkClickExtension(config.onLinkClick)] : []),
             urlPasteExtension,
             keymap.of([
+                ...editingKeymap,
                 ...closeBracketsKeymap,
+                // Before defaultKeymap: Enter continues lists/quotes and
+                // Backspace dissolves an empty list marker.
+                ...markdownKeymap,
                 ...defaultKeymap,
                 ...historyKeymap,
                 indentWithTab,
