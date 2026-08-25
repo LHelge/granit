@@ -54,6 +54,18 @@ pub(super) fn Writer() -> impl IntoView {
         }
     });
 
+    // Open the find/replace panel when requested (search button).
+    Effect::new(move || {
+        if ctx.open_search.get() {
+            ctx.open_search.set(false);
+            editor_handle.with_value(|cell| {
+                if let Some(h) = cell.get() {
+                    codemirror::open_search(h);
+                }
+            });
+        }
+    });
+
     // Sync external content changes (note switches) into the CM6 editor.
     // The mod.rs effect sets ctx.content on note switch; we detect that here
     // by comparing against the internal version counter. When content changes

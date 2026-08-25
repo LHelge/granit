@@ -48,6 +48,22 @@ fn bind_groups(is_mac: bool) -> Vec<BindGroup> {
             ],
         },
         BindGroup {
+            title: "Search",
+            binds: vec![
+                (combo("F"), "Find and replace in note"),
+                (combo("G"), "Find next"),
+                (
+                    if is_mac {
+                        "⇧⌘G".to_string()
+                    } else {
+                        "Shift+Ctrl+G".to_string()
+                    },
+                    "Find previous",
+                ),
+                (combo("D"), "Select next occurrence"),
+            ],
+        },
+        BindGroup {
             title: "Completion",
             binds: vec![
                 ("[[".to_string(), "Wiki-link completion"),
