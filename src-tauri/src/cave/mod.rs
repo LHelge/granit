@@ -27,6 +27,10 @@ pub struct Cave {
     notes: HashMap<String, PathBuf>,
     /// In-memory reverse wiki-link index: target slug → source slugs.
     backlinks: HashMap<String, Vec<String>>,
+    /// Wiki-link targets used somewhere in the cave that resolve to neither a
+    /// note nor an anchor (broken links). Deduplicated case-insensitively,
+    /// keeping the first-seen spelling; sorted. Rebuilt with `backlinks`.
+    broken_links: Vec<String>,
     /// In-memory index: heading anchor id → owning note slug. Populated from
     /// `# Heading {#id}` attributes. Shares the global slug namespace with notes.
     anchors: HashMap<String, String>,
@@ -47,6 +51,7 @@ impl Cave {
             path,
             notes: HashMap::new(),
             backlinks: HashMap::new(),
+            broken_links: Vec::new(),
             anchors: HashMap::new(),
             templates: HashMap::new(),
             active_slug: None,
@@ -68,7 +73,7 @@ impl Cave {
             return Err(err);
         }
         self.anchors = anchors;
-        self.backlinks = Self::build_backlinks(&self.notes, &self.anchors);
+        (self.backlinks, self.broken_links) = Self::build_link_graph(&self.notes, &self.anchors);
         self.templates = Self::scan_templates(&self.templates_dir())?;
         self.scanned = true;
         Ok(())
@@ -306,6 +311,11 @@ impl Cave {
     /// All heading anchor ids declared across the cave, for link completion.
     pub fn list_anchors(&self) -> Vec<String> {
         self.anchors.keys().cloned().collect()
+    }
+
+    /// All broken wiki-link targets used across the cave, for link completion.
+    pub fn list_broken_links(&self) -> Vec<String> {
+        self.broken_links.clone()
     }
 
     /// Resolve a slug case-insensitively, returning the canonical stored slug.
@@ -585,6 +595,39 @@ mod tests {
         let mut anchors = cave.list_anchors();
         anchors.sort();
         assert_eq!(anchors, vec!["saab".to_string(), "volvo".to_string()]);
+    }
+
+    // ── Broken links ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_broken_link_index_built_on_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Home.md"),
+            "# Anchor {#anchor}\n\n[[Existing]] [[Missing note|label]] [[anchor]]\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("Existing.md"), "[[missing NOTE]] [[Other]]").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // Resolved notes and anchors are excluded; broken targets are
+        // deduplicated case-insensitively (first-seen spelling, by note
+        // order) and sorted.
+        assert_eq!(
+            cave.list_broken_links(),
+            vec!["missing NOTE".to_string(), "Other".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_broken_link_index_updates_when_note_is_created() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Home.md"), "[[Missing]]").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        assert_eq!(cave.list_broken_links(), vec!["Missing".to_string()]);
+
+        cave.create_note("Missing", None, None).unwrap();
+        assert!(cave.list_broken_links().is_empty());
     }
 
     #[test]

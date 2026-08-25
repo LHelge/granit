@@ -138,12 +138,24 @@ impl<'a> Markdown<'a> {
         render_core(self.body(), Some(&resolve), false).0
     }
 
-    /// Collect resolved outgoing wiki-link **note** slugs without full rendering.
+    /// Collect the raw wiki-link targets in the body, unresolved and in
+    /// document order (`[[target]]` / `[[target|label]]` both yield `target`).
     ///
-    /// `resolve` returns the link href (`note` or `note#anchor`); the fragment is
-    /// stripped so the returned slugs are always note-level (for the backlink graph).
-    pub fn outgoing_links(&self, resolve: impl Fn(&str) -> Option<String>) -> Vec<String> {
-        collect_resolved_wiki_links(self.body(), resolve)
+    /// Wiki-links inside code spans/blocks are not links and are not returned.
+    pub fn wiki_link_targets(&self) -> Vec<String> {
+        let mut options = base_options();
+        options.insert(Options::ENABLE_WIKILINKS);
+
+        Parser::new_ext(self.body(), options)
+            .filter_map(|event| match event {
+                Event::Start(Tag::Link {
+                    link_type: LinkType::WikiLink { .. },
+                    dest_url,
+                    ..
+                }) => Some(dest_url.to_string()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Collect the anchor ids declared by `{#id}` heading attributes in the body.
@@ -340,29 +352,6 @@ fn render_core(
     (html_output, outgoing_links)
 }
 
-fn collect_resolved_wiki_links(
-    markdown: &str,
-    resolve: impl Fn(&str) -> Option<String>,
-) -> Vec<String> {
-    let mut options = base_options();
-    options.insert(Options::ENABLE_WIKILINKS);
-
-    Parser::new_ext(markdown, options)
-        .filter_map(|event| match event {
-            Event::Start(Tag::Link {
-                link_type: LinkType::WikiLink { .. },
-                dest_url,
-                ..
-            }) => resolve(&dest_url).map(|href| {
-                // Strip any `#anchor` fragment: backlinks are note-level.
-                href.split_once('#')
-                    .map_or(href.clone(), |(note, _)| note.to_string())
-            }),
-            _ => None,
-        })
-        .collect()
-}
-
 /// Convert raw HTML into escaped code block events so untrusted content
 /// cannot inject scripts or arbitrary markup.
 fn sanitize_html_event_vec(raw: pulldown_cmark::CowStr) -> Vec<Event> {
@@ -463,16 +452,6 @@ mod tests {
         );
         // The backlink graph stays note-level: the fragment is stripped.
         assert_eq!(note.outgoing_links, ["car-brands"]);
-    }
-
-    #[test]
-    fn test_outgoing_links_strips_anchor_fragment() {
-        let links = Markdown::new("[[Volvo]] and [[plain]]").outgoing_links(|name| match name {
-            "Volvo" => Some("car-brands#volvo".to_string()),
-            "plain" => Some("plain".to_string()),
-            _ => None,
-        });
-        assert_eq!(links, vec!["car-brands".to_string(), "plain".to_string()]);
     }
 
     #[test]
@@ -598,26 +577,19 @@ mod tests {
         assert_eq!(result.reading_minutes, 1);
     }
 
-    // ── outgoing_links ───────────────────────────────────────────────
+    // ── wiki_link_targets ────────────────────────────────────────────
 
     #[test]
-    fn test_outgoing_links_collects_resolved_targets() {
-        let links =
-            Markdown::new("[[Target]] and [[Other|label]]").outgoing_links(|name| match name {
-                "Target" => Some("target".to_string()),
-                "Other" => Some("other".to_string()),
-                _ => None,
-            });
-        assert_eq!(links, vec!["target".to_string(), "other".to_string()]);
+    fn test_wiki_link_targets_collects_raw_targets() {
+        let targets = Markdown::new("[[Target]] and [[Other|label]]").wiki_link_targets();
+        assert_eq!(targets, vec!["Target".to_string(), "Other".to_string()]);
     }
 
     #[test]
-    fn test_outgoing_links_skips_broken_targets() {
-        let links = Markdown::new("[[Target]] [[Missing]]").outgoing_links(|name| match name {
-            "Target" => Some("target".to_string()),
-            _ => None,
-        });
-        assert_eq!(links, vec!["target".to_string()]);
+    fn test_wiki_link_targets_ignores_code_spans() {
+        let targets =
+            Markdown::new("[[Target]] and [[Other|label]] but not `[[code]]`").wiki_link_targets();
+        assert_eq!(targets, vec!["Target".to_string(), "Other".to_string()]);
     }
 
     // ── wiki-link resolution ──────────────────────────────────────────

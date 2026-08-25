@@ -153,6 +153,10 @@ const granitTooltipTheme = EditorView.baseTheme({
         fontWeight: "600",
         color: "var(--color-primary)",
     },
+    // Broken-link targets (no note yet) render in italics.
+    ".cm-tooltip-autocomplete > ul > li.cm-completion-broken .cm-completionLabel": {
+        fontStyle: "italic",
+    },
 });
 
 // ── Markdown block spacing ─────────────────────────────────────────
@@ -397,15 +401,22 @@ const urlPasteExtension = EditorView.domEventHandlers({
 
 // ── Wiki-link autocompletion ──────────────────────────────────────
 
-// A StateField that holds the current list of slugs available for completion.
-// Reconfigured via a Compartment whenever the slug list changes.
-const slugsField = StateField.define<string[]>({
-    create: () => [],
+// A StateField that holds the current lists of wiki-link targets available
+// for completion: slugs that resolve (notes + heading anchors) and broken
+// targets already used somewhere in the cave but without a note yet.
+// Reconfigured via a Compartment whenever the lists change.
+interface SlugLists {
+    slugs: string[];
+    broken: string[];
+}
+
+const slugsField = StateField.define<SlugLists>({
+    create: () => ({ slugs: [], broken: [] }),
     update: (value) => value,
 });
 
-function slugsExtension(slugs: string[]) {
-    return slugsField.init(() => slugs);
+function slugsExtension(slugs: string[], broken: string[]) {
+    return slugsField.init(() => ({ slugs, broken }));
 }
 
 // Insert `<label>]]`, overwriting any `]]` that closeBrackets already inserted
@@ -429,19 +440,32 @@ function wikiLinkCompletionSource(context: CompletionContext): CompletionResult 
     if (!match) return null;
 
     const typed = match.text.slice(2);
-    const slugs = context.state.field(slugsField);
+    const { slugs, broken } = context.state.field(slugsField);
 
     const options = slugs.map((slug) => ({
         label: slug,
         apply: applyWikiLink,
     }));
 
+    // Broken-link targets already used elsewhere in the cave: linking one
+    // renders as a broken link until its note is created. Shown in italics
+    // (via optionClass) and ranked just below resolving slugs on equal matches.
+    for (const target of broken) {
+        options.push({
+            label: target,
+            type: "broken",
+            boost: -1,
+            apply: applyWikiLink,
+        } as (typeof options)[number]);
+    }
+
     // Obsidian-style: when the typed text matches no existing slug, offer to
     // link a not-yet-existing note. It sorts last (negative boost) and inserts
     // the typed text verbatim — the resulting link renders as a broken link
     // until the note is created.
     const trimmed = typed.trim();
-    if (trimmed.length > 0 && !slugs.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
+    const known = (s: string) => s.toLowerCase() === trimmed.toLowerCase();
+    if (trimmed.length > 0 && !slugs.some(known) && !broken.some(known)) {
         options.push({
             label: trimmed,
             detail: "Create new note",
@@ -524,6 +548,7 @@ export interface CreateConfig {
     fontFamily?: string;
     fontSize?: string;
     slugs?: string[];
+    brokenSlugs?: string[];
     onChange?: (content: string) => void;
     onSelectionChange?: (selectedText: string) => void;
     onLinkClick?: (kind: "wiki" | "url", target: string) => void;
@@ -562,8 +587,12 @@ export function create(
                 fontExtension(config.fontFamily ?? "", config.fontSize ?? "")
             ),
             readOnlyCompartment.of(EditorState.readOnly.of(false)),
-            slugsCompartment.of(slugsExtension(config.slugs ?? [])),
-            autocompletion({ override: [wikiLinkCompletionSource, alertCompletionSource] }),
+            slugsCompartment.of(slugsExtension(config.slugs ?? [], config.brokenSlugs ?? [])),
+            autocompletion({
+                override: [wikiLinkCompletionSource, alertCompletionSource],
+                optionClass: (completion) =>
+                    completion.type === "broken" ? "cm-completion-broken" : "",
+            }),
             markdown(),
             closeBrackets(),
             bracketMatching(),
@@ -656,11 +685,11 @@ export function setReadOnly(handle: number, readOnly: boolean): void {
     });
 }
 
-export function setSlugs(handle: number, slugs: string[]): void {
+export function setSlugs(handle: number, slugs: string[], brokenSlugs: string[] = []): void {
     const inst = instances.get(handle);
     if (!inst) return;
     inst.view.dispatch({
-        effects: inst.slugsCompartment.reconfigure(slugsExtension(slugs)),
+        effects: inst.slugsCompartment.reconfigure(slugsExtension(slugs, brokenSlugs)),
     });
 }
 

@@ -99,6 +99,13 @@ pub(crate) fn list_anchors(state: tauri::State<AppState>) -> Result<Vec<String>,
     state.with_cave(|cave| Ok(cave.list_anchors()))
 }
 
+/// List all broken wiki-link targets used across the cave (targets that
+/// resolve to neither a note nor an anchor), for wiki-link completion.
+#[tauri::command]
+pub(crate) fn list_broken_links(state: tauri::State<AppState>) -> Result<Vec<String>, CaveError> {
+    state.with_cave(|cave| Ok(cave.list_broken_links()))
+}
+
 /// Resolve a raw wiki-link target (the text inside `[[...]]`) to its href:
 /// a canonical note slug, or `note-slug#anchor-id` for heading anchors.
 /// Returns `None` for broken links. Used by the editor to follow wiki-links

@@ -136,6 +136,11 @@ pub async fn fetch_anchors() -> Result<Vec<String>, String> {
     invoke_no_args("list_anchors").await
 }
 
+/// Broken wiki-link targets used across the cave, for wiki-link completion.
+pub async fn fetch_broken_links() -> Result<Vec<String>, String> {
+    invoke_no_args("list_broken_links").await
+}
+
 /// Resolve a raw wiki-link target (the text inside `[[...]]`) to its href
 /// (`slug` or `slug#anchor`). `None` means the link is broken.
 pub async fn resolve_wiki_link(target: &str) -> Result<Option<String>, String> {
