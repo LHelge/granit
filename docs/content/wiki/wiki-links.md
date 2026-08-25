@@ -26,9 +26,19 @@ Plain headings without a `{#id}` attribute are not link targets.
 > [!WARNING]
 > Anchor ids must be globally unique against both note slugs and all other anchors. A duplicate id causes Granit to refuse to open the cave until the conflict is resolved.
 
+# Writing links in the editor
+
+Typing `[[` in the editor opens slug completion over everything linkable: note slugs, heading anchors, and — shown in italics — broken-link targets already used elsewhere in the cave, so repeated references to a not-yet-created note converge on one spelling. If nothing matches what you typed, the last entry links it verbatim as a new target.
+
+`Cmd/Ctrl+K` wraps the current selection as a wiki-link directly. Wiki-links are also styled in the editor as you type: resolving targets look like links, while unresolved ones render muted — the same at-a-glance signal the reader gives you, live.
+
+# Following links while editing {#following-links-while-editing}
+
+In the reader, links are plainly clickable. In the editor, hold `Cmd/Ctrl` and click: wiki-links navigate to their note (scrolling to the heading for anchor targets), web links open in your browser, and clicking a broken link creates the note and opens it for editing.
+
 # Broken links
 
-A wiki-link whose slug matches no note and no anchor is a broken link. Granit styles broken links distinctly in the reader so you can spot them at a glance — for example, after renaming or deleting a note that other notes still reference.
+A wiki-link whose slug matches no note and no anchor is a broken link. Granit styles broken links distinctly in both the reader and the editor so you can spot them at a glance — for example, after renaming or deleting a note that other notes still reference. Clicking a broken link creates the missing note.
 
 # Backlinks
 
