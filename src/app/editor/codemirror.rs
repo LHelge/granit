@@ -19,6 +19,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = focus)]
     fn cm_focus(handle: u32);
 
+    #[wasm_bindgen(js_namespace = GranitEditor, js_name = openSearch)]
+    fn cm_open_search(handle: u32);
+
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = setFont)]
     fn cm_set_font(handle: u32, family: &str, size: &str);
 
@@ -133,6 +136,11 @@ pub fn get_content(handle: EditorHandle) -> String {
 /// Focus the editor.
 pub fn focus(handle: EditorHandle) {
     cm_focus(handle.0);
+}
+
+/// Open the find/replace panel.
+pub fn open_search(handle: EditorHandle) {
+    cm_open_search(handle.0);
 }
 
 /// Update the editor font family and size.

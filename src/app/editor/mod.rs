@@ -64,6 +64,8 @@ pub(super) struct EditorCtx {
     pub focus_title: RwSignal<bool>,
     /// When true, the Writer should focus the content textarea.
     pub focus_content: RwSignal<bool>,
+    /// When true, the Writer should open the find/replace panel.
+    pub open_search: RwSignal<bool>,
     /// Shared signal for how the next note switch should open.
     open_in_edit: RwSignal<EditOpen>,
     /// Tracks the previously active document to detect real switches.
@@ -460,6 +462,7 @@ pub fn Editor() -> impl IntoView {
         rendered_note: RwSignal::new(None),
         focus_title: RwSignal::new(false),
         focus_content: RwSignal::new(false),
+        open_search: RwSignal::new(false),
         open_in_edit: expect_context::<OpenInEdit>().0,
         prev_doc_key: RwSignal::new(None),
         tags: RwSignal::new(Vec::new()),
@@ -629,6 +632,17 @@ pub fn Editor() -> impl IntoView {
             // Floating action buttons — always top-right, no layout impact
             <Show when=has_document>
                 <div class="absolute top-3 right-4 z-10 flex items-center gap-1">
+                    // Find/replace (edit mode): opens the editor search panel
+                    <Show when=move || ctx.editing.get()>
+                        <div class="tooltip tooltip-bottom" data-tip="Find in note">
+                            <button
+                                class="btn btn-ghost btn-xs btn-square"
+                                on:click=move |_| ctx.open_search.set(true)
+                            >
+                                <Icon icon=icondata_lu::LuSearch width="1rem" height="1rem"/>
+                            </button>
+                        </div>
+                    </Show>
                     // Copy rendered note (both modes): rich text for Word/
                     // Teams-style targets, markdown as plain-text fallback
                     <div

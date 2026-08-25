@@ -27,6 +27,22 @@ import {
 } from "@codemirror/commands";
 import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
 import {
+    search,
+    searchKeymap,
+    highlightSelectionMatches,
+    SearchQuery,
+    getSearchQuery,
+    setSearchQuery,
+    openSearchPanel,
+    closeSearchPanel,
+    findNext,
+    findPrevious,
+    replaceNext,
+    replaceAll,
+} from "@codemirror/search";
+import { runScopeHandlers } from "@codemirror/view";
+import type { Panel } from "@codemirror/view";
+import {
     autocompletion,
     closeBrackets,
     closeBracketsKeymap,
@@ -137,6 +153,81 @@ const granitTheme = EditorView.theme({
     "&.cm-mod-down .cm-wiki-link, &.cm-mod-down .cm-md-link": {
         cursor: "pointer",
     },
+    // ── Search popover (Cmd/Ctrl+F) ───────────────────────────────
+    // The panel container floats over the editor's top-right corner
+    // instead of rendering as a full-width bar.
+    ".cm-panels.cm-panels-top": {
+        position: "absolute",
+        top: "0.25rem",
+        right: "1rem",
+        left: "auto",
+        width: "auto",
+        zIndex: "20",
+        backgroundColor: "transparent",
+        border: "none",
+    },
+    ".cm-panel.cm-search": {
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.25rem",
+        padding: "0.5rem",
+        fontSize: "0.8125rem",
+        color: "var(--color-base-content)",
+        backgroundColor: "var(--color-base-200)",
+        border: "1px solid color-mix(in oklch, var(--color-base-content) 12%, transparent)",
+        borderRadius: "0.5rem",
+        boxShadow: "0 4px 12px color-mix(in oklch, var(--color-neutral) 30%, transparent)",
+    },
+    ".cm-search-row": {
+        display: "flex",
+        alignItems: "center",
+        gap: "0.25rem",
+    },
+    ".cm-panel.cm-search .cm-textfield": {
+        backgroundColor: "var(--color-base-100)",
+        border: "1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent)",
+        borderRadius: "0.375rem",
+        padding: "0.2rem 0.5rem",
+        width: "11rem",
+        color: "var(--color-base-content)",
+        outline: "none",
+    },
+    ".cm-panel.cm-search .cm-textfield:focus": {
+        borderColor: "var(--color-primary)",
+    },
+    ".cm-panel.cm-search .cm-button": {
+        background: "var(--color-base-300)",
+        backgroundImage: "none",
+        border: "1px solid color-mix(in oklch, var(--color-base-content) 15%, transparent)",
+        borderRadius: "0.375rem",
+        padding: "0.2rem 0.5rem",
+        color: "var(--color-base-content)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+    },
+    ".cm-panel.cm-search .cm-button:hover": {
+        background: "color-mix(in oklch, var(--color-base-content) 8%, var(--color-base-300))",
+    },
+    ".cm-panel.cm-search .cm-search-toggle": {
+        fontSize: "0.6875rem",
+        fontFamily: "monospace",
+        color: "color-mix(in oklch, var(--color-base-content) 60%, transparent)",
+    },
+    ".cm-panel.cm-search .cm-search-toggle-active": {
+        color: "var(--color-primary)",
+        borderColor: "var(--color-primary)",
+    },
+    ".cm-searchMatch": {
+        backgroundColor: "color-mix(in oklch, var(--color-warning) 30%, transparent)",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: "color-mix(in oklch, var(--color-warning) 55%, transparent)",
+    },
+    // Other occurrences of the currently selected text
+    ".cm-selectionMatch": {
+        backgroundColor: "color-mix(in oklch, var(--color-primary) 12%, transparent)",
+    },
 });
 
 // Tooltip styles must use baseTheme because CM6 renders tooltips at the
@@ -215,6 +306,144 @@ const markdownBlockSpacing = ViewPlugin.fromClass(
     },
     { decorations: (v) => v.decorations }
 );
+
+// ── Search panel ───────────────────────────────────────────────────
+
+// Search options persist across panel opens for the session; they render
+// as compact toggle chips next to the find field.
+const searchOptions = { caseSensitive: false, regexp: false, wholeWord: false };
+
+// The panel renders as a floating popover in the editor's top-right corner
+// (see the `.cm-panels` styling) rather than a full-width bar.
+function createSearchPanel(view: EditorView): Panel {
+    const dom = document.createElement("div");
+    dom.className = "cm-search";
+
+    const field = (name: string, placeholder: string) => {
+        const input = document.createElement("input");
+        input.className = "cm-textfield";
+        input.name = name;
+        input.placeholder = placeholder;
+        input.setAttribute("aria-label", placeholder);
+        return input;
+    };
+    const button = (label: string, title: string, onClick: () => void) => {
+        const b = document.createElement("button");
+        b.className = "cm-button";
+        b.type = "button";
+        b.textContent = label;
+        b.title = title;
+        b.onclick = onClick;
+        return b;
+    };
+
+    const searchInput = field("search", "Find");
+    searchInput.setAttribute("main-field", "true");
+    const replaceInput = field("replace", "Replace");
+
+    // openSearchPanel seeds the query state (from the selection, falling
+    // back to the previous query) before the panel is created — read it.
+    const initial = getSearchQuery(view.state);
+    searchInput.value = initial.search;
+    replaceInput.value = initial.replace;
+
+    const commit = () =>
+        view.dispatch({
+            effects: setSearchQuery.of(
+                new SearchQuery({
+                    search: searchInput.value,
+                    replace: replaceInput.value,
+                    ...searchOptions,
+                })
+            ),
+        });
+    searchInput.oninput = commit;
+    replaceInput.oninput = commit;
+
+    // Option toggle chips: match case / regexp / whole word
+    const toggleChip = (label: string, title: string, key: keyof typeof searchOptions) => {
+        const chip = document.createElement("button");
+        chip.className = "cm-button cm-search-toggle";
+        chip.type = "button";
+        chip.textContent = label;
+        chip.title = title;
+        const refresh = () => {
+            chip.classList.toggle("cm-search-toggle-active", searchOptions[key]);
+            chip.setAttribute("aria-pressed", String(searchOptions[key]));
+        };
+        chip.onclick = () => {
+            searchOptions[key] = !searchOptions[key];
+            refresh();
+            commit();
+        };
+        refresh();
+        return chip;
+    };
+
+    dom.onkeydown = (event: KeyboardEvent) => {
+        // Give panel-scoped bindings (Escape close, Mod-f, F3/Mod-g) first go.
+        if (runScopeHandlers(view, event, "search-panel")) {
+            event.preventDefault();
+            return;
+        }
+        if (event.key === "Enter" && event.target === searchInput) {
+            event.preventDefault();
+            (event.shiftKey ? findPrevious : findNext)(view);
+        } else if (event.key === "Enter" && event.target === replaceInput) {
+            event.preventDefault();
+            replaceNext(view);
+        }
+    };
+
+    const row = (...children: HTMLElement[]) => {
+        const div = document.createElement("div");
+        div.className = "cm-search-row";
+        div.append(...children);
+        return div;
+    };
+    dom.append(
+        row(
+            searchInput,
+            toggleChip("Aa", "Match case", "caseSensitive"),
+            toggleChip(".*", "Regular expression", "regexp"),
+            toggleChip("W", "Whole word", "wholeWord"),
+            button("↑", "Previous match (Shift+Enter)", () => findPrevious(view)),
+            button("↓", "Next match (Enter)", () => findNext(view)),
+            button("✕", "Close (Esc)", () => closeSearchPanel(view))
+        ),
+        row(
+            replaceInput,
+            button("Replace", "Replace current match", () => replaceNext(view)),
+            button("All", "Replace all matches", () => replaceAll(view))
+        )
+    );
+
+    return {
+        dom,
+        top: true,
+        mount() {
+            searchInput.focus();
+            searchInput.select();
+            // Apply the session's search options to the seeded query.
+            // Deferred: a panel mounts mid-update, where dispatching a
+            // transaction is not allowed.
+            setTimeout(commit, 0);
+        },
+        update(update: ViewUpdate) {
+            // Keep the fields in sync with query changes made outside the
+            // panel (e.g. re-seeding from the selection on reopen).
+            for (const tr of update.transactions) {
+                for (const effect of tr.effects) {
+                    if (effect.is(setSearchQuery)) {
+                        const query = effect.value as SearchQuery;
+                        searchInput.value = query.search;
+                        replaceInput.value = query.replace;
+                    }
+                }
+            }
+        },
+    };
+}
 
 // ── Editing commands (formatting, links, tasks) ────────────────────
 
@@ -748,6 +977,8 @@ export function create(
             history(),
             drawSelection(),
             highlightActiveLine(),
+            highlightSelectionMatches(),
+            search({ top: true, createPanel: createSearchPanel }),
             scrollPastEnd(),
             EditorView.lineWrapping,
             markdownBlockSpacing,
@@ -761,6 +992,7 @@ export function create(
                 // Before defaultKeymap: Enter continues lists/quotes and
                 // Backspace dissolves an empty list marker.
                 ...markdownKeymap,
+                ...searchKeymap,
                 ...defaultKeymap,
                 ...historyKeymap,
                 indentWithTab,
@@ -814,6 +1046,11 @@ export function getContent(handle: number): string {
 export function focus(handle: number): void {
     const inst = instances.get(handle);
     if (inst) inst.view.focus();
+}
+
+export function openSearch(handle: number): void {
+    const inst = instances.get(handle);
+    if (inst) openSearchPanel(inst.view);
 }
 
 export function setFont(
