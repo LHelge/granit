@@ -387,6 +387,20 @@ pub(crate) fn set_active_note(
     })
 }
 
+/// Render `content` and place it on the system clipboard as rich text
+/// (HTML), with the raw markdown as the plain-text fallback — pasting into
+/// rich-text targets (Word, Teams, ...) keeps formatting, while plain-text
+/// targets receive the markdown source. Rendered for use outside the app:
+/// wiki-links flatten to plain text and checkboxes become text symbols.
+#[tauri::command]
+pub(crate) fn copy_note_html(content: String, app: tauri::AppHandle) -> Result<(), CaveError> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let html = Markdown::new(&content).render_for_export();
+    app.clipboard()
+        .write_html(html, Some(content))
+        .map_err(|e| CaveError::Clipboard(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
