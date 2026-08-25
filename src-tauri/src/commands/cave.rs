@@ -10,12 +10,12 @@ pub(super) fn render_markdown_for_state(state: &AppState, content: &str) -> Stri
         .unwrap_or_else(|_| md.render_html())
 }
 
-/// Spawn a background task to update the embedding for a note.
+/// Queue a debounced embedding update for a note. Coalesced in the vector
+/// index so continuous autosaves don't re-embed on every save; deletions
+/// still remove their entry immediately via [`spawn_index_remove`].
 fn spawn_index_update(state: &AppState, slug: String) {
     if let Some(index) = state.vector_index() {
-        tauri::async_runtime::spawn(async move {
-            index.update_note(&slug).await;
-        });
+        index.schedule_note_update(slug);
     }
 }
 
