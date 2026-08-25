@@ -26,7 +26,7 @@ extern "C" {
     fn cm_set_read_only(handle: u32, read_only: bool);
 
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = setSlugs)]
-    fn cm_set_slugs(handle: u32, slugs: js_sys::Array);
+    fn cm_set_slugs(handle: u32, slugs: js_sys::Array, broken_slugs: js_sys::Array);
 
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = destroy)]
     fn cm_destroy(handle: u32);
@@ -146,13 +146,17 @@ pub fn set_read_only(handle: EditorHandle, read_only: bool) {
     cm_set_read_only(handle.0, read_only);
 }
 
-/// Update the slug list for wiki-link autocompletion.
-pub fn set_slugs(handle: EditorHandle, slugs: &[String]) {
-    let js_slugs: js_sys::Array = slugs
-        .iter()
-        .map(|s| wasm_bindgen::JsValue::from_str(s))
-        .collect();
-    cm_set_slugs(handle.0, js_slugs);
+/// Update the wiki-link autocompletion lists: `slugs` resolve to notes or
+/// heading anchors; `broken_slugs` are broken-link targets already used in
+/// the cave (offered as "not created yet" completions).
+pub fn set_slugs(handle: EditorHandle, slugs: &[String], broken_slugs: &[String]) {
+    let to_array = |items: &[String]| -> js_sys::Array {
+        items
+            .iter()
+            .map(|s| wasm_bindgen::JsValue::from_str(s))
+            .collect()
+    };
+    cm_set_slugs(handle.0, to_array(slugs), to_array(broken_slugs));
 }
 
 /// Destroy the editor instance and free resources.

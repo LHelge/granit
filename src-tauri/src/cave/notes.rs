@@ -413,41 +413,66 @@ impl Cave {
         }
     }
 
-    // ── Backlinks ──────────────────────────────────────────────────
+    // ── Backlinks and broken links ─────────────────────────────────
 
-    pub(crate) fn build_backlinks(
+    /// Scan every note body once and build both wiki-link indexes: the
+    /// backlink graph (resolved targets) and the broken-link list
+    /// (unresolved targets, deduplicated case-insensitively keeping the
+    /// first-seen spelling, sorted).
+    pub(crate) fn build_link_graph(
         notes: &HashMap<String, std::path::PathBuf>,
         anchors: &HashMap<String, String>,
-    ) -> HashMap<String, Vec<String>> {
+    ) -> (HashMap<String, Vec<String>>, Vec<String>) {
         let mut backlinks: HashMap<String, HashSet<String>> = HashMap::new();
+        // Lowercased target → first-seen raw spelling.
+        let mut broken: HashMap<String, String> = HashMap::new();
 
-        for (source_slug, abs_path) in notes {
+        // Deterministic order so "first-seen spelling wins" is stable across runs.
+        let mut sources: Vec<(&String, &std::path::PathBuf)> = notes.iter().collect();
+        sources.sort_by_key(|(slug, _)| slug.to_lowercase());
+
+        for (source_slug, abs_path) in sources {
             let Ok(raw) = std::fs::read_to_string(abs_path) else {
                 continue;
             };
 
-            for target_slug in crate::markdown::Markdown::new(&raw)
-                .outgoing_links(|name| Self::resolve_link_in(notes, anchors, name))
-            {
-                if target_slug == *source_slug {
-                    continue;
+            for target in crate::markdown::Markdown::new(&raw).wiki_link_targets() {
+                match Self::resolve_link_in(notes, anchors, &target) {
+                    Some(href) => {
+                        // Strip any `#anchor` fragment: backlinks are note-level.
+                        let target_slug = href
+                            .split_once('#')
+                            .map_or(href.clone(), |(note, _)| note.to_string());
+                        if target_slug == *source_slug {
+                            continue;
+                        }
+                        backlinks
+                            .entry(target_slug)
+                            .or_default()
+                            .insert(source_slug.clone());
+                    }
+                    None => {
+                        if !target.trim().is_empty() {
+                            broken.entry(target.to_lowercase()).or_insert(target);
+                        }
+                    }
                 }
-
-                backlinks
-                    .entry(target_slug)
-                    .or_default()
-                    .insert(source_slug.clone());
             }
         }
 
-        backlinks
+        let backlinks = backlinks
             .into_iter()
             .map(|(target_slug, source_slugs)| {
                 let mut source_slugs: Vec<String> = source_slugs.into_iter().collect();
                 source_slugs.sort_by_key(|slug| slug.to_lowercase());
                 (target_slug, source_slugs)
             })
-            .collect()
+            .collect();
+
+        let mut broken: Vec<String> = broken.into_values().collect();
+        broken.sort_by_key(|target| target.to_lowercase());
+
+        (backlinks, broken)
     }
 
     /// Build the heading-anchor index (anchor id → owning note slug) by scanning
@@ -513,7 +538,7 @@ impl Cave {
     pub(crate) fn rebuild_link_indexes(&mut self) {
         let (anchors, _collision) = Self::collect_anchors(&self.notes);
         self.anchors = anchors;
-        self.backlinks = Self::build_backlinks(&self.notes, &self.anchors);
+        (self.backlinks, self.broken_links) = Self::build_link_graph(&self.notes, &self.anchors);
     }
 
     pub fn backlink_slugs(&self, slug: &str) -> Result<Vec<String>, CaveError> {
@@ -1392,6 +1417,21 @@ mod tests {
         assert_eq!(
             cave.backlink_slugs("target").unwrap(),
             vec!["source-a".to_string(), "source-b".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_anchor_link_backlinks_are_note_level() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.md"), "# Section {#section}\n").unwrap();
+        std::fs::write(dir.path().join("source.md"), "[[section]]\n").unwrap();
+
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // The anchor fragment is stripped: the backlink lands on the note.
+        assert_eq!(
+            cave.backlink_slugs("target").unwrap(),
+            vec!["source".to_string()]
         );
     }
 
