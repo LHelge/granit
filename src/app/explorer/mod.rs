@@ -22,6 +22,7 @@ use tree_view::TreeView;
 pub fn Explorer(
     set_settings_open: WriteSignal<bool>,
     set_info_open: WriteSignal<bool>,
+    set_keybinds_open: WriteSignal<bool>,
     width: ReadSignal<u16>,
 ) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
@@ -137,7 +138,11 @@ pub fn Explorer(
             </Show>
 
             // Bottom bar: cave selector + settings (always visible)
-            <CaveSelector set_settings_open=set_settings_open set_info_open=set_info_open />
+            <CaveSelector
+                set_settings_open=set_settings_open
+                set_info_open=set_info_open
+                set_keybinds_open=set_keybinds_open
+            />
         </aside>
     }
 }
