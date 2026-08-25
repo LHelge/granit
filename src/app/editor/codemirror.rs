@@ -43,6 +43,7 @@ pub struct EditorHandle(u32);
 struct EditorClosures {
     _on_change: Closure<dyn Fn(String)>,
     _on_selection: Closure<dyn Fn(String)>,
+    _on_link_click: Closure<dyn Fn(String, String)>,
 }
 
 thread_local! {
@@ -55,9 +56,12 @@ thread_local! {
 /// `on_change` fires when the document content changes (user edits).
 /// `on_selection_change` fires when the selection changes, with the
 /// currently selected text (empty string if no selection).
+/// `on_link_click` fires on Cmd/Ctrl+click on a link, with the link kind
+/// (`"wiki"` or `"url"`) and the raw target (wiki target text or URL).
 ///
 /// The callbacks are stored in a per-handle registry and released when
 /// [`destroy`] is called.
+#[allow(clippy::too_many_arguments)]
 pub fn create(
     element: &web_sys::HtmlElement,
     content: &str,
@@ -66,9 +70,11 @@ pub fn create(
     slugs: &[String],
     on_change: impl Fn(String) + 'static,
     on_selection_change: impl Fn(String) + 'static,
+    on_link_click: impl Fn(String, String) + 'static,
 ) -> EditorHandle {
     let on_change_cb = Closure::wrap(Box::new(on_change) as Box<dyn Fn(String)>);
     let on_sel_cb = Closure::wrap(Box::new(on_selection_change) as Box<dyn Fn(String)>);
+    let on_link_click_cb = Closure::wrap(Box::new(on_link_click) as Box<dyn Fn(String, String)>);
 
     let js_slugs: js_sys::Array = slugs
         .iter()
@@ -94,6 +100,7 @@ pub fn create(
     let _ = js_sys::Reflect::set(&config, &"slugs".into(), &js_slugs.into());
     let _ = js_sys::Reflect::set(&config, &"onChange".into(), on_change_cb.as_ref());
     let _ = js_sys::Reflect::set(&config, &"onSelectionChange".into(), on_sel_cb.as_ref());
+    let _ = js_sys::Reflect::set(&config, &"onLinkClick".into(), on_link_click_cb.as_ref());
 
     let handle = cm_create(element, &config.into());
 
@@ -104,6 +111,7 @@ pub fn create(
             EditorClosures {
                 _on_change: on_change_cb,
                 _on_selection: on_sel_cb,
+                _on_link_click: on_link_click_cb,
             },
         );
     });

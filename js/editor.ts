@@ -34,6 +34,7 @@ import {
     HighlightStyle,
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
+import type { SyntaxNode } from "@lezer/common";
 
 // ── Theme ──────────────────────────────────────────────────────────
 
@@ -115,6 +116,14 @@ const granitTheme = EditorView.theme({
         paddingTop: "0.6em",
         paddingBottom: "0.15em",
     },
+    ".cm-wiki-link": {
+        color: "var(--color-primary)",
+        textDecoration: "underline",
+    },
+    // Pointer cursor while the follow-link modifier (Cmd/Ctrl) is held
+    "&.cm-mod-down .cm-wiki-link, &.cm-mod-down .cm-md-link": {
+        cursor: "pointer",
+    },
 });
 
 // Tooltip styles must use baseTheme because CM6 renders tooltips at the
@@ -189,6 +198,172 @@ const markdownBlockSpacing = ViewPlugin.fromClass(
     },
     { decorations: (v) => v.decorations }
 );
+
+// ── Clickable links (Cmd/Ctrl+click to follow) ─────────────────────
+
+// Matches `[[target]]` / `[[target|label]]` on a single line.
+const wikiLinkRegex = /\[\[([^[\]\n]+)\]\]/g;
+
+// Wiki-links inside code spans/blocks are literal text, not links.
+function inCodeContext(state: EditorState, pos: number): boolean {
+    for (
+        let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1);
+        node;
+        node = node.parent
+    ) {
+        if (node.name.includes("Code")) return true;
+    }
+    return false;
+}
+
+interface WikiLinkMatch {
+    from: number;
+    to: number;
+    target: string;
+}
+
+// All wiki-links intersecting [from, to), with their raw targets
+// (the part before an optional `|label`).
+function wikiLinksIn(state: EditorState, from: number, to: number): WikiLinkMatch[] {
+    const matches: WikiLinkMatch[] = [];
+    const text = state.sliceDoc(from, to);
+    wikiLinkRegex.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = wikiLinkRegex.exec(text)) !== null) {
+        const start = from + m.index;
+        if (inCodeContext(state, start + 2)) continue;
+        const target = m[1].split("|")[0].trim();
+        if (target.length === 0) continue;
+        matches.push({ from: start, to: start + m[0].length, target });
+    }
+    return matches;
+}
+
+function wikiLinkTargetAt(state: EditorState, pos: number): string | null {
+    const line = state.doc.lineAt(pos);
+    const hit = wikiLinksIn(state, line.from, line.to).find(
+        (m) => m.from <= pos && pos < m.to
+    );
+    return hit ? hit.target : null;
+}
+
+// The http(s) URL of the markdown link, autolink, or bare URL at `pos`,
+// or null when there is none.
+function urlTargetAt(state: EditorState, pos: number): string | null {
+    for (
+        let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1);
+        node;
+        node = node.parent
+    ) {
+        let urlNode: SyntaxNode | null = null;
+        if (node.name === "URL") {
+            urlNode = node;
+        } else if (node.name === "Link" || node.name === "Autolink" || node.name === "Image") {
+            urlNode = node.getChild("URL");
+        } else {
+            continue;
+        }
+        if (!urlNode) return null;
+        const url = state.sliceDoc(urlNode.from, urlNode.to);
+        return /^https?:\/\//i.test(url) ? url : null;
+    }
+    return null;
+}
+
+// Decorates wiki-links (styling; the markdown parser treats them as plain
+// text) and tags markdown links/autolinks with `cm-md-link` so the pointer
+// cursor can target them while the follow-link modifier is held.
+const mdLinkDeco = Decoration.mark({ class: "cm-md-link" });
+const wikiLinkDeco = Decoration.mark({ class: "cm-wiki-link" });
+
+function buildLinkDecorations(view: EditorView): DecorationSet {
+    const ranges: { from: number; to: number; deco: Decoration }[] = [];
+    for (const { from, to } of view.visibleRanges) {
+        for (const m of wikiLinksIn(view.state, from, to)) {
+            ranges.push({ from: m.from, to: m.to, deco: wikiLinkDeco });
+        }
+        syntaxTree(view.state).iterate({
+            from,
+            to,
+            enter(node) {
+                if (node.name === "Link" || node.name === "Autolink") {
+                    ranges.push({ from: node.from, to: node.to, deco: mdLinkDeco });
+                } else if (node.name === "URL" && !node.node.parent?.name.match(/^(Link|Autolink|Image)$/)) {
+                    // Bare URL autolinked by GFM
+                    ranges.push({ from: node.from, to: node.to, deco: mdLinkDeco });
+                }
+            },
+        });
+    }
+    ranges.sort((a, b) => a.from - b.from || a.to - b.to);
+    const builder = new RangeSetBuilder<Decoration>();
+    for (const r of ranges) builder.add(r.from, r.to, r.deco);
+    return builder.finish();
+}
+
+const linkDecorations = ViewPlugin.fromClass(
+    class {
+        decorations: DecorationSet;
+        constructor(view: EditorView) {
+            this.decorations = buildLinkDecorations(view);
+        }
+        update(update: ViewUpdate) {
+            if (update.docChanged || update.viewportChanged || update.startState.tree !== syntaxTree(update.state)) {
+                this.decorations = buildLinkDecorations(update.view);
+            }
+        }
+    },
+    { decorations: (v) => v.decorations }
+);
+
+// Toggles `cm-mod-down` on the editor root while Cmd/Ctrl is held, so links
+// show a pointer cursor exactly when a click would follow them.
+const modKeyWatcher = ViewPlugin.fromClass(
+    class {
+        private onKey = (e: KeyboardEvent) => this.set(e.metaKey || e.ctrlKey);
+        private onClear = () => this.set(false);
+        constructor(private view: EditorView) {
+            window.addEventListener("keydown", this.onKey);
+            window.addEventListener("keyup", this.onKey);
+            window.addEventListener("blur", this.onClear);
+        }
+        private set(on: boolean) {
+            this.view.dom.classList.toggle("cm-mod-down", on);
+        }
+        destroy() {
+            window.removeEventListener("keydown", this.onKey);
+            window.removeEventListener("keyup", this.onKey);
+            window.removeEventListener("blur", this.onClear);
+        }
+    }
+);
+
+// Cmd/Ctrl+click follows the link under the cursor; a plain click still
+// just places the cursor. Reports the raw target to the host app, which
+// resolves wiki targets and opens URLs.
+function linkClickExtension(onLinkClick: (kind: "wiki" | "url", target: string) => void) {
+    return EditorView.domEventHandlers({
+        mousedown(event: MouseEvent, view: EditorView) {
+            if (event.button !== 0 || !(event.metaKey || event.ctrlKey)) return false;
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (pos === null) return false;
+
+            const wiki = wikiLinkTargetAt(view.state, pos);
+            if (wiki !== null) {
+                event.preventDefault();
+                onLinkClick("wiki", wiki);
+                return true;
+            }
+            const url = urlTargetAt(view.state, pos);
+            if (url !== null) {
+                event.preventDefault();
+                onLinkClick("url", url);
+                return true;
+            }
+            return false;
+        },
+    });
+}
 
 // ── URL paste extension ────────────────────────────────────────────
 
@@ -351,6 +526,7 @@ export interface CreateConfig {
     slugs?: string[];
     onChange?: (content: string) => void;
     onSelectionChange?: (selectedText: string) => void;
+    onLinkClick?: (kind: "wiki" | "url", target: string) => void;
 }
 
 export function create(
@@ -397,6 +573,9 @@ export function create(
             highlightActiveLine(),
             EditorView.lineWrapping,
             markdownBlockSpacing,
+            linkDecorations,
+            modKeyWatcher,
+            ...(config.onLinkClick ? [linkClickExtension(config.onLinkClick)] : []),
             urlPasteExtension,
             keymap.of([
                 ...closeBracketsKeymap,

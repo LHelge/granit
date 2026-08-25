@@ -130,6 +130,40 @@ pub(super) fn Writer() -> impl IntoView {
                 };
                 ctx.app.selected_note_text.set(text);
             },
+            // onLinkClick — Cmd/Ctrl+click on a link in the editor
+            move |kind: String, target: String| match kind.as_str() {
+                "url" => {
+                    leptos::task::spawn_local(async move {
+                        if let Err(e) = crate::app::ipc::open_url(&target).await {
+                            ctx.app
+                                .push_error("editor", format!("Failed to open link: {e}"));
+                        }
+                    });
+                }
+                "wiki" => {
+                    leptos::task::spawn_local(async move {
+                        match crate::app::ipc::resolve_wiki_link(&target).await {
+                            Ok(Some(href)) => {
+                                let (slug, fragment) = match href.split_once('#') {
+                                    Some((slug, anchor)) => {
+                                        (slug.to_string(), Some(anchor.to_string()))
+                                    }
+                                    None => (href, None),
+                                };
+                                ctx.navigate_wiki_link(slug, fragment, false);
+                            }
+                            // Unresolved target: create the note, like the
+                            // reader does for broken links.
+                            Ok(None) => ctx.navigate_wiki_link(target, None, true),
+                            Err(e) => {
+                                ctx.app
+                                    .push_error("editor", format!("Failed to resolve link: {e}"));
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            },
         );
 
         editor_handle.with_value(|cell| cell.set(Some(h)));

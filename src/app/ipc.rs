@@ -136,6 +136,12 @@ pub async fn fetch_anchors() -> Result<Vec<String>, String> {
     invoke_no_args("list_anchors").await
 }
 
+/// Resolve a raw wiki-link target (the text inside `[[...]]`) to its href
+/// (`slug` or `slug#anchor`). `None` means the link is broken.
+pub async fn resolve_wiki_link(target: &str) -> Result<Option<String>, String> {
+    invoke_cmd("resolve_wiki_link", &HashMap::from([("target", target)])).await
+}
+
 pub async fn search_content(query: &str) -> Result<Vec<ContentMatch>, String> {
     #[derive(Serialize)]
     struct Args<'a> {

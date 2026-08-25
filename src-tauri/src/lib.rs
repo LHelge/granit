@@ -41,6 +41,7 @@ pub fn run() {
             move_folder,
             list_notes,
             list_anchors,
+            resolve_wiki_link,
             list_templates,
             search_content,
             list_folders,
