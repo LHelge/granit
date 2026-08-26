@@ -13,6 +13,55 @@ fn request_animation_frame(f: impl FnOnce() + 'static) {
         .request_animation_frame(cb.as_ref().unchecked_ref());
 }
 
+/// Tera completion variables per document kind, as `(label, detail)` pairs;
+/// `None` disables Tera support entirely (notes are plain markdown, and
+/// skills are loaded verbatim by `use_skill`, never rendered with Tera).
+///
+/// Mirrors the backend template contexts: `render_note_template` in
+/// `src-tauri/src/cave/templates.rs`, `assemble_system_prompt` in
+/// `src-tauri/src/agent/prompt.rs`, and `render_task` in
+/// `src-tauri/src/cave/agent_docs.rs`.
+fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'static str)>> {
+    match kind? {
+        DocumentKind::Note | DocumentKind::Skill => None,
+        DocumentKind::Template => Some(vec![
+            ("slug", "the new note's slug"),
+            ("date", "daily notes only"),
+            ("tomorrow", "daily notes only"),
+            ("yesterday", "daily notes only"),
+            ("year", "daily notes only"),
+            ("month", "daily notes only"),
+            ("day", "daily notes only"),
+            ("weekday", "daily notes only"),
+            ("weekday_short", "daily notes only"),
+        ]),
+        DocumentKind::SystemPrompt => Some(vec![
+            ("mode", "\"agent\" or \"ask\""),
+            ("tools", "enabled tool names"),
+            ("icons", "note icon IDs"),
+            ("skills", "list of name + description"),
+            ("today", "YYYY-MM-DD"),
+            ("year", ""),
+            ("month", ""),
+            ("day", ""),
+            ("weekday", ""),
+            ("weekday_short", ""),
+        ]),
+        DocumentKind::Task => Some(vec![
+            ("input", "text typed after the command"),
+            ("active_note", "slug of the open note, if any"),
+            ("today", "YYYY-MM-DD"),
+            ("tomorrow", ""),
+            ("yesterday", ""),
+            ("year", ""),
+            ("month", ""),
+            ("day", ""),
+            ("weekday", ""),
+            ("weekday_short", ""),
+        ]),
+    }
+}
+
 /// Raw markdown editor with title input and CodeMirror 6 content editor.
 #[component]
 pub(super) fn Writer() -> impl IntoView {
@@ -181,6 +230,20 @@ pub(super) fn Writer() -> impl IntoView {
         );
 
         editor_handle.with_value(|cell| cell.set(Some(h)));
+        // The tera-mode effect below only re-runs when the document kind
+        // changes, so apply the current kind once at mount.
+        codemirror::set_tera_mode(h, tera_variables(ctx.current_kind()).as_deref());
+    });
+
+    // Enable Tera highlighting/completion for template-like documents
+    // (templates, tasks, system prompt) and disable it for the rest.
+    Effect::new(move || {
+        let variables = tera_variables(ctx.current_kind());
+        editor_handle.with_value(|cell| {
+            if let Some(h) = cell.get() {
+                codemirror::set_tera_mode(h, variables.as_deref());
+            }
+        });
     });
 
     // Keep the completion slug lists up to date when notes (or their heading
