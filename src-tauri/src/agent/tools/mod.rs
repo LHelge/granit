@@ -1,11 +1,13 @@
 mod navigation;
 mod organization;
 mod reading;
+mod semantic;
 mod skills;
 mod todos;
 mod web;
 mod writing;
 
+use crate::agent::vectordb::CaveVectorIndex;
 use crate::commands::{with_shared_cave, SharedCave};
 use granit_types::{AgentConfig, AgentMode};
 pub use navigation::{ListFoldersTool, ListNotesTool, SearchContentTool, SearchNotesTool};
@@ -15,6 +17,7 @@ pub use organization::{
 };
 pub use reading::ReadNoteTool;
 use rig_agent::tool::server::ToolServer;
+pub use semantic::SemanticSearchTool;
 pub use skills::UseSkillTool;
 pub use todos::{ListTodosTool, ToggleTodoTool};
 pub use web::{WebFetchTool, WebSearchTool};
@@ -93,6 +96,10 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
         description: "Search inside note bodies (full-text)",
     },
     ToolMeta {
+        name: "semantic_search",
+        description: "Find notes semantically related to a query (requires embeddings/RAG enabled)",
+    },
+    ToolMeta {
         name: "list_todos",
         description: "List todo checkboxes from notes, with optional filtering",
     },
@@ -159,7 +166,15 @@ pub fn enabled_tool_names(config: &AgentConfig) -> Vec<String> {
 
 /// Build the full toolset from config, excluding disabled tools
 /// and mutating tools when in Ask mode.
-pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> ToolServer {
+///
+/// `vector_index` powers the `semantic_search` tool; when it is `None`
+/// (RAG disabled, or the embedding model failed to load) the tool is simply
+/// not registered.
+pub fn build_toolset(
+    cave: SharedCave,
+    config: &AgentConfig,
+    vector_index: Option<&CaveVectorIndex>,
+) -> ToolServer {
     let disabled = &config.disabled_tools;
     let ask_mode = config.mode == AgentMode::Ask;
     let mut server = ToolServer::new();
@@ -199,6 +214,17 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> ToolServer {
     for (name, add) in cave_entries {
         if !is_excluded(name) {
             server = add(server, cave.clone());
+        }
+    }
+
+    // Semantic search — requires the vector index (RAG enabled and the
+    // embedding model loaded).
+    if !is_excluded("semantic_search") {
+        if let Some(index) = vector_index {
+            server = server.tool(SemanticSearchTool {
+                index: index.clone(),
+                default_top_n: config.rag.top_n,
+            });
         }
     }
 
