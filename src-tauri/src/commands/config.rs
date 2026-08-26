@@ -53,11 +53,38 @@ fn restore_cave_logic(
 
     let cave = Cave::open(path)?;
     cave.ensure_config()?;
-    let config = cave.load_config()?;
+    let mut config = cave.load_config()?;
+    ensure_system_prompt_file(&cave, &mut config);
     *state.lock_config() = config;
     state.set_cave(Some(cave));
 
     Ok(RestoreOutcome::Restored)
+}
+
+/// Ensure `.granit/agent/system.md` exists for an opening cave.
+///
+/// A missing file is seeded from the legacy `agent.system_prompt` config
+/// field (which is then cleared from the config — the one-time migration) or,
+/// absent that, from the built-in default template. An existing file is never
+/// overwritten. Best-effort: on failure the agent falls back to the built-in
+/// default at build time, and an unmigrated legacy value is kept in config.
+fn ensure_system_prompt_file(cave: &Cave, config: &mut AppConfig) {
+    if !cave.system_prompt_path().exists() {
+        let content = match config.agent.system_prompt.as_deref() {
+            Some(custom) if !custom.trim().is_empty() => custom,
+            _ => granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+        };
+        if let Err(err) = cave.write_system_prompt(content) {
+            warn!("Failed to seed system prompt file: {err}");
+            return;
+        }
+    }
+    if config.agent.system_prompt.is_some() {
+        config.agent.system_prompt = None;
+        if let Err(err) = cave.save_config(config) {
+            warn!("Failed to clear migrated system prompt from config: {err}");
+        }
+    }
 }
 
 /// Restore the cave at `path` into `state`, **never failing**.
@@ -381,7 +408,8 @@ pub(crate) fn open_cave(
 ) -> Result<AppConfig, CaveError> {
     let cave = Cave::open(path.clone())?;
     cave.ensure_config()?;
-    let config = cave.load_config()?;
+    let mut config = cave.load_config()?;
+    ensure_system_prompt_file(&cave, &mut config);
 
     let store = Store::new(&app);
     store.persist_active_cave(&path).map_err(CaveError::Io)?;
@@ -535,6 +563,74 @@ mod tests {
             RestoreOutcome::InvalidPath
         );
         assert!(state.active_cave_path().is_none());
+    }
+
+    // ── ensure_system_prompt_file: seeding + legacy migration ──────────────
+
+    #[test]
+    fn system_prompt_file_is_seeded_with_default_on_restore() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = test_app_state();
+
+        let outcome = restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+
+        assert_eq!(outcome, RestoreOutcome::Restored);
+        let seeded = std::fs::read_to_string(dir.path().join(".granit/agent/system.md")).unwrap();
+        assert_eq!(seeded, granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE);
+    }
+
+    #[test]
+    fn legacy_system_prompt_config_is_migrated_to_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        let mut config = cave.load_config().unwrap();
+        config.agent.system_prompt = Some("my custom prompt".to_string());
+        cave.save_config(&config).unwrap();
+
+        let state = test_app_state();
+        let outcome = restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+        assert_eq!(outcome, RestoreOutcome::Restored);
+
+        // The legacy value seeds the file and is cleared from the config,
+        // in memory and on disk.
+        let seeded = std::fs::read_to_string(dir.path().join(".granit/agent/system.md")).unwrap();
+        assert_eq!(seeded, "my custom prompt");
+        assert!(state.lock_config().agent.system_prompt.is_none());
+        let saved = cave.load_config().unwrap();
+        assert!(saved.agent.system_prompt.is_none());
+    }
+
+    #[test]
+    fn existing_system_prompt_file_is_never_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        cave.write_system_prompt("user-edited prompt").unwrap();
+        // Even a lingering legacy config value must not clobber the file.
+        let mut config = cave.load_config().unwrap();
+        config.agent.system_prompt = Some("stale legacy value".to_string());
+        cave.save_config(&config).unwrap();
+
+        let state = test_app_state();
+        restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+
+        let content = std::fs::read_to_string(dir.path().join(".granit/agent/system.md")).unwrap();
+        assert_eq!(content, "user-edited prompt");
+        assert!(state.lock_config().agent.system_prompt.is_none());
+    }
+
+    #[test]
+    fn system_prompt_seeding_is_idempotent_across_reopens() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = test_app_state();
+
+        restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+        let path = dir.path().join(".granit/agent/system.md");
+        std::fs::write(&path, "edited by user").unwrap();
+
+        restore_cave_or_empty(Some(dir.path().to_path_buf()), &state);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "edited by user");
     }
 
     #[test]

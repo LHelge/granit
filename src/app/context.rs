@@ -1,6 +1,45 @@
 use crate::app::ipc;
 use leptos::prelude::*;
 
+/// What kind of document the editor is showing.
+///
+/// `Note` lives in `active_note`; every other kind is an "aux" document
+/// (stored under `.granit/`) carried by `active_aux` together with its kind.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DocumentKind {
+    Note,
+    Template,
+    SystemPrompt,
+}
+
+impl DocumentKind {
+    /// Stable prefix used in editor document keys (`"note:<slug>"`, …).
+    pub fn key_prefix(self) -> &'static str {
+        match self {
+            Self::Note => "note",
+            Self::Template => "template",
+            Self::SystemPrompt => "system",
+        }
+    }
+
+    /// Build the editor document key for `slug`.
+    pub fn doc_key(self, slug: &str) -> String {
+        format!("{}:{slug}", self.key_prefix())
+    }
+
+    /// Parse a document key back into its kind and slug.
+    pub fn parse_doc_key(key: &str) -> Option<(Self, &str)> {
+        let (prefix, slug) = key.split_once(':')?;
+        let kind = match prefix {
+            "note" => Self::Note,
+            "template" => Self::Template,
+            "system" => Self::SystemPrompt,
+            _ => return None,
+        };
+        Some((kind, slug))
+    }
+}
+
 // ── App-wide shared state via context ──────────────────────────────
 
 /// A single error entry in the unified error channel.
@@ -20,7 +59,9 @@ pub struct AppCtx {
     pub templates: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<granit_types::Document>>,
-    pub active_template: RwSignal<Option<granit_types::Document>>,
+    /// The active non-note document (template, system prompt, …), if any.
+    /// Mutually exclusive with `active_note`.
+    pub active_aux: RwSignal<Option<(DocumentKind, granit_types::Document)>>,
     pub selected_note_text: RwSignal<Option<String>>,
     /// Whether the editor is currently in edit (writing) mode. Owned by the
     /// editor but lifted here so the app-root `cave:notes-changed` listener can
@@ -40,7 +81,7 @@ impl AppCtx {
             templates: RwSignal::new(Vec::new()),
             folders: RwSignal::new(Vec::new()),
             active_note: RwSignal::new(None),
-            active_template: RwSignal::new(None),
+            active_aux: RwSignal::new(None),
             selected_note_text: RwSignal::new(None),
             editing: RwSignal::new(false),
             is_mac,
@@ -105,19 +146,32 @@ impl AppCtx {
     }
 
     pub fn set_active_note_document(&self, note: granit_types::Document) {
-        self.active_template.set(None);
+        self.active_aux.set(None);
         self.active_note.set(Some(note));
     }
 
-    pub fn set_active_template_document(&self, template: granit_types::Document) {
+    /// Open a non-note document (template, system prompt, …) in the editor.
+    pub fn set_active_aux_document(&self, kind: DocumentKind, doc: granit_types::Document) {
         self.active_note.set(None);
-        self.active_template.set(Some(template));
+        self.active_aux.set(Some((kind, doc)));
         self.selected_note_text.set(None);
+    }
+
+    pub fn set_active_template_document(&self, template: granit_types::Document) {
+        self.set_active_aux_document(DocumentKind::Template, template);
+    }
+
+    /// Reactive: the slug of the active aux document, if it is of `kind`.
+    pub fn active_aux_slug(&self, kind: DocumentKind) -> Option<String> {
+        self.active_aux
+            .get()
+            .filter(|(k, _)| *k == kind)
+            .map(|(_, doc)| doc.meta.slug)
     }
 
     pub fn clear_active_document(&self) {
         self.active_note.set(None);
-        self.active_template.set(None);
+        self.active_aux.set(None);
         self.selected_note_text.set(None);
     }
 

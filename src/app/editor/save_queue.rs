@@ -1,10 +1,5 @@
+use crate::app::DocumentKind;
 use std::collections::VecDeque;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum DocumentKind {
-    Note,
-    Template,
-}
 
 /// A fully-captured snapshot of editor state at the moment a save is requested.
 ///
@@ -28,10 +23,7 @@ pub(super) struct PersistSnapshot {
 
 impl PersistSnapshot {
     pub fn doc_key(&self) -> String {
-        match self.kind {
-            DocumentKind::Note => format!("note:{}", self.slug),
-            DocumentKind::Template => format!("template:{}", self.slug),
-        }
+        self.kind.doc_key(&self.slug)
     }
 }
 
@@ -130,6 +122,12 @@ mod tests {
 
         let next = queue.take_next().unwrap();
         assert!(next.explicit, "explicit flag must survive replacement");
+    }
+
+    #[wasm_bindgen_test]
+    fn system_prompt_doc_key_uses_system_prefix() {
+        let snap = snapshot(DocumentKind::SystemPrompt, "system", "content", false);
+        assert_eq!(snap.doc_key(), "system:system");
     }
 
     #[wasm_bindgen_test]

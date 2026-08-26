@@ -135,6 +135,22 @@ const MUTATING_TOOLS: &[&str] = &[
     "toggle_todo",
 ];
 
+/// Names of the tools enabled by `config`: the catalogue minus disabled
+/// tools, minus mutating tools in Ask mode. Mirrors the exclusion logic of
+/// [`build_toolset`]; used for the system prompt's `tools` template variable.
+pub fn enabled_tool_names(config: &AgentConfig) -> Vec<String> {
+    let ask_mode = config.mode == AgentMode::Ask;
+    TOOL_CATALOGUE
+        .iter()
+        .map(|meta| meta.name)
+        .filter(|name| {
+            !config.disabled_tools.iter().any(|d| d == name)
+                && !(ask_mode && MUTATING_TOOLS.contains(name))
+        })
+        .map(str::to_string)
+        .collect()
+}
+
 /// Build the full toolset from config, excluding disabled tools
 /// and mutating tools when in Ask mode.
 pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> ToolServer {
