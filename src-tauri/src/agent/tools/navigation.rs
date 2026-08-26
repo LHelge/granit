@@ -272,6 +272,48 @@ impl PortableTool for ListTagsTool {
     }
 }
 
+// ── list_templates ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ListTemplatesArgs {}
+
+#[derive(Debug, Serialize)]
+pub struct ListTemplatesOutput {
+    templates: Vec<String>,
+}
+
+pub struct ListTemplatesTool {
+    pub cave: SharedCave,
+}
+
+impl PortableTool for ListTemplatesTool {
+    const NAME: &'static str = "list_templates";
+    type Error = CaveError;
+    type Args = ListTemplatesArgs;
+    type Output = ListTemplatesOutput;
+
+    fn description(&self) -> String {
+        "List the note templates available in the cave. Pass one of these slugs as the template argument of create_note to seed a new note from it."
+            .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        with_shared_cave(&self.cave, |cave| {
+            Ok(ListTemplatesOutput {
+                templates: cave.list_templates()?.into_iter().map(|t| t.slug).collect(),
+            })
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

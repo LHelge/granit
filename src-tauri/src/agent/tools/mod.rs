@@ -11,7 +11,8 @@ use crate::agent::vectordb::CaveVectorIndex;
 use crate::commands::{with_shared_cave, SharedCave};
 use granit_types::{AgentConfig, AgentMode};
 pub use navigation::{
-    ListFoldersTool, ListNotesTool, ListTagsTool, SearchContentTool, SearchNotesTool,
+    ListFoldersTool, ListNotesTool, ListTagsTool, ListTemplatesTool, SearchContentTool,
+    SearchNotesTool,
 };
 pub use organization::{
     CreateFolderTool, DeleteFolderTool, DeleteNoteTool, MoveFolderTool, MoveNoteTool,
@@ -100,6 +101,10 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
     ToolMeta {
         name: "semantic_search",
         description: "Find notes semantically related to a query (requires embeddings/RAG enabled)",
+    },
+    ToolMeta {
+        name: "list_templates",
+        description: "List the note templates available in the cave",
     },
     ToolMeta {
         name: "list_tags",
@@ -225,6 +230,9 @@ pub fn build_toolset(
         ("search_notes", |s, c| s.tool(SearchNotesTool { cave: c })),
         ("search_content", |s, c| {
             s.tool(SearchContentTool { cave: c })
+        }),
+        ("list_templates", |s, c| {
+            s.tool(ListTemplatesTool { cave: c })
         }),
         ("list_tags", |s, c| s.tool(ListTagsTool { cave: c })),
         ("list_todos", |s, c| s.tool(ListTodosTool { cave: c })),
