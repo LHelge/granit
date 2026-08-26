@@ -1,5 +1,5 @@
 mod error;
-mod prompt;
+pub(crate) mod prompt;
 pub(crate) mod tools;
 pub(crate) mod vectordb;
 
@@ -95,11 +95,7 @@ impl Agent {
             .unwrap_or_default();
         let system_prompt = prompt::assemble_system_prompt(
             &base,
-            &prompt::PromptContext {
-                mode: config.mode,
-                tools: tools::enabled_tool_names(config),
-                skills,
-            },
+            &prompt::PromptContext::from_config(config, vector_index.is_some(), skills),
         );
         // The toolset gets the vector index in both modes (semantic_search
         // is read-only); the Ask-only gate below applies to the automatic

@@ -37,9 +37,10 @@ fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'sta
         ]),
         DocumentKind::SystemPrompt => Some(vec![
             ("mode", "\"agent\" or \"ask\""),
-            ("tools", "enabled tool names"),
+            ("tools", "registered tool names"),
             ("icons", "note icon IDs"),
             ("skills", "list of name + description"),
+            ("rag", "true when note context is auto-injected"),
             ("today", "YYYY-MM-DD"),
             ("year", ""),
             ("month", ""),

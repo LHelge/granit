@@ -104,7 +104,7 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>) 
             <div class="space-y-1">
                 <span class="label text-xs text-base-content/50">"System prompt"</span>
                 <p class="text-xs text-base-content/40">
-                    "Stored in .granit/agent/system.md. Supports Tera template variables: mode, tools, icons, skills, today, year, month, day, weekday."
+                    "Stored in .granit/agent/system.md. Supports Tera template variables: mode, tools, icons, skills, rag, today, year, month, day, weekday."
                 </p>
                 <div class="flex items-center gap-2">
                     <button
