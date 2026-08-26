@@ -2,10 +2,10 @@
 id: wph
 title: "Agent update: editable system prompt, skills, tasks, semantic search"
 type: epic
-status: open
+status: done
 priority: P2
 created: "2026-08-26T08:44:33.316165Z"
-updated: "2026-08-26T08:44:33.316165Z"
+updated: "2026-08-26T09:15:11.329793Z"
 ---
 
 Open up the agent with user-authored files in `.granit/agent/` and on-demand vector search. Plan: /Users/linusb/.claude/plans/i-would-like-to-vectorized-oasis.md
