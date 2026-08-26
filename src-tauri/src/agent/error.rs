@@ -16,6 +16,8 @@ pub enum AgentError {
     ModelListing(String),
     #[error("Embedding error: {0}")]
     Embedding(String),
+    #[error("Task error: {0}")]
+    Task(String),
 }
 
 impl From<rig_core::http_client::Error> for AgentError {

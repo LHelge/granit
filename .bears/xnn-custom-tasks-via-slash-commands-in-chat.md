@@ -1,10 +1,10 @@
 ---
 id: xnn
 title: Custom tasks via slash commands in chat
-status: open
+status: in_progress
 priority: P2
 created: "2026-08-26T08:44:47.160692Z"
-updated: "2026-08-26T08:44:56.155167Z"
+updated: "2026-08-26T09:06:21.254021Z"
 depends_on:
   - avh
   - cc3

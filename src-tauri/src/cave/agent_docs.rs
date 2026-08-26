@@ -4,21 +4,22 @@
 //! round-tripped through the typed frontmatter machinery, so any keys the app
 //! does not know about survive untouched.
 
-use super::helpers::{write_atomic, write_new};
+use super::helpers::{normalize_note_name, validate_name, write_atomic, write_new};
 use super::{Cave, CaveError};
 use crate::markdown::split_frontmatter;
+use chrono::Datelike;
 use granit_types::{AgentDocInfo, DocumentMeta};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// The frontmatter keys of a `SKILL.md` the app cares about, per the Agent
-/// Skills specification (<https://agentskills.io/specification>). Parsed
-/// permissively: unknown keys (`license`, `compatibility`, `metadata`,
-/// `allowed-tools`, …) are ignored here and survive on disk because skill
-/// files are never rewritten by the app.
+/// The frontmatter keys of an agent document (a `SKILL.md` per the Agent
+/// Skills specification at <https://agentskills.io/specification>, or a task
+/// file). Parsed permissively: unknown keys (`license`, `compatibility`,
+/// `metadata`, `allowed-tools`, …) are ignored here and survive on disk
+/// because these files are never rewritten by the app.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-struct SkillFrontmatter {
+struct AgentDocFrontmatter {
     name: Option<String>,
     description: Option<String>,
 }
@@ -54,9 +55,18 @@ fn skill_meta(name: &str) -> DocumentMeta {
     }
 }
 
-/// Parse the `SKILL.md` frontmatter permissively; missing or malformed
+fn task_meta(name: &str) -> DocumentMeta {
+    DocumentMeta {
+        slug: name.to_string(),
+        relative_path: format!(".granit/agent/tasks/{name}.md"),
+        icon: None,
+        favorite: None,
+    }
+}
+
+/// Parse an agent document's frontmatter permissively; missing or malformed
 /// frontmatter degrades to defaults instead of erroring.
-fn parse_skill_frontmatter(raw: &str) -> SkillFrontmatter {
+fn parse_agent_doc_frontmatter(raw: &str) -> AgentDocFrontmatter {
     let (yaml, _) = split_frontmatter(raw);
     yaml.and_then(|text| serde_yml::from_str(&text).ok())
         .unwrap_or_default()
@@ -123,7 +133,7 @@ impl Cave {
             .iter()
             .map(|(name, path)| {
                 let fm = std::fs::read_to_string(path)
-                    .map(|raw| parse_skill_frontmatter(&raw))
+                    .map(|raw| parse_agent_doc_frontmatter(&raw))
                     .unwrap_or_default();
                 if let Some(fm_name) = &fm.name {
                     if fm_name != name {
@@ -250,6 +260,164 @@ impl Cave {
         self.skills.remove(name);
         Ok(())
     }
+
+    // ── Tasks ──────────────────────────────────────────────────────
+
+    /// List all tasks sorted by name, with their frontmatter descriptions.
+    pub fn list_tasks(&self) -> Result<Vec<AgentDocInfo>, CaveError> {
+        let mut tasks: Vec<AgentDocInfo> = self
+            .tasks
+            .iter()
+            .map(|(slug, path)| {
+                let fm = std::fs::read_to_string(path)
+                    .map(|raw| parse_agent_doc_frontmatter(&raw))
+                    .unwrap_or_default();
+                AgentDocInfo {
+                    name: slug.clone(),
+                    description: fm.description.unwrap_or_default(),
+                }
+            })
+            .collect();
+        tasks.sort_by_key(|t| t.name.to_lowercase());
+        Ok(tasks)
+    }
+
+    fn task_path(&self, slug: &str) -> Result<&PathBuf, CaveError> {
+        self.tasks
+            .get(slug)
+            .ok_or_else(|| CaveError::TaskNotFound(slug.to_string()))
+    }
+
+    /// Raw contents of a task file, frontmatter included.
+    pub fn read_task_raw(&self, slug: &str) -> Result<String, CaveError> {
+        Ok(std::fs::read_to_string(self.task_path(slug)?)?)
+    }
+
+    /// Create a new task file in `.granit/agent/tasks`.
+    ///
+    /// The default name `"untitled-task"` auto-numbers on collision, like
+    /// untitled notes and templates; any other existing name is an error.
+    pub fn create_task(&mut self, name: &str) -> Result<DocumentMeta, CaveError> {
+        let name = normalize_note_name(name);
+        validate_name(name)?;
+
+        let name = &if name == "untitled-task" && self.tasks.contains_key(name) {
+            let mut n = 2u32;
+            loop {
+                let candidate = format!("untitled-task-{n}");
+                if !self.tasks.contains_key(&candidate) {
+                    break candidate;
+                }
+                n = n
+                    .checked_add(1)
+                    .ok_or_else(|| CaveError::SlugExhausted("untitled-task".into()))?;
+            }
+        } else if self.tasks.contains_key(name) {
+            return Err(CaveError::TaskAlreadyExists(name.to_string()));
+        } else {
+            name.to_string()
+        };
+
+        let tasks_dir = self.agent_tasks_dir();
+        std::fs::create_dir_all(&tasks_dir)?;
+        let path = tasks_dir.join(format!("{name}.md"));
+        let seed = "---\ndescription: Describe what this task does.\n---\n\nWrite the prompt to send here. The text typed after the slash command is available as {{ input }}.\n";
+        write_new(&path, seed)?;
+        self.tasks.insert(name.to_string(), path);
+        Ok(task_meta(name))
+    }
+
+    /// Update a task: optionally rename its file, then write `content`
+    /// (rolling the rename back if the write fails).
+    pub fn update_task(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+        content: &str,
+    ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
+        validate_name(new_name)?;
+        let old_path = self.task_path(old_name)?.clone();
+
+        let renamed = old_name != new_name;
+        let final_path = if renamed {
+            if self.tasks.contains_key(new_name) {
+                return Err(CaveError::TaskAlreadyExists(new_name.to_string()));
+            }
+            let new_path = self.agent_tasks_dir().join(format!("{new_name}.md"));
+            std::fs::rename(&old_path, &new_path)?;
+            new_path
+        } else {
+            old_path.clone()
+        };
+
+        if let Err(e) = write_atomic(&final_path, content) {
+            if renamed {
+                if let Err(rollback_err) = std::fs::rename(&final_path, &old_path) {
+                    return Err(CaveError::Io(format!(
+                        "failed to write task after rename: {e}; rollback also failed: {rollback_err}"
+                    )));
+                }
+            }
+            return Err(e.into());
+        }
+
+        if renamed {
+            self.tasks.remove(old_name);
+            self.tasks.insert(new_name.to_string(), final_path);
+        }
+        Ok(task_meta(new_name))
+    }
+
+    /// Delete a task file.
+    pub fn delete_task(&mut self, slug: &str) -> Result<(), CaveError> {
+        let path = self.task_path(slug)?.clone();
+        std::fs::remove_file(path)?;
+        self.tasks.remove(slug);
+        Ok(())
+    }
+
+    /// Render a task's body as the prompt to send to the agent.
+    ///
+    /// The body (frontmatter stripped) is a Tera template with access to
+    /// `input` (the text typed after the slash command), `active_note` (only
+    /// when a note is open in the editor), and today's date variables.
+    ///
+    /// Unlike the system prompt, a template error propagates: a broken task
+    /// should fail visibly in the chat instead of silently sending mangled
+    /// text.
+    pub fn render_task(&self, slug: &str, input: &str) -> Result<String, CaveError> {
+        let raw = self.read_task_raw(slug)?;
+        let (_, body) = split_frontmatter(&raw);
+        let body = body.trim_start_matches(['\n', '\r']);
+
+        let mut context = tera::Context::new();
+        context.insert("input", input);
+        if let Some(active) = self.active_slug() {
+            context.insert("active_note", active);
+        }
+        let now = chrono::Local::now();
+        context.insert("today", &now.format("%Y-%m-%d").to_string());
+        context.insert(
+            "tomorrow",
+            &(now.date_naive() + chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+        context.insert(
+            "yesterday",
+            &(now.date_naive() - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+        context.insert("year", &now.year());
+        context.insert("month", &now.month());
+        context.insert("day", &now.day());
+        context.insert("weekday", &now.format("%A").to_string());
+        context.insert("weekday_short", &now.format("%a").to_string());
+
+        Ok(tera::Tera::one_off(body, &context, false)?)
+    }
 }
 
 #[cfg(test)]
@@ -373,6 +541,78 @@ mod tests {
         assert!(matches!(
             cave.read_skill_raw("old-name").unwrap_err(),
             CaveError::SkillNotFound(_)
+        ));
+    }
+
+    // ── Tasks ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_create_list_and_delete_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_task("summarize").unwrap();
+        cave.update_task(
+            "summarize",
+            "summarize",
+            "---\ndescription: Summarize something.\n---\n\nSummarize: {{ input }}\n",
+        )
+        .unwrap();
+
+        let tasks = cave.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "summarize");
+        assert_eq!(tasks[0].description, "Summarize something.");
+
+        // Tasks never leak into the note index.
+        assert!(cave.list_notes().unwrap().is_empty());
+
+        cave.delete_task("summarize").unwrap();
+        assert!(cave.list_tasks().unwrap().is_empty());
+        assert!(!dir.path().join(".granit/agent/tasks/summarize.md").exists());
+    }
+
+    #[test]
+    fn test_render_task_substitutes_input_and_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_task("review").unwrap();
+        cave.update_task(
+            "review",
+            "review",
+            "---\ndescription: d\n---\nReview {{ input }} on {{ today }} for [[{{ active_note }}]]",
+        )
+        .unwrap();
+        cave.set_active_slug(Some("my-note".to_string()));
+
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let rendered = cave.render_task("review", "chapter two").unwrap();
+        assert_eq!(
+            rendered,
+            format!("Review chapter two on {today} for [[my-note]]")
+        );
+    }
+
+    #[test]
+    fn test_render_task_errors_propagate() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        // Missing task errors.
+        assert!(matches!(
+            cave.render_task("missing", "x").unwrap_err(),
+            CaveError::TaskNotFound(_)
+        ));
+
+        // A task referencing active_note with no note open is a render error,
+        // not a silent fallback.
+        cave.create_task("broken").unwrap();
+        cave.update_task("broken", "broken", "Note: {{ active_note }}")
+            .unwrap();
+        assert!(matches!(
+            cave.render_task("broken", "x").unwrap_err(),
+            CaveError::TemplateRender(_)
         ));
     }
 

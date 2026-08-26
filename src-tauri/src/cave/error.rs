@@ -28,6 +28,12 @@ pub enum CaveError {
         conflict: String,
     },
 
+    #[error("Task not found: {0}")]
+    TaskNotFound(String),
+
+    #[error("Task already exists: {0}")]
+    TaskAlreadyExists(String),
+
     #[error("Skill not found: {0}")]
     SkillNotFound(String),
 

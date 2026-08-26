@@ -362,6 +362,52 @@ pub async fn render_skill(name: &str) -> Result<RenderedDocument, String> {
     invoke_cmd("render_skill", &HashMap::from([("name", name)])).await
 }
 
+// ── Tasks ──────────────────────────────────────────────────────────
+
+pub async fn list_tasks() -> Result<Vec<granit_types::AgentDocInfo>, String> {
+    invoke_no_args("list_tasks").await
+}
+
+/// Read a task file — raw content, frontmatter included.
+pub async fn read_task(name: &str) -> Result<Document, String> {
+    invoke_cmd("read_task", &HashMap::from([("name", name)])).await
+}
+
+pub async fn create_task(name: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd("create_task", &HashMap::from([("name", name)])).await
+}
+
+pub async fn update_task(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+    }
+    invoke_cmd(
+        "update_task",
+        &Args {
+            old_name,
+            new_name,
+            content,
+        },
+    )
+    .await
+}
+
+pub async fn delete_task(name: &str) -> Result<(), String> {
+    invoke_unit("delete_task", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_task(name: &str) -> Result<RenderedDocument, String> {
+    invoke_cmd("render_task", &HashMap::from([("name", name)])).await
+}
+
 // ── Agent system prompt ────────────────────────────────────────────
 
 pub async fn read_system_prompt() -> Result<Document, String> {
@@ -444,12 +490,17 @@ pub async fn render_markdown(content: &str) -> Result<String, String> {
         .ok_or_else(|| "invalid response".to_string())
 }
 
-pub async fn send_message(msg: &str, attached_notes: Vec<AttachedNote>) -> Result<(), String> {
+pub async fn send_message(
+    msg: &str,
+    attached_notes: Vec<AttachedNote>,
+    task: Option<&str>,
+) -> Result<(), String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Args<'a> {
         msg: &'a str,
         attached_notes: Vec<AttachedNote>,
+        task: Option<&'a str>,
     }
 
     invoke_unit(
@@ -457,6 +508,7 @@ pub async fn send_message(msg: &str, attached_notes: Vec<AttachedNote>) -> Resul
         &Args {
             msg,
             attached_notes,
+            task,
         },
     )
     .await
