@@ -15,9 +15,11 @@ pub struct CreateNoteArgs {
     folder: Option<String>,
     /// Optional icon ID (e.g. "Star", "Book"). Omit for the default file icon.
     icon: Option<String>,
+    /// Optional template slug to seed the note body from (see list_templates).
+    template: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CreateNoteOutput {
     slug: String,
     relative_path: String,
@@ -34,7 +36,7 @@ impl PortableTool for CreateNoteTool {
     type Output = CreateNoteOutput;
 
     fn description(&self) -> String {
-        "Create a new markdown note in the cave".to_string()
+        "Create a new markdown note in the cave, optionally seeding its body from a template (use list_templates to see what is available)".to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
@@ -52,6 +54,10 @@ impl PortableTool for CreateNoteTool {
                 "icon": {
                     "type": "string",
                     "description": "Optional icon ID for the note (e.g. \"Star\", \"Book\", \"Code\"). Omit for the default file icon."
+                },
+                "template": {
+                    "type": "string",
+                    "description": "Optional template slug to seed the note body from. Omit for an empty note."
                 }
             },
             "required": ["name"]
@@ -63,7 +69,7 @@ impl PortableTool for CreateNoteTool {
             let meta = cave.create_note(
                 &args.name,
                 args.folder.as_deref().map(std::path::Path::new),
-                None,
+                args.template.as_deref(),
             )?;
             if let Some(icon) = args.icon {
                 cave.set_note_icon(&meta.slug, Some(icon))?;
@@ -291,6 +297,46 @@ mod tests {
 
     fn shared_cave(cave: crate::cave::Cave) -> SharedCave {
         Arc::new(Mutex::new(Some(cave)))
+    }
+
+    #[tokio::test]
+    async fn create_note_tool_seeds_from_template() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/meeting.md"),
+            "# Meeting: {{ slug }}\n",
+        )
+        .unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        let tool = CreateNoteTool {
+            cave: shared_cave(cave),
+        };
+
+        let output = tool
+            .call(CreateNoteArgs {
+                name: "weekly-sync".to_string(),
+                folder: None,
+                icon: None,
+                template: Some("meeting".to_string()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(output.slug, "weekly-sync");
+        let raw = std::fs::read_to_string(dir.path().join("weekly-sync.md")).unwrap();
+        assert!(raw.contains("# Meeting: weekly-sync"), "got: {raw}");
+
+        // A missing template errors instead of silently creating an empty note.
+        let err = tool
+            .call(CreateNoteArgs {
+                name: "other".to_string(),
+                folder: None,
+                icon: None,
+                template: Some("missing".to_string()),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CaveError::TemplateNotFound(_)), "{err:?}");
     }
 
     #[tokio::test]
