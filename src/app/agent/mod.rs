@@ -10,7 +10,7 @@ use mode_selector::ModeSelector;
 use model_selector::ModelSelector;
 use provider_selector::ProviderSelector;
 
-use granit_types::{resolve_note_icon, AttachedNote, ChatMessage, ModelInfo};
+use granit_types::{resolve_note_icon, AgentDocInfo, AttachedNote, ChatMessage, ModelInfo};
 use leptos::{ev::SubmitEvent, prelude::*, task::spawn_local};
 use wasm_bindgen::JsCast;
 
@@ -49,6 +49,80 @@ fn note_is_attached(attached_notes: &[AttachedNote], slug: &str) -> bool {
     attached_notes.iter().any(|note| note.slug == slug)
 }
 
+/// Parse a task invocation out of a typed message.
+///
+/// `/name rest of text` (or exactly `/name`) invokes the task `name` with
+/// `rest of text` as its input. Task names may contain spaces, so the
+/// longest matching name wins. Returns `None` when the message is not a
+/// task invocation — it is then sent as a plain message.
+fn parse_task_invocation(raw: &str, tasks: &[AgentDocInfo]) -> Option<(String, String)> {
+    let rest = raw.strip_prefix('/')?;
+    let name = tasks
+        .iter()
+        .map(|t| t.name.as_str())
+        .filter(|name| {
+            rest == *name
+                || rest
+                    .strip_prefix(name)
+                    .is_some_and(|r| r.starts_with(char::is_whitespace))
+        })
+        .max_by_key(|name| name.len())?;
+    let input = rest[name.len()..].trim().to_string();
+    Some((name.to_string(), input))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    fn tasks(names: &[&str]) -> Vec<AgentDocInfo> {
+        names
+            .iter()
+            .map(|n| AgentDocInfo {
+                name: n.to_string(),
+                description: String::new(),
+            })
+            .collect()
+    }
+
+    #[wasm_bindgen_test]
+    fn plain_messages_are_not_task_invocations() {
+        let tasks = tasks(&["summarize"]);
+        assert_eq!(parse_task_invocation("hello world", &tasks), None);
+        assert_eq!(parse_task_invocation("/unknown-task text", &tasks), None);
+        assert_eq!(parse_task_invocation("/summarizer", &tasks), None);
+    }
+
+    #[wasm_bindgen_test]
+    fn task_invocation_with_and_without_input() {
+        let tasks = tasks(&["summarize"]);
+        assert_eq!(
+            parse_task_invocation("/summarize", &tasks),
+            Some(("summarize".to_string(), String::new()))
+        );
+        assert_eq!(
+            parse_task_invocation("/summarize chapter two", &tasks),
+            Some(("summarize".to_string(), "chapter two".to_string()))
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn longest_task_name_wins_for_names_with_spaces() {
+        let tasks = tasks(&["daily", "daily review"]);
+        assert_eq!(
+            parse_task_invocation("/daily review extra input", &tasks),
+            Some(("daily review".to_string(), "extra input".to_string()))
+        );
+        assert_eq!(
+            parse_task_invocation("/daily stand-up", &tasks),
+            Some(("daily".to_string(), "stand-up".to_string()))
+        );
+    }
+}
+
 #[component]
 pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let app = expect_context::<AppCtx>();
@@ -62,6 +136,38 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
     let stream_error: RwSignal<Option<String>> = RwSignal::new(None);
     let messages_container: NodeRef<leptos::html::Div> = NodeRef::new();
     let attached_notes: RwSignal<Vec<AttachedNote>> = RwSignal::new(Vec::new());
+
+    // ── Slash-command task autocomplete ───────────────────────────────
+    // Typing `/` at the start of the input opens a popup of tasks from
+    // `.granit/agent/tasks`. Escape dismisses it until the input changes.
+    let slash_dismissed = RwSignal::new(false);
+    let slash_highlight = RwSignal::new(0usize);
+    let filtered_tasks = Memo::new(move |_| {
+        if slash_dismissed.get() {
+            return Vec::new();
+        }
+        let value = input.get();
+        let Some(query) = value.strip_prefix('/') else {
+            return Vec::new();
+        };
+        let query = query.to_lowercase();
+        app.tasks
+            .get()
+            .into_iter()
+            .filter(|t| t.name.to_lowercase().starts_with(&query))
+            .collect::<Vec<_>>()
+    });
+    // Keep the highlight inside the (shrinking) candidate list.
+    Effect::new(move |_| {
+        let len = filtered_tasks.get().len();
+        if len > 0 && slash_highlight.get_untracked() >= len {
+            slash_highlight.set(len - 1);
+        }
+    });
+    let complete_task = move |name: &str| {
+        set_input.set(format!("/{name} "));
+        slash_highlight.set(0);
+    };
 
     // ── Provider / model selection state ──────────────────────────────
     let models: RwSignal<Vec<ModelInfo>> = RwSignal::new(Vec::new());
@@ -146,19 +252,30 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
 
     let on_submit = move |ev: SubmitEvent| {
         ev.prevent_default();
-        let msg = input.get_untracked();
-        if msg.trim().is_empty() || is_streaming.get_untracked() || !has_model.get_untracked() {
+        let raw = input.get_untracked();
+        if raw.trim().is_empty() || is_streaming.get_untracked() || !has_model.get_untracked() {
             return;
         }
+        // `/task-name text…` invokes a task with the remaining text as its
+        // input; anything else is a plain message.
+        let task_invocation = parse_task_invocation(&raw, &app.tasks.get_untracked());
         set_input.set(String::new());
+        slash_dismissed.set(false);
+        slash_highlight.set(0);
         stream_error.set(None);
         is_streaming.set(true);
         let attached_notes = attached_notes.get_untracked();
 
         spawn_local(async move {
-            let html = ipc::render_markdown(&msg).await.ok();
-            messages.update(|m| m.push(DisplayItem::message(ChatMessage::user(msg.clone()), html)));
-            if let Err(e) = ipc::send_message(&msg, attached_notes).await {
+            // The message list shows what the user typed (`/task …`); the
+            // backend receives the task slug + input and renders the prompt.
+            let html = ipc::render_markdown(&raw).await.ok();
+            messages.update(|m| m.push(DisplayItem::message(ChatMessage::user(raw.clone()), html)));
+            let (msg, task) = match &task_invocation {
+                Some((name, input_text)) => (input_text.clone(), Some(name.clone())),
+                None => (raw.clone(), None),
+            };
+            if let Err(e) = ipc::send_message(&msg, attached_notes, task.as_deref()).await {
                 stream_error.set(Some(e));
                 is_streaming.set(false);
             }
@@ -210,7 +327,44 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                     class="w-full"
                     on:submit=on_submit
                 >
-                    <div class="chat-bubble chat-bubble-neutral w-full p-0 text-left">
+                    <div class="chat-bubble chat-bubble-neutral relative w-full p-0 text-left">
+                        // Task autocomplete popup, floating above the input
+                        <Show when=move || !filtered_tasks.get().is_empty() && !is_streaming.get()>
+                            <div class="absolute bottom-full left-2 right-2 mb-1 z-50">
+                                <ul class="menu menu-sm w-full bg-base-300 border border-base-content/20 rounded-box shadow-lg max-h-48 overflow-y-auto flex-nowrap">
+                                    {move || {
+                                        let candidates = filtered_tasks.get();
+                                        let highlight = slash_highlight.get().min(candidates.len().saturating_sub(1));
+                                        candidates.into_iter().enumerate().map(|(idx, task)| {
+                                            let name = task.name.clone();
+                                            let pick_name = name.clone();
+                                            let description = task.description.clone();
+                                            view! {
+                                                <li>
+                                                    <button
+                                                        type="button"
+                                                        class=move || if idx == highlight { "menu-active flex items-baseline gap-2" } else { "flex items-baseline gap-2" }
+                                                        // mousedown (not click) keeps the textarea focused.
+                                                        on:mousedown=move |ev| {
+                                                            ev.prevent_default();
+                                                            complete_task(&pick_name);
+                                                        }
+                                                    >
+                                                        <span class="font-mono text-xs shrink-0">{format!("/{name}")}</span>
+                                                        <Show when={
+                                                            let description = description.clone();
+                                                            move || !description.is_empty()
+                                                        }>
+                                                            <span class="truncate text-xs text-base-content/50">{description.clone()}</span>
+                                                        </Show>
+                                                    </button>
+                                                </li>
+                                            }
+                                        }).collect_view()
+                                    }}
+                                </ul>
+                            </div>
+                        </Show>
                         <Show when=move || !attached_notes.get().is_empty() || active_note.get().is_some()>
                             <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-1.5">
                                 <For
@@ -314,8 +468,43 @@ pub fn AgentPanel(width: ReadSignal<u16>) -> impl IntoView {
                             placeholder="Message..."
                             prop:value=move || input.get()
                             prop:disabled=move || is_streaming.get()
-                            on:input=move |ev| set_input.set(event_target_value(&ev))
+                            on:input=move |ev| {
+                                slash_dismissed.set(false);
+                                set_input.set(event_target_value(&ev));
+                            }
                             on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                                // While the task popup is open, the keyboard
+                                // navigates it; Enter completes, not submits.
+                                let candidates = filtered_tasks.get_untracked();
+                                if !candidates.is_empty() {
+                                    match ev.key().as_str() {
+                                        "ArrowDown" => {
+                                            ev.prevent_default();
+                                            slash_highlight.update(|h| *h = (*h + 1) % candidates.len());
+                                            return;
+                                        }
+                                        "ArrowUp" => {
+                                            ev.prevent_default();
+                                            slash_highlight.update(|h| {
+                                                *h = (*h + candidates.len() - 1) % candidates.len();
+                                            });
+                                            return;
+                                        }
+                                        "Enter" | "Tab" => {
+                                            ev.prevent_default();
+                                            let idx = slash_highlight
+                                                .get_untracked()
+                                                .min(candidates.len() - 1);
+                                            complete_task(&candidates[idx].name.clone());
+                                            return;
+                                        }
+                                        "Escape" => {
+                                            slash_dismissed.set(true);
+                                            return;
+                                        }
+                                        _ => {}
+                                    }
+                                }
                                 if ev.key() == "Enter" && !ev.shift_key() && has_model.get() {
                                     ev.prevent_default();
                                     if let Some(form) = ev.target()

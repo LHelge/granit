@@ -11,6 +11,7 @@ pub enum DocumentKind {
     Template,
     SystemPrompt,
     Skill,
+    Task,
 }
 
 impl DocumentKind {
@@ -21,6 +22,7 @@ impl DocumentKind {
             Self::Template => "template",
             Self::SystemPrompt => "system",
             Self::Skill => "skill",
+            Self::Task => "task",
         }
     }
 
@@ -37,6 +39,7 @@ impl DocumentKind {
             "template" => Self::Template,
             "system" => Self::SystemPrompt,
             "skill" => Self::Skill,
+            "task" => Self::Task,
             _ => return None,
         };
         Some((kind, slug))
@@ -61,6 +64,7 @@ pub struct AppCtx {
     pub notes: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub templates: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub skills: RwSignal<Vec<granit_types::AgentDocInfo>>,
+    pub tasks: RwSignal<Vec<granit_types::AgentDocInfo>>,
     pub folders: RwSignal<Vec<String>>,
     pub active_note: RwSignal<Option<granit_types::Document>>,
     /// The active non-note document (template, system prompt, …), if any.
@@ -84,6 +88,7 @@ impl AppCtx {
             notes: RwSignal::new(Vec::new()),
             templates: RwSignal::new(Vec::new()),
             skills: RwSignal::new(Vec::new()),
+            tasks: RwSignal::new(Vec::new()),
             folders: RwSignal::new(Vec::new()),
             active_note: RwSignal::new(None),
             active_aux: RwSignal::new(None),
@@ -227,6 +232,17 @@ impl AppCtx {
         }
     }
 
+    /// Fetch the task list into `self.tasks`, surfacing failures as a toast.
+    pub async fn refresh_tasks(self) {
+        self.clear_source("tasks");
+        match ipc::list_tasks().await {
+            Ok(tasks) => self.tasks.set(tasks),
+            Err(e) => {
+                self.push_error("tasks", format!("Failed to load tasks: {e}"));
+            }
+        }
+    }
+
     /// Open a cave through IPC and refresh all frontend state that depends on it.
     pub async fn open_cave_and_refresh(self, path: &str) -> Result<(), String> {
         let new_config = ipc::open_cave(path).await?;
@@ -236,6 +252,7 @@ impl AppCtx {
         self.refresh_folders().await;
         self.refresh_templates().await;
         self.refresh_skills().await;
+        self.refresh_tasks().await;
 
         self.clear_active_document();
         Ok(())

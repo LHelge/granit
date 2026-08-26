@@ -223,7 +223,7 @@ pub(super) fn Writer() -> impl IntoView {
     let is_raw_doc = move || {
         matches!(
             ctx.current_kind(),
-            Some(DocumentKind::SystemPrompt) | Some(DocumentKind::Skill)
+            Some(DocumentKind::SystemPrompt) | Some(DocumentKind::Skill) | Some(DocumentKind::Task)
         )
     };
 

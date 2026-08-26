@@ -269,6 +269,73 @@ pub(crate) fn render_skill(
     })
 }
 
+// ── Tasks ──────────────────────────────────────────────────────────
+//
+// Task files are edited raw (frontmatter included). Tasks are rendered
+// per-invocation, so mutations don't need an agent reset.
+
+#[tauri::command]
+pub(crate) fn list_tasks(
+    state: tauri::State<AppState>,
+) -> Result<Vec<granit_types::AgentDocInfo>, CaveError> {
+    state.with_cave(|cave| cave.list_tasks())
+}
+
+#[tauri::command]
+pub(crate) fn read_task(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<Document, CaveError> {
+    state.with_cave(|cave| {
+        let content = cave.read_task_raw(&name)?;
+        Ok(Document {
+            meta: DocumentMeta {
+                slug: name.clone(),
+                relative_path: format!(".granit/agent/tasks/{name}.md"),
+                icon: None,
+                favorite: None,
+            },
+            content,
+        })
+    })
+}
+
+#[tauri::command]
+pub(crate) fn create_task(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.create_task(&name))
+}
+
+#[tauri::command]
+pub(crate) fn update_task(
+    old_name: String,
+    new_name: String,
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.update_task(&old_name, &new_name, &content))
+}
+
+#[tauri::command]
+pub(crate) fn delete_task(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    state.with_cave(|cave| cave.delete_task(&name))
+}
+
+/// Render a task file as markdown for the editor's preview mode. Tera syntax
+/// is shown verbatim — the template is only evaluated on invocation.
+#[tauri::command]
+pub(crate) fn render_task(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<RenderedDocument, CaveError> {
+    state.with_cave(|cave| {
+        let raw = cave.read_task_raw(&name)?;
+        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+    })
+}
+
 #[tauri::command]
 pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Document, CaveError> {
     let config = state.lock_config().clone();

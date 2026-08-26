@@ -23,6 +23,7 @@ enum PersistedMeta {
     Template(DocumentMeta),
     SystemPrompt(DocumentMeta),
     Skill(DocumentMeta),
+    Task(DocumentMeta),
 }
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -158,6 +159,15 @@ impl EditorCtx {
                 }
                 Ok(PersistedMeta::Skill(meta))
             }
+            // Tasks are edited raw; the title input renames the task file.
+            DocumentKind::Task => {
+                let meta =
+                    ipc::update_task(&snapshot.slug, &snapshot.name, &snapshot.content).await?;
+                if let Ok(tasks) = ipc::list_tasks().await {
+                    self.app.tasks.set(tasks);
+                }
+                Ok(PersistedMeta::Task(meta))
+            }
         }
     }
 
@@ -252,6 +262,23 @@ impl EditorCtx {
                     self.dirty.set(false);
                 }
             }
+            Ok(PersistedMeta::Task(meta)) => {
+                if snapshot.explicit {
+                    self.dirty.set(false);
+                    self.prev_doc_key
+                        .set(Some(DocumentKind::Task.doc_key(&meta.slug)));
+                    self.app.set_active_aux_document(
+                        DocumentKind::Task,
+                        Document {
+                            meta,
+                            content: snapshot.content.clone(),
+                        },
+                    );
+                    self.editing.set(false);
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
+                }
+            }
             Ok(PersistedMeta::SystemPrompt(meta)) => {
                 if snapshot.explicit {
                     self.dirty.set(false);
@@ -301,6 +328,7 @@ impl EditorCtx {
                 DocumentKind::Template => ipc::render_template(&slug).await,
                 DocumentKind::SystemPrompt => ipc::render_system_prompt().await,
                 DocumentKind::Skill => ipc::render_skill(&slug).await,
+                DocumentKind::Task => ipc::render_task(&slug).await,
             };
             let still_latest = self.render_request_id.get_untracked() == request_id;
             let still_active =

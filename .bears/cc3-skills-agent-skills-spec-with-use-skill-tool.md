@@ -1,10 +1,10 @@
 ---
 id: cc3
 title: Skills (Agent Skills spec) with use_skill tool
-status: in_progress
+status: done
 priority: P2
 created: "2026-08-26T08:44:45.001876Z"
-updated: "2026-08-26T08:55:59.158944Z"
+updated: "2026-08-26T09:06:19.652091Z"
 depends_on:
   - avh
 parent: wph

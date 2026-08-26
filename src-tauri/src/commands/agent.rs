@@ -6,11 +6,25 @@ use granit_types::AttachedNote;
 pub(crate) async fn send_message(
     msg: String,
     attached_notes: Vec<AttachedNote>,
+    task: Option<String>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AgentError> {
     use rig_core::completion::message::Message;
     use tauri::Emitter;
+
+    // A slash-command task renders its Tera template into the prompt; the
+    // typed text becomes the template's `input`. Render errors surface in
+    // the chat rather than sending mangled text.
+    let msg = match task.as_deref() {
+        Some(slug) => state
+            .with_cave(|cave| cave.render_task(slug, &msg))
+            .map_err(|e| AgentError::Task(e.to_string()))
+            .inspect_err(|e| {
+                let _ = app.emit("agent:stream-error", e.to_string());
+            })?,
+        None => msg,
+    };
 
     state.ensure_agent()?;
     let generation = state.agent_generation();
