@@ -223,3 +223,79 @@ impl PortableTool for SearchContentTool {
         })
     }
 }
+
+// ── list_tags ──────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct ListTagsArgs {}
+
+#[derive(Debug, Serialize)]
+pub struct ListTagsOutput {
+    /// Tag name → slugs of the notes carrying it.
+    tags: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+pub struct ListTagsTool {
+    pub cave: SharedCave,
+}
+
+impl PortableTool for ListTagsTool {
+    const NAME: &'static str = "list_tags";
+    type Error = CaveError;
+    type Args = ListTagsArgs;
+    type Output = ListTagsOutput;
+
+    fn description(&self) -> String {
+        "List all frontmatter tags used in the cave, with the slugs of the notes carrying each tag. Use this to find notes by tag or to reuse existing tags instead of inventing new ones."
+            .to_string()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        })
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+        with_shared_cave(&self.cave, |cave| {
+            let map = cave.list_tags()?;
+            Ok(ListTagsOutput {
+                tags: map
+                    .tags
+                    .into_iter()
+                    .map(|(tag, notes)| (tag, notes.into_iter().map(|n| n.slug).collect()))
+                    .collect(),
+            })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn list_tags_tool_maps_tags_to_note_slugs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("a.md"),
+            "---\ntags: [projekt, viktigt]\n---\nA",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("b.md"), "---\ntags: [projekt]\n---\nB").unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        let tool = ListTagsTool {
+            cave: Arc::new(Mutex::new(Some(cave))),
+        };
+
+        let output = tool.call(ListTagsArgs {}).await.unwrap();
+        let mut projekt = output.tags.get("projekt").cloned().unwrap();
+        projekt.sort();
+        assert_eq!(projekt, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(output.tags.get("viktigt").unwrap(), &vec!["a".to_string()]);
+    }
+}
