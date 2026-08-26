@@ -220,9 +220,12 @@ impl PortableTool for EditNoteTool {
 // ── open_daily_note ────────────────────────────────────────────────
 
 #[derive(Deserialize)]
-pub struct OpenDailyNoteArgs {}
+pub struct OpenDailyNoteArgs {
+    /// Date of the daily note in YYYY-MM-DD format. Omit for today.
+    date: Option<String>,
+}
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OpenDailyNoteOutput {
     slug: String,
     relative_path: String,
@@ -240,29 +243,97 @@ impl PortableTool for OpenDailyNoteTool {
     type Output = OpenDailyNoteOutput;
 
     fn description(&self) -> String {
-        "Open or create today's daily note using the configured daily note folder. Creates the folder and note if they don't exist."
+        "Open or create a daily note in the configured daily note folder. Pass a date (YYYY-MM-DD) to open that day's note — past, present, or future — or omit it for today. Creates the folder and note if they don't exist."
                     .to_string()
     }
 
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
-            "properties": {}
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "The date of the daily note in YYYY-MM-DD format. Omit for today."
+                }
+            },
+            "required": []
         })
     }
 
-    async fn call(&self, _args: Self::Args) -> Result<Self::Output, Self::Error> {
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_shared_cave(&self.cave, |cave| {
             let config = cave.load_config()?;
-            let note = cave.open_daily_note(
-                &config.daily_note_folder,
-                config.daily_note_template_slug.as_deref(),
-            )?;
+            let note = match args.date.as_deref() {
+                Some(date) => cave.open_daily_note_for_date(
+                    date,
+                    &config.daily_note_folder,
+                    config.daily_note_template_slug.as_deref(),
+                )?,
+                None => cave.open_daily_note(
+                    &config.daily_note_folder,
+                    config.daily_note_template_slug.as_deref(),
+                )?,
+            };
             Ok(OpenDailyNoteOutput {
                 slug: note.meta.slug,
                 relative_path: note.meta.relative_path,
                 content: note.content,
             })
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    fn shared_cave(cave: crate::cave::Cave) -> SharedCave {
+        Arc::new(Mutex::new(Some(cave)))
+    }
+
+    #[tokio::test]
+    async fn open_daily_note_tool_accepts_a_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        let tool = OpenDailyNoteTool {
+            cave: shared_cave(cave),
+        };
+
+        let output = tool
+            .call(OpenDailyNoteArgs {
+                date: Some("2026-08-21".to_string()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(output.slug, "2026-08-21");
+        assert!(dir.path().join("Daily/2026-08-21.md").exists());
+
+        // Omitting the date still opens today's note.
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let output = tool.call(OpenDailyNoteArgs { date: None }).await.unwrap();
+        assert_eq!(output.slug, today);
+    }
+
+    #[tokio::test]
+    async fn open_daily_note_tool_rejects_invalid_dates() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.ensure_config().unwrap();
+        let tool = OpenDailyNoteTool {
+            cave: shared_cave(cave),
+        };
+
+        for bad in ["not-a-date", "2026-13-99", "../escape"] {
+            let err = tool
+                .call(OpenDailyNoteArgs {
+                    date: Some(bad.to_string()),
+                })
+                .await
+                .unwrap_err();
+            assert!(matches!(err, CaveError::InvalidName(_)), "{bad}: {err:?}");
+        }
     }
 }

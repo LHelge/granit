@@ -81,7 +81,7 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
     },
     ToolMeta {
         name: "open_daily_note",
-        description: "Open or create today's daily note",
+        description: "Open or create a daily note (today or a given date)",
     },
     ToolMeta {
         name: "list_folders",
