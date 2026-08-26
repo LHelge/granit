@@ -148,16 +148,30 @@ const MUTATING_TOOLS: &[&str] = &[
     "toggle_todo",
 ];
 
-/// Names of the tools enabled by `config`: the catalogue minus disabled
-/// tools, minus mutating tools in Ask mode. Mirrors the exclusion logic of
-/// [`build_toolset`]; used for the system prompt's `tools` template variable.
-pub fn enabled_tool_names(config: &AgentConfig) -> Vec<String> {
+/// Names of the tools that will actually be registered for `config`: the
+/// catalogue minus disabled tools, minus mutating tools in Ask mode, minus
+/// tools whose availability requirement is unmet (`semantic_search` needs
+/// the vector index, `web_search` needs a Brave API key). Mirrors the logic
+/// of [`build_toolset`]; used for the system prompt's `tools` variable.
+pub fn enabled_tool_names(config: &AgentConfig, has_vector_index: bool) -> Vec<String> {
     let ask_mode = config.mode == AgentMode::Ask;
+    let has_web_search_key = config
+        .tool_config
+        .web_search
+        .api_key
+        .as_deref()
+        .is_some_and(|key| !key.trim().is_empty());
     TOOL_CATALOGUE
         .iter()
         .map(|meta| meta.name)
         .filter(|name| {
-            !config.disabled_tools.iter().any(|d| d == name)
+            let available = match *name {
+                "semantic_search" => has_vector_index,
+                "web_search" => has_web_search_key,
+                _ => true,
+            };
+            available
+                && !config.disabled_tools.iter().any(|d| d == name)
                 && !(ask_mode && MUTATING_TOOLS.contains(name))
         })
         .map(str::to_string)

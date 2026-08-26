@@ -299,6 +299,7 @@ pub fn AgentFiles() -> impl IntoView {
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ tools }}"</span>
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ icons }}"</span>
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ skills }}"</span>
+                                        <span class="badge badge-ghost badge-sm font-mono">"{{ rag }}"</span>
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ today }}"</span>
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ weekday }}"</span>
                                     </div>

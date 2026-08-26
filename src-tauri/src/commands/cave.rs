@@ -552,17 +552,33 @@ pub(crate) fn render_template(
     })
 }
 
-/// Render the system prompt file as markdown for the editor's preview mode.
-/// Tera syntax is shown verbatim — the template is only evaluated when the
-/// agent is built.
+/// Render the system prompt for the editor's preview mode. The Tera
+/// template is evaluated with the live context (mode, tools, skills, rag,
+/// dates) first, so the preview shows what the model will actually receive;
+/// a template error falls back to the raw text, exactly like agent building.
+pub(super) fn render_system_prompt_for_state(
+    state: &AppState,
+) -> Result<RenderedDocument, CaveError> {
+    // Config and vector-index locks are taken (and released) before the
+    // cave lock, mirroring the order used by ensure_agent.
+    let has_index = state.vector_index().is_some();
+    let agent_config = state.lock_config().agent.clone();
+    state.with_cave(|cave| {
+        let raw = cave.read_system_prompt_raw()?.unwrap_or_default();
+        let skills = cave.list_skills().unwrap_or_default();
+        let rendered = crate::agent::prompt::assemble_system_prompt(
+            &raw,
+            &crate::agent::prompt::PromptContext::from_config(&agent_config, has_index, skills),
+        );
+        Ok(Markdown::new(&rendered).render("system", |s| cave.resolve_link(s)))
+    })
+}
+
 #[tauri::command]
 pub(crate) fn render_system_prompt(
     state: tauri::State<AppState>,
 ) -> Result<RenderedDocument, CaveError> {
-    state.with_cave(|cave| {
-        let raw = cave.read_system_prompt_raw()?.unwrap_or_default();
-        Ok(Markdown::new(&raw).render("system", |s| cave.resolve_link(s)))
-    })
+    render_system_prompt_for_state(state.inner())
 }
 
 #[tauri::command]
@@ -612,6 +628,49 @@ mod tests {
 
         assert!(html.contains("[[target]]"));
         assert!(!html.contains("href=\"target\""));
+    }
+
+    #[test]
+    fn test_render_system_prompt_preview_evaluates_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.write_system_prompt("Mode: **{{ mode }}**, day: {{ today }}")
+            .unwrap();
+
+        let state = test_app_state();
+        state.set_cave(Some(cave));
+
+        // Default config is Agent mode; the preview shows the evaluated
+        // template, not the raw Tera source.
+        let rendered = render_system_prompt_for_state(&state).unwrap();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        assert!(rendered.html.contains("agent"), "got: {}", rendered.html);
+        assert!(rendered.html.contains(&today), "got: {}", rendered.html);
+        assert!(
+            !rendered.html.contains("{{"),
+            "template syntax should be evaluated: {}",
+            rendered.html
+        );
+    }
+
+    #[test]
+    fn test_render_system_prompt_preview_falls_back_on_template_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.write_system_prompt("Broken {{ nonexistent_variable }}")
+            .unwrap();
+
+        let state = test_app_state();
+        state.set_cave(Some(cave));
+
+        // Like agent building, a broken template previews as raw text
+        // instead of erroring.
+        let rendered = render_system_prompt_for_state(&state).unwrap();
+        assert!(
+            rendered.html.contains("nonexistent_variable"),
+            "got: {}",
+            rendered.html
+        );
     }
 
     #[test]
