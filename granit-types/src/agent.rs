@@ -1,23 +1,37 @@
 use serde::{Deserialize, Serialize};
 
-use crate::NOTE_ICONS;
-
-const SYSTEM_PROMPT_BASE: &str = r#"<|think|> You are a helpful assistant integrated into Granit, a personal note-taking app. 
+/// The default agent system prompt, as a Tera template.
+///
+/// Stored to `.granit/agent/system.md` when a cave is opened for the first
+/// time, where the user can edit it. Rendered with these context variables:
+/// `mode` ("agent"/"ask"), `tools` (enabled tool names), `icons` (note icon
+/// IDs), `skills` (list of `{name, description}`), and the date variables
+/// `today`, `year`, `month`, `day`, `weekday`, `weekday_short`.
+pub const DEFAULT_SYSTEM_PROMPT_TEMPLATE: &str = r#"You are a helpful assistant integrated into Granit, a personal note-taking app.
 The notes are stored in markdown format in a 'cave' on the user's local filesystem and are identified by a unique slug (filename without .md extension).
-You can link the user to existing notes by using wiki-style links like [[slug]]. 
-You can call tools work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually. 
+You can link the user to existing notes by using wiki-style links like [[slug]].
+You can call tools to work with the notes. Always try to use the tools for any note operations instead of asking the user to do it manually.
 Be mindful that edits should only replace text in the body of the note, not the frontmatter.
-Daily notes use the YYYY-MM-DD date format as their slug (e.g. 2026-04-05) and are stored in a configurable folder (default: "Daily"). Use the open_daily_note tool to create or open them."#;
+Daily notes use the YYYY-MM-DD date format as their slug (e.g. 2026-04-05) and are stored in a configurable folder (default: "Daily"). Use the open_daily_note tool to create or open them.
 
-/// Build the default system prompt including available note icon IDs.
-pub fn default_system_prompt() -> String {
-    let ids: Vec<&str> = NOTE_ICONS.iter().map(|e| e.id).collect();
-    format!(
-        "{}\n\nWhen creating or updating notes you can optionally set an icon using one of these IDs:\n{}",
-        SYSTEM_PROMPT_BASE,
-        ids.join(", ")
-    )
-}
+{% if mode == "agent" -%}
+You are operating in Agent mode: you may create, edit, and organize notes with your tools.
+
+When creating or updating notes you can optionally set an icon using one of these IDs:
+{{ icons | join(sep=", ") }}
+{%- else -%}
+You are operating in Ask mode (read-only): mutating tools are unavailable. Answer using the provided note context and read-only tools, and do not offer to modify notes.
+{%- endif %}
+
+{% if skills -%}
+The following skills are available:
+{% for skill in skills -%}
+- {{ skill.name }}: {{ skill.description }}
+{% endfor -%}
+Before performing a task covered by a skill, call the use_skill tool with the skill name to load its full instructions.
+{%- endif %}
+
+Today's date is {{ today }}."#;
 
 /// Agent operating mode.
 ///
@@ -260,8 +274,9 @@ pub struct AgentConfig {
     /// Maximum multi-turn tool-call rounds per prompt.
     #[serde(default = "default_max_turns")]
     pub max_turns: usize,
-    /// Optional user-defined system prompt override.
-    /// When `None`, the built-in default is used.
+    /// Legacy user-defined system prompt override. Migrated to
+    /// `.granit/agent/system.md` when the cave is opened; kept only so old
+    /// `config.yml` files still parse.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_prompt: Option<String>,
     /// Tool names that should NOT be registered with the agent.

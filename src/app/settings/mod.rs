@@ -136,7 +136,6 @@ pub(super) struct SettingsForm {
     // Agent behaviour
     pub max_history: usize,
     pub max_turns: usize,
-    pub system_prompt: String,
     pub disabled_tools: Vec<String>,
     pub web_search_api_key: String,
     pub web_search_max_results: usize,
@@ -172,11 +171,6 @@ impl SettingsForm {
             daily_note_template_slug: config.daily_note_template_slug.clone(),
             max_history: config.agent.max_history,
             max_turns: config.agent.max_turns,
-            system_prompt: config
-                .agent
-                .system_prompt
-                .clone()
-                .unwrap_or_else(granit_types::default_system_prompt),
             disabled_tools: config.agent.disabled_tools.clone(),
             web_search_api_key: config
                 .agent
@@ -290,11 +284,6 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             } else {
                 None
             };
-            let system_prompt = if f.system_prompt.trim().is_empty() {
-                None
-            } else {
-                Some(f.system_prompt)
-            };
             let web_search_api_key = if f.web_search_api_key.trim().is_empty() {
                 None
             } else {
@@ -316,7 +305,8 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                 mode: config.get_untracked().agent.mode,
                 max_history: f.max_history,
                 max_turns: f.max_turns,
-                system_prompt,
+                // Legacy field: the prompt lives in .granit/agent/system.md now.
+                system_prompt: None,
                 disabled_tools: f.disabled_tools,
                 tool_config,
                 rag: RagConfig {
@@ -396,7 +386,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         </Show>
 
                         <Show when=move || active_section.get() == SettingsSection::Agent>
-                            <AgentSettings form=form />
+                            <AgentSettings form=form set_open=set_open />
                         </Show>
 
                         <Show when=move || active_section.get() == SettingsSection::Notes>

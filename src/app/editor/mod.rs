@@ -4,12 +4,12 @@ mod reader;
 mod save_queue;
 mod writer;
 
-use crate::app::{components::icons::Icon, ipc};
+use crate::app::{components::icons::Icon, ipc, DocumentKind};
 use granit_types::{AppConfig, Document, DocumentMeta, RenderedDocument};
 use leptos::leptos_dom::helpers::{set_timeout_with_handle, TimeoutHandle};
 use leptos::prelude::*;
 use reader::Reader;
-use save_queue::{DocumentKind, PersistSnapshot, SaveQueue};
+use save_queue::{PersistSnapshot, SaveQueue};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
@@ -21,6 +21,7 @@ const AUTOSAVE_HOLDOFF_MS: u64 = 2000;
 enum PersistedMeta {
     Note(DocumentMeta),
     Template(DocumentMeta),
+    SystemPrompt(DocumentMeta),
 }
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -50,7 +51,7 @@ pub struct OpenInEdit(pub RwSignal<EditOpen>);
 pub(super) struct EditorCtx {
     pub app: crate::app::AppCtx,
     pub active_note: RwSignal<Option<Document>>,
-    pub active_template: RwSignal<Option<Document>>,
+    pub active_aux: RwSignal<Option<(DocumentKind, Document)>>,
     pub notes: RwSignal<Vec<DocumentMeta>>,
     pub templates: RwSignal<Vec<DocumentMeta>>,
     pub config: RwSignal<AppConfig>,
@@ -87,10 +88,11 @@ pub(super) struct EditorCtx {
 }
 
 impl EditorCtx {
-    fn current_kind_untracked(self) -> Option<DocumentKind> {
-        if self.active_template.get_untracked().is_some() {
-            Some(DocumentKind::Template)
-        } else if self.active_note.get_untracked().is_some() {
+    /// The kind of the currently open document. Reactive, for view closures.
+    fn current_kind(self) -> Option<DocumentKind> {
+        if let Some((kind, _)) = self.active_aux.get() {
+            Some(kind)
+        } else if self.active_note.get().is_some() {
             Some(DocumentKind::Note)
         } else {
             None
@@ -98,22 +100,13 @@ impl EditorCtx {
     }
 
     fn current_doc_key_untracked(self) -> Option<String> {
-        if let Some(template) = self.active_template.get_untracked() {
-            Some(format!("template:{}", template.meta.slug))
+        if let Some((kind, doc)) = self.active_aux.get_untracked() {
+            Some(kind.doc_key(&doc.meta.slug))
         } else {
             self.active_note
                 .get_untracked()
-                .map(|note| format!("note:{}", note.meta.slug))
+                .map(|note| DocumentKind::Note.doc_key(&note.meta.slug))
         }
-    }
-
-    fn parse_doc_key(key: &str) -> Option<(DocumentKind, &str)> {
-        key.strip_prefix("note:")
-            .map(|slug| (DocumentKind::Note, slug))
-            .or_else(|| {
-                key.strip_prefix("template:")
-                    .map(|slug| (DocumentKind::Template, slug))
-            })
     }
 
     /// Persist a snapshot to disk and refresh the sidebar note list.
@@ -147,6 +140,12 @@ impl EditorCtx {
                     self.templates.set(templates);
                 }
                 Ok(PersistedMeta::Template(meta))
+            }
+            // The system prompt is a single fixed file: content only, no
+            // rename, no frontmatter.
+            DocumentKind::SystemPrompt => {
+                let meta = ipc::update_system_prompt(&snapshot.content).await?;
+                Ok(PersistedMeta::SystemPrompt(meta))
             }
         }
     }
@@ -200,7 +199,8 @@ impl EditorCtx {
             Ok(PersistedMeta::Note(meta)) => {
                 if snapshot.explicit {
                     self.dirty.set(false);
-                    self.prev_doc_key.set(Some(format!("note:{}", meta.slug)));
+                    self.prev_doc_key
+                        .set(Some(DocumentKind::Note.doc_key(&meta.slug)));
                     self.app.set_active_note_document(Document {
                         meta,
                         content: snapshot.content.clone(),
@@ -214,11 +214,28 @@ impl EditorCtx {
                 if snapshot.explicit {
                     self.dirty.set(false);
                     self.prev_doc_key
-                        .set(Some(format!("template:{}", meta.slug)));
+                        .set(Some(DocumentKind::Template.doc_key(&meta.slug)));
                     self.app.set_active_template_document(Document {
                         meta,
                         content: snapshot.content.clone(),
                     });
+                    self.editing.set(false);
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
+                }
+            }
+            Ok(PersistedMeta::SystemPrompt(meta)) => {
+                if snapshot.explicit {
+                    self.dirty.set(false);
+                    self.prev_doc_key
+                        .set(Some(DocumentKind::SystemPrompt.doc_key(&meta.slug)));
+                    self.app.set_active_aux_document(
+                        DocumentKind::SystemPrompt,
+                        Document {
+                            meta,
+                            content: snapshot.content.clone(),
+                        },
+                    );
                     self.editing.set(false);
                 } else if self.snapshot_matches_current(snapshot) {
                     self.dirty.set(false);
@@ -248,15 +265,13 @@ impl EditorCtx {
     fn request_render(self, kind: DocumentKind, slug: String) {
         let request_id = self.render_request_id.get_untracked().wrapping_add(1);
         self.render_request_id.set(request_id);
-        let expected_key = match kind {
-            DocumentKind::Note => format!("note:{slug}"),
-            DocumentKind::Template => format!("template:{slug}"),
-        };
+        let expected_key = kind.doc_key(&slug);
 
         leptos::task::spawn_local(async move {
             let rendered = match kind {
                 DocumentKind::Note => ipc::render_note(&slug).await,
                 DocumentKind::Template => ipc::render_template(&slug).await,
+                DocumentKind::SystemPrompt => ipc::render_system_prompt().await,
             };
             let still_latest = self.render_request_id.get_untracked() == request_id;
             let still_active =
@@ -277,7 +292,7 @@ impl EditorCtx {
     /// key, reading all signals synchronously. Returns `None` if the key is
     /// not a recognised `note:` or `template:` key.
     fn snapshot_for(self, doc_key: &str, explicit: bool) -> Option<PersistSnapshot> {
-        let (kind, slug) = Self::parse_doc_key(doc_key)?;
+        let (kind, slug) = DocumentKind::parse_doc_key(doc_key)?;
         let slug = slug.to_string();
         let title = self.title_input.get_untracked().trim().to_string();
         let name = if title.is_empty() {
@@ -394,18 +409,10 @@ impl EditorCtx {
         self.editing.update(|v| *v = !*v);
         // Re-render when switching back to preview (content may have been edited)
         if was_editing {
-            match self.current_kind_untracked() {
-                Some(DocumentKind::Note) => {
-                    if let Some(note) = self.active_note.get_untracked() {
-                        self.request_render(DocumentKind::Note, note.meta.slug.clone());
-                    }
+            if let Some(doc_key) = self.current_doc_key_untracked() {
+                if let Some((kind, slug)) = DocumentKind::parse_doc_key(&doc_key) {
+                    self.request_render(kind, slug.to_string());
                 }
-                Some(DocumentKind::Template) => {
-                    if let Some(template) = self.active_template.get_untracked() {
-                        self.request_render(DocumentKind::Template, template.meta.slug.clone());
-                    }
-                }
-                None => {}
             }
         }
     }
@@ -450,7 +457,7 @@ pub fn Editor() -> impl IntoView {
     let ctx = EditorCtx {
         app,
         active_note: app.active_note,
-        active_template: app.active_template,
+        active_aux: app.active_aux,
         notes: app.notes,
         templates: app.templates,
         config: app.config,
@@ -483,16 +490,16 @@ pub fn Editor() -> impl IntoView {
     // content to the wrong slug.
     Effect::new(move || {
         let new_note = ctx.active_note.get();
-        let new_template = ctx.active_template.get();
+        let new_aux = ctx.active_aux.get();
         let old_key = ctx.prev_doc_key.get_untracked();
         let was_editing = ctx.editing.get_untracked();
 
-        let new_key = if let Some(template) = new_template.as_ref() {
-            Some(format!("template:{}", template.meta.slug))
+        let new_key = if let Some((kind, doc)) = new_aux.as_ref() {
+            Some(kind.doc_key(&doc.meta.slug))
         } else {
             new_note
                 .as_ref()
-                .map(|note| format!("note:{}", note.meta.slug))
+                .map(|note| DocumentKind::Note.doc_key(&note.meta.slug))
         };
         let is_switch = old_key != new_key;
 
@@ -521,8 +528,8 @@ pub fn Editor() -> impl IntoView {
         }
 
         // Re-render whenever the note changes (switch or same-slug update)
-        if let Some(template) = &new_template {
-            ctx.request_render(DocumentKind::Template, template.meta.slug.clone());
+        if let Some((kind, doc)) = &new_aux {
+            ctx.request_render(*kind, doc.meta.slug.clone());
         } else if let Some(note) = &new_note {
             ctx.request_render(DocumentKind::Note, note.meta.slug.clone());
         } else {
@@ -531,15 +538,14 @@ pub fn Editor() -> impl IntoView {
         }
 
         // Sync local editor state with the new active document
-        if let Some(template) = new_template {
-            ctx.prev_doc_key
-                .set(Some(format!("template:{}", template.meta.slug.clone())));
-            ctx.content.set(template.content.clone());
-            ctx.title_input.set(template.meta.slug.clone());
+        if let Some((kind, doc)) = new_aux {
+            ctx.prev_doc_key.set(Some(kind.doc_key(&doc.meta.slug)));
+            ctx.content.set(doc.content.clone());
+            ctx.title_input.set(doc.meta.slug.clone());
             ctx.favorite.set(None);
         } else if let Some(note) = new_note {
             ctx.prev_doc_key
-                .set(Some(format!("note:{}", note.meta.slug.clone())));
+                .set(Some(DocumentKind::Note.doc_key(&note.meta.slug)));
             ctx.content.set(note.content.clone());
             ctx.title_input.set(note.meta.slug.clone());
             ctx.favorite.set(note.meta.favorite);
@@ -570,8 +576,7 @@ pub fn Editor() -> impl IntoView {
         ctx.favorite.set(favorite);
     });
 
-    let has_document =
-        move || ctx.active_note.get().is_some() || ctx.active_template.get().is_some();
+    let has_document = move || ctx.active_note.get().is_some() || ctx.active_aux.get().is_some();
 
     // Copy-button feedback: shows a checkmark briefly after a copy.
     let copied = RwSignal::new(false);

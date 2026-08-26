@@ -1,4 +1,5 @@
 mod error;
+mod prompt;
 pub(crate) mod tools;
 pub(crate) mod vectordb;
 
@@ -25,7 +26,6 @@ const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
 /// know. 64k matches the output limit of the claude-4-generation models and
 /// is accepted by every current Anthropic model.
 const ANTHROPIC_FALLBACK_MAX_TOKENS: u64 = 64_000;
-use granit_types::default_system_prompt;
 
 /// An agent backed by a configurable LLM provider, with session conversation history.
 ///
@@ -79,19 +79,25 @@ impl Agent {
             provider.validate().map_err(AgentError::Build)?;
         }
 
-        let cave_tools = tools::build_toolset(cave, config);
         let model = config
             .selected_model
             .as_deref()
             .unwrap_or(entry.provider.default_model());
-        let system_prompt = match &config.system_prompt {
-            Some(custom) if !custom.trim().is_empty() => custom.clone(),
-            _ => default_system_prompt(),
+        // The system prompt is a Tera template: the user's `.granit/agent/system.md`
+        // when a cave is open, else the built-in default. The cave lock is taken
+        // and released here, before the toolset/agent construction below.
+        let base = match crate::commands::with_shared_cave(&cave, |c| c.read_system_prompt_raw()) {
+            Ok(Some(content)) => content,
+            _ => granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE.to_string(),
         };
-        let system_prompt = format!(
-            "{system_prompt}\n\nToday's date is {}.",
-            chrono::Local::now().format("%Y-%m-%d")
+        let system_prompt = prompt::assemble_system_prompt(
+            &base,
+            &prompt::PromptContext {
+                mode: config.mode,
+                tools: tools::enabled_tool_names(config),
+            },
         );
+        let cave_tools = tools::build_toolset(cave, config);
         let rag_top_n = config.rag.top_n;
         // RAG context is only used in Ask mode.
         let vector_index = match config.mode {

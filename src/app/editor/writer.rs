@@ -1,5 +1,6 @@
 use super::{codemirror, frontmatter::FrontmatterEditor, use_editor_ctx};
 use crate::app::components::{icon_picker::IconPicker, icons::Icon};
+use crate::app::DocumentKind;
 use leptos::prelude::*;
 use leptos::web_sys::wasm_bindgen::closure::Closure;
 use std::cell::Cell;
@@ -215,15 +216,20 @@ pub(super) fn Writer() -> impl IntoView {
         });
     });
 
+    // The system prompt is a fixed file: no rename, no icon, no frontmatter.
+    let is_system_prompt = move || ctx.current_kind() == Some(DocumentKind::SystemPrompt);
+
     view! {
         <div class="not-prose flex items-center gap-2 mb-2">
-            <IconPicker
-                value=Signal::derive(move || ctx.icon.get())
-                on_change=move |v| {
-                    ctx.icon.set(v);
-                    ctx.schedule_autosave();
-                }
-            />
+            <Show when=move || !is_system_prompt()>
+                <IconPicker
+                    value=Signal::derive(move || ctx.icon.get())
+                    on_change=move |v| {
+                        ctx.icon.set(v);
+                        ctx.schedule_autosave();
+                    }
+                />
+            </Show>
             <Show when=move || ctx.active_note.get().is_some()>
                 <button
                     type="button"
@@ -253,8 +259,9 @@ pub(super) fn Writer() -> impl IntoView {
             <input
                 type="text"
                 node_ref=title_ref
-                class="w-full bg-transparent text-base-content text-4xl font-extrabold leading-[1.111] outline-none p-0"
+                class="w-full bg-transparent text-base-content text-4xl font-extrabold leading-[1.111] outline-none p-0 disabled:opacity-100"
                 placeholder="Untitled"
+                prop:disabled=is_system_prompt
                 prop:value=move || ctx.title_input.get()
                 // Title edits mark dirty but don't arm the debounce timer:
                 // the debounced save never renames, so the rename is applied
@@ -275,7 +282,9 @@ pub(super) fn Writer() -> impl IntoView {
                 }
             />
         </div>
-        <FrontmatterEditor />
+        <Show when=move || !is_system_prompt()>
+            <FrontmatterEditor />
+        </Show>
         <div
             node_ref=container_ref
             class="not-prose w-full flex-1 min-h-0 overflow-hidden"

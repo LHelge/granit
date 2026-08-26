@@ -1,7 +1,7 @@
 use crate::app::{
     components::icons::Icon,
     editor::{EditOpen, OpenInEdit},
-    ipc, AppCtx,
+    ipc, AppCtx, DocumentKind,
 };
 use granit_types::resolve_note_icon;
 use leptos::prelude::*;
@@ -94,9 +94,8 @@ pub fn Templates() -> impl IntoView {
                             let slug_display = slug.clone();
                             let icon_id = template.icon.clone().unwrap_or_default();
                             let is_active = move || {
-                                ctx.active_template
-                                    .get()
-                                    .map(|active| active.meta.slug == slug)
+                                ctx.active_aux_slug(DocumentKind::Template)
+                                    .map(|active| active == slug)
                                     .unwrap_or(false)
                             };
                             view! {
@@ -138,7 +137,7 @@ pub fn Templates() -> impl IntoView {
                                                 leptos::task::spawn_local(async move {
                                                     match ipc::delete_template(&s).await {
                                                         Ok(()) => {
-                                                            if ctx.active_template.get().map(|active| active.meta.slug == s).unwrap_or(false) {
+                                                            if ctx.active_aux_slug(DocumentKind::Template).map(|active| active == s).unwrap_or(false) {
                                                                 ctx.clear_active_document();
                                                             }
                                                             ctx.refresh_templates().await;

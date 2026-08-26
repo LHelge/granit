@@ -6,9 +6,9 @@ mod metadata;
 mod update;
 
 pub use agent::{
-    default_system_prompt, AgentConfig, AgentMode, AttachedNote, ChatMessage, ChatRole, ModelInfo,
-    ProviderConfig, ProviderEntry, ProviderInfo, RagConfig, ToolCallInfo, ToolInfo, ToolsConfig,
-    WebFetchConfig, WebSearchConfig,
+    AgentConfig, AgentMode, AttachedNote, ChatMessage, ChatRole, ModelInfo, ProviderConfig,
+    ProviderEntry, ProviderInfo, RagConfig, ToolCallInfo, ToolInfo, ToolsConfig, WebFetchConfig,
+    WebSearchConfig, DEFAULT_SYSTEM_PROMPT_TEMPLATE,
 };
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use document::{

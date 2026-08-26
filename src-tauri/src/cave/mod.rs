@@ -1,3 +1,4 @@
+mod agent_docs;
 mod error;
 mod folders;
 mod helpers;
@@ -95,6 +96,14 @@ impl Cave {
 
     pub fn templates_dir(&self) -> PathBuf {
         self.path.join(".granit").join("templates")
+    }
+
+    pub fn agent_dir(&self) -> PathBuf {
+        self.path.join(".granit").join("agent")
+    }
+
+    pub fn system_prompt_path(&self) -> PathBuf {
+        self.agent_dir().join("system.md")
     }
 
     pub fn ensure_config(&self) -> Result<(), CaveError> {

@@ -316,6 +316,24 @@ pub async fn delete_template(slug: &str) -> Result<(), String> {
     invoke_unit("delete_template", &HashMap::from([("name", slug)])).await
 }
 
+// ── Agent system prompt ────────────────────────────────────────────
+
+pub async fn read_system_prompt() -> Result<Document, String> {
+    invoke_no_args("read_system_prompt").await
+}
+
+pub async fn update_system_prompt(content: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd(
+        "update_system_prompt",
+        &HashMap::from([("content", content)]),
+    )
+    .await
+}
+
+pub async fn render_system_prompt() -> Result<RenderedDocument, String> {
+    invoke_no_args("render_system_prompt").await
+}
+
 pub async fn move_note(slug: &str, destination: Option<&str>) -> Result<DocumentMeta, String> {
     #[derive(Serialize)]
     struct Args<'a> {

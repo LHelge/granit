@@ -155,6 +155,47 @@ pub(crate) fn read_template(
     state.with_cave(|cave| cave.read_template(&name))
 }
 
+/// Metadata for the system prompt pseudo-document (`.granit/agent/system.md`).
+fn system_prompt_meta() -> DocumentMeta {
+    DocumentMeta {
+        slug: "system".to_string(),
+        relative_path: ".granit/agent/system.md".to_string(),
+        icon: None,
+        favorite: None,
+    }
+}
+
+/// Read the raw agent system prompt template, seeding a missing file with the
+/// built-in default (cave open normally seeds it already).
+#[tauri::command]
+pub(crate) fn read_system_prompt(state: tauri::State<AppState>) -> Result<Document, CaveError> {
+    state.with_cave(|cave| {
+        let content = match cave.read_system_prompt_raw()? {
+            Some(content) => content,
+            None => {
+                cave.write_system_prompt(granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE)?;
+                granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE.to_string()
+            }
+        };
+        Ok(Document {
+            meta: system_prompt_meta(),
+            content,
+        })
+    })
+}
+
+/// Overwrite the agent system prompt template and reset the agent so the next
+/// message is built with the new prompt.
+#[tauri::command]
+pub(crate) fn update_system_prompt(
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.write_system_prompt(&content))?;
+    state.reset_agent();
+    Ok(system_prompt_meta())
+}
+
 #[tauri::command]
 pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Document, CaveError> {
     let config = state.lock_config().clone();
@@ -368,6 +409,19 @@ pub(crate) fn render_template(
     state.with_cave(|cave| {
         let raw = cave.read_template_raw(&name)?;
         Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+    })
+}
+
+/// Render the system prompt file as markdown for the editor's preview mode.
+/// Tera syntax is shown verbatim — the template is only evaluated when the
+/// agent is built.
+#[tauri::command]
+pub(crate) fn render_system_prompt(
+    state: tauri::State<AppState>,
+) -> Result<RenderedDocument, CaveError> {
+    state.with_cave(|cave| {
+        let raw = cave.read_system_prompt_raw()?.unwrap_or_default();
+        Ok(Markdown::new(&raw).render("system", |s| cave.resolve_link(s)))
     })
 }
 

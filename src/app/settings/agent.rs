@@ -3,7 +3,8 @@ use crate::app::components::{
     font_selector::FontSelector,
     icons::{Icon, ProviderIcon},
 };
-use granit_types::default_system_prompt;
+use crate::app::{ipc, AppCtx, DocumentKind};
+use granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE;
 use leptos::prelude::*;
 
 /// Available embedding models for the RAG selector.
@@ -23,7 +24,8 @@ const EMBEDDING_MODELS: &[(&str, &str)] = &[
 ];
 
 #[component]
-pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
+pub fn AgentSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>) -> impl IntoView {
+    let ctx = expect_context::<AppCtx>();
     // Derived read signals for the font picker
     let fonts = Memo::new(move |_| form.get().system_fonts);
     let font_family = Memo::new(move |_| form.get().agent_font.font_family);
@@ -98,28 +100,71 @@ pub fn AgentSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                 />
             </div>
 
-            // System prompt
+            // System prompt — lives in a cave file, edited in the main editor
             <div class="space-y-1">
-                <label class="label text-xs text-base-content/50" for="ag-system-prompt">"System prompt"</label>
-                <textarea
-                    id="ag-system-prompt"
-                    class="textarea textarea-bordered textarea-sm w-full h-24 font-mono text-xs"
-                    placeholder="Enter a custom system prompt…"
-                    prop:value=move || form.get().system_prompt.clone()
-                    on:input=move |ev| {
-                        let val = event_target_value(&ev);
-                        form.update(|f| f.system_prompt = val);
-                    }
-                />
-                <button
-                    type="button"
-                    class="btn btn-ghost btn-xs"
-                    on:click=move |_| {
-                        form.update(|f| f.system_prompt = default_system_prompt());
-                    }
-                >
-                    "Reset to default"
-                </button>
+                <span class="label text-xs text-base-content/50">"System prompt"</span>
+                <p class="text-xs text-base-content/40">
+                    "Stored in .granit/agent/system.md. Supports Tera template variables: mode, tools, icons, skills, today, year, month, day, weekday."
+                </p>
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="btn btn-sm"
+                        on:click=move |_| {
+                            leptos::task::spawn_local(async move {
+                                match ipc::read_system_prompt().await {
+                                    Ok(doc) => {
+                                        ctx.set_active_aux_document(DocumentKind::SystemPrompt, doc);
+                                        set_open.set(false);
+                                    }
+                                    Err(e) => {
+                                        ctx.push_error("settings", format!("Failed to open system prompt: {e}"));
+                                    }
+                                }
+                            });
+                        }
+                    >
+                        "Edit in editor"
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-xs"
+                        on:click=move |_| {
+                            let confirmed = web_sys::window()
+                                .map(|w| {
+                                    w.confirm_with_message(
+                                        "Reset the system prompt to the default template? This overwrites .granit/agent/system.md.",
+                                    )
+                                    .unwrap_or(false)
+                                })
+                                .unwrap_or(false);
+                            if !confirmed {
+                                return;
+                            }
+                            leptos::task::spawn_local(async move {
+                                if let Err(e) =
+                                    ipc::update_system_prompt(DEFAULT_SYSTEM_PROMPT_TEMPLATE).await
+                                {
+                                    ctx.push_error("settings", format!("Failed to reset system prompt: {e}"));
+                                    return;
+                                }
+                                // If the prompt is open in the editor, refresh it
+                                // so stale content can't be autosaved back.
+                                let prompt_open = matches!(
+                                    ctx.active_aux.get_untracked(),
+                                    Some((DocumentKind::SystemPrompt, _))
+                                );
+                                if prompt_open {
+                                    if let Ok(doc) = ipc::read_system_prompt().await {
+                                        ctx.set_active_aux_document(DocumentKind::SystemPrompt, doc);
+                                    }
+                                }
+                            });
+                        }
+                    >
+                        "Reset to default"
+                    </button>
+                </div>
             </div>
 
             <div class="divider my-1" />

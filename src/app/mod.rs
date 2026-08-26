@@ -9,7 +9,7 @@ mod keybinds;
 mod markdown_links;
 mod settings;
 
-pub(crate) use context::AppCtx;
+pub(crate) use context::{AppCtx, DocumentKind};
 use leptos::prelude::*;
 
 use agent::AgentPanel;
