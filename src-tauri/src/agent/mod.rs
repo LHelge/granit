@@ -101,9 +101,12 @@ impl Agent {
                 skills,
             },
         );
-        let cave_tools = tools::build_toolset(cave, config);
+        // The toolset gets the vector index in both modes (semantic_search
+        // is read-only); the Ask-only gate below applies to the automatic
+        // RAG dynamic context.
+        let cave_tools = tools::build_toolset(cave, config, vector_index.as_ref());
         let rag_top_n = config.rag.top_n;
-        // RAG context is only used in Ask mode.
+        // Automatic RAG context injection is only used in Ask mode.
         let vector_index = match config.mode {
             AgentMode::Ask => vector_index,
             AgentMode::Agent => None,
@@ -326,7 +329,7 @@ fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
         "read_note" | "update_note" | "delete_note" | "edit_note" | "move_note" | "rename_note" => {
             Some("slug")
         }
-        "search_notes" | "search_content" | "web_search" => Some("query"),
+        "search_notes" | "search_content" | "semantic_search" | "web_search" => Some("query"),
         "web_fetch" => Some("url"),
         "create_note" | "use_skill" => Some("name"),
         "create_folder" | "rename_folder" | "move_folder" | "delete_folder" => Some("path"),
