@@ -1,10 +1,10 @@
 ---
 id: "9wm"
 title: semantic_search agent tool
-status: in_progress
+status: done
 priority: P2
 created: "2026-08-26T08:44:48.952601Z"
-updated: "2026-08-26T09:13:44.011279Z"
+updated: "2026-08-26T09:15:09.516823Z"
 parent: wph
 ---
 
