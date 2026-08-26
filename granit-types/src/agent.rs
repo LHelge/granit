@@ -254,6 +254,16 @@ impl Default for RagConfig {
     }
 }
 
+/// Listing entry for a user-authored agent document (skill or task):
+/// its name plus the frontmatter description shown to the model and the UI.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentDocInfo {
+    pub name: String,
+    /// Frontmatter `description`; empty when the file declares none.
+    #[serde(default)]
+    pub description: String,
+}
+
 /// Agent configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {

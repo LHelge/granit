@@ -2,6 +2,8 @@ mod builder;
 mod frontmatter;
 mod render;
 
+pub(crate) use frontmatter::split_frontmatter;
+
 use std::cell::OnceCell;
 
 use granit_types::Frontmatter;

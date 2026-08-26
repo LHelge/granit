@@ -1,10 +1,10 @@
 ---
 id: avh
 title: System prompt as editable Tera-templated cave file
-status: in_progress
+status: done
 priority: P2
 created: "2026-08-26T08:44:39.611794Z"
-updated: "2026-08-26T08:44:57.878761Z"
+updated: "2026-08-26T08:55:57.425628Z"
 parent: wph
 ---
 

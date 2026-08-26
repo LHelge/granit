@@ -24,7 +24,9 @@ use settings::SettingsModal;
 
 // ── Sidebar resize constants ───────────────────────────────────────
 
-const MIN_SIDEBAR_W: u16 = 275;
+// Wide enough for the busiest tabs (the agent files tab with its help
+// panel); also clamps widths persisted by older versions on load.
+const MIN_SIDEBAR_W: u16 = 320;
 const MAX_SIDEBAR_W: u16 = 600;
 
 #[derive(Clone, Copy)]
@@ -36,7 +38,7 @@ enum ResizeTarget {
 #[component]
 pub fn App() -> impl IntoView {
     let (sidebar_visible, set_sidebar_visible) = signal(true);
-    let (sidebar_width, set_sidebar_width) = signal(256u16);
+    let (sidebar_width, set_sidebar_width) = signal(MIN_SIDEBAR_W);
     let (agent_visible, set_agent_visible) = signal(false);
     let (agent_width, set_agent_width) = signal(320u16);
     let (info_open, set_info_open) = signal(false);
@@ -126,9 +128,9 @@ pub fn App() -> impl IntoView {
         let has_active_cave = cfg.active_cave.is_some();
         // Apply persisted sidebar state
         set_sidebar_visible.set(cfg.sidebar.visible);
-        set_sidebar_width.set(cfg.sidebar.width);
+        set_sidebar_width.set(cfg.sidebar.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
         set_agent_visible.set(cfg.agent_panel.visible);
-        set_agent_width.set(cfg.agent_panel.width);
+        set_agent_width.set(cfg.agent_panel.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
         let theme_name = cfg.theme.clone();
         ctx.config.set(cfg);
 

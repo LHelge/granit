@@ -1,3 +1,4 @@
+mod agent_files;
 mod calendar;
 mod cave_selector;
 mod favorites;
@@ -8,6 +9,7 @@ mod todo;
 pub(crate) mod tree_view;
 
 use crate::app::{components::icons::Icon, AppCtx};
+use agent_files::AgentFiles;
 use calendar::Calendar;
 use cave_selector::CaveSelector;
 use favorites::Favorites;
@@ -97,6 +99,16 @@ pub fn Explorer(
                         <Icon icon=icondata_lu::LuNotepadTextDashed width="100%" height="100%"/>
                     </span>
                 </button>
+                <button
+                    role="tab"
+                    class="tab"
+                    class:tab-active=move || active_tab.get() == 6
+                    on:click=move |_| set_active_tab.set(6)
+                >
+                    <span class="inline-flex w-5 h-5">
+                        <Icon icon=icondata_lu::LuBot width="100%" height="100%"/>
+                    </span>
+                </button>
             </div>
 
             // Tab content
@@ -124,6 +136,9 @@ pub fn Explorer(
                 </Show>
                 <Show when=move || active_tab.get() == 5>
                     <Templates />
+                </Show>
+                <Show when=move || active_tab.get() == 6>
+                    <AgentFiles />
                 </Show>
             </div>
 

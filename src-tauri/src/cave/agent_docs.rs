@@ -4,8 +4,63 @@
 //! round-tripped through the typed frontmatter machinery, so any keys the app
 //! does not know about survive untouched.
 
-use super::helpers::write_atomic;
+use super::helpers::{write_atomic, write_new};
 use super::{Cave, CaveError};
+use crate::markdown::split_frontmatter;
+use granit_types::{AgentDocInfo, DocumentMeta};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+/// The frontmatter keys of a `SKILL.md` the app cares about, per the Agent
+/// Skills specification (<https://agentskills.io/specification>). Parsed
+/// permissively: unknown keys (`license`, `compatibility`, `metadata`,
+/// `allowed-tools`, …) are ignored here and survive on disk because skill
+/// files are never rewritten by the app.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+struct SkillFrontmatter {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+/// Validate a skill name per the Agent Skills spec: 1-64 characters of
+/// lowercase `a-z`, `0-9`, and hyphens; no leading/trailing hyphen and no
+/// consecutive hyphens.
+fn validate_skill_name(name: &str) -> Result<(), CaveError> {
+    let valid = !name.is_empty()
+        && name.len() <= 64
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--");
+    if valid {
+        Ok(())
+    } else {
+        Err(CaveError::InvalidSkillName(format!(
+            "{name:?} (must be 1-64 lowercase letters, digits, or hyphens; \
+             no leading/trailing/double hyphens)"
+        )))
+    }
+}
+
+fn skill_meta(name: &str) -> DocumentMeta {
+    DocumentMeta {
+        slug: name.to_string(),
+        relative_path: format!(".granit/agent/skills/{name}/SKILL.md"),
+        icon: None,
+        favorite: None,
+    }
+}
+
+/// Parse the `SKILL.md` frontmatter permissively; missing or malformed
+/// frontmatter degrades to defaults instead of erroring.
+fn parse_skill_frontmatter(raw: &str) -> SkillFrontmatter {
+    let (yaml, _) = split_frontmatter(raw);
+    yaml.and_then(|text| serde_yml::from_str(&text).ok())
+        .unwrap_or_default()
+}
 
 impl Cave {
     /// Raw contents of `.granit/agent/system.md`; `Ok(None)` when the file
@@ -25,11 +80,181 @@ impl Cave {
         write_atomic(&self.system_prompt_path(), content)?;
         Ok(())
     }
+
+    // ── Skills ─────────────────────────────────────────────────────
+
+    /// Scan `.granit/agent/skills/` for skill directories containing a
+    /// `SKILL.md`, returning name → SKILL.md path. Directories with invalid
+    /// names or without a `SKILL.md` are logged and skipped rather than
+    /// refusing to open the cave.
+    pub(crate) fn scan_skills(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+        if !dir.is_dir() {
+            return Ok(HashMap::new());
+        }
+
+        let mut skills = HashMap::new();
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Err(e) = validate_skill_name(&name) {
+                log::warn!("skipping skill directory: {e}");
+                continue;
+            }
+            let skill_md = path.join("SKILL.md");
+            if !skill_md.is_file() {
+                log::warn!("skipping skill directory {name:?}: no SKILL.md");
+                continue;
+            }
+            skills.insert(name, skill_md);
+        }
+        Ok(skills)
+    }
+
+    /// List all skills sorted by name, with their frontmatter descriptions.
+    /// A frontmatter `name` that mismatches the directory name is logged;
+    /// the directory name is canonical.
+    pub fn list_skills(&self) -> Result<Vec<AgentDocInfo>, CaveError> {
+        let mut skills: Vec<AgentDocInfo> = self
+            .skills
+            .iter()
+            .map(|(name, path)| {
+                let fm = std::fs::read_to_string(path)
+                    .map(|raw| parse_skill_frontmatter(&raw))
+                    .unwrap_or_default();
+                if let Some(fm_name) = &fm.name {
+                    if fm_name != name {
+                        log::warn!(
+                            "skill {name:?}: frontmatter name {fm_name:?} does not match \
+                             the directory name (the directory name is used)"
+                        );
+                    }
+                }
+                AgentDocInfo {
+                    name: name.clone(),
+                    description: fm.description.unwrap_or_default(),
+                }
+            })
+            .collect();
+        skills.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(skills)
+    }
+
+    fn skill_md_path(&self, name: &str) -> Result<&PathBuf, CaveError> {
+        self.skills
+            .get(name)
+            .ok_or_else(|| CaveError::SkillNotFound(name.to_string()))
+    }
+
+    /// Raw contents of a skill's `SKILL.md`, frontmatter included.
+    pub fn read_skill_raw(&self, name: &str) -> Result<String, CaveError> {
+        Ok(std::fs::read_to_string(self.skill_md_path(name)?)?)
+    }
+
+    /// A skill's instructions: the `SKILL.md` body with frontmatter stripped.
+    pub fn skill_body(&self, name: &str) -> Result<String, CaveError> {
+        let raw = self.read_skill_raw(name)?;
+        let (_, body) = split_frontmatter(&raw);
+        Ok(body.trim_start_matches(['\n', '\r']).to_string())
+    }
+
+    /// Create a new skill directory with a seeded `SKILL.md`.
+    ///
+    /// The default name `"untitled-skill"` auto-numbers on collision, like
+    /// untitled notes and templates; any other existing name is an error.
+    pub fn create_skill(&mut self, name: &str) -> Result<DocumentMeta, CaveError> {
+        validate_skill_name(name)?;
+        let name = &if name == "untitled-skill" && self.skills.contains_key(name) {
+            let mut n = 2u32;
+            loop {
+                let candidate = format!("untitled-skill-{n}");
+                if !self.skills.contains_key(&candidate) {
+                    break candidate;
+                }
+                n = n
+                    .checked_add(1)
+                    .ok_or_else(|| CaveError::SlugExhausted("untitled-skill".into()))?;
+            }
+        } else if self.skills.contains_key(name) {
+            return Err(CaveError::SkillAlreadyExists(name.to_string()));
+        } else {
+            name.to_string()
+        };
+
+        let skill_dir = self.agent_skills_dir().join(name);
+        std::fs::create_dir_all(&skill_dir)?;
+        let skill_md = skill_dir.join("SKILL.md");
+        let seed = format!(
+            "---\nname: {name}\ndescription: Describe what this skill does and when to use it.\n---\n\nStep-by-step instructions for the agent.\n"
+        );
+        write_new(&skill_md, seed)?;
+        self.skills.insert(name.to_string(), skill_md);
+        Ok(skill_meta(name))
+    }
+
+    /// Update a skill: optionally rename its directory, then write `content`
+    /// to its `SKILL.md` (rolling the rename back if the write fails).
+    ///
+    /// A rename does not touch the frontmatter `name:` field — files are
+    /// never rewritten by the app; a mismatch is tolerated (and logged when
+    /// listing).
+    pub fn update_skill(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+        content: &str,
+    ) -> Result<DocumentMeta, CaveError> {
+        validate_skill_name(new_name)?;
+        let old_md = self.skill_md_path(old_name)?.clone();
+
+        let renamed = old_name != new_name;
+        let final_md = if renamed {
+            if self.skills.contains_key(new_name) {
+                return Err(CaveError::SkillAlreadyExists(new_name.to_string()));
+            }
+            let old_dir = self.agent_skills_dir().join(old_name);
+            let new_dir = self.agent_skills_dir().join(new_name);
+            std::fs::rename(&old_dir, &new_dir)?;
+            new_dir.join("SKILL.md")
+        } else {
+            old_md
+        };
+
+        if let Err(e) = write_atomic(&final_md, content) {
+            if renamed {
+                let new_dir = self.agent_skills_dir().join(new_name);
+                let old_dir = self.agent_skills_dir().join(old_name);
+                if let Err(rollback_err) = std::fs::rename(&new_dir, &old_dir) {
+                    return Err(CaveError::Io(format!(
+                        "failed to write skill after rename: {e}; rollback also failed: {rollback_err}"
+                    )));
+                }
+            }
+            return Err(e.into());
+        }
+
+        if renamed {
+            self.skills.remove(old_name);
+            self.skills.insert(new_name.to_string(), final_md);
+        }
+        Ok(skill_meta(new_name))
+    }
+
+    /// Delete a skill directory and everything in it.
+    pub fn delete_skill(&mut self, name: &str) -> Result<(), CaveError> {
+        self.skill_md_path(name)?;
+        std::fs::remove_dir_all(self.agent_skills_dir().join(name))?;
+        self.skills.remove(name);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::cave::Cave;
+    use crate::cave::{Cave, CaveError};
 
     #[test]
     fn test_system_prompt_roundtrip_and_missing_file() {
@@ -45,5 +270,121 @@ mod tests {
             Some("custom prompt {{ today }}")
         );
         assert!(dir.path().join(".granit/agent/system.md").exists());
+    }
+
+    // ── Skills ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_create_and_list_skills_with_description() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_skill("pdf-processing").unwrap();
+        cave.update_skill(
+            "pdf-processing",
+            "pdf-processing",
+            "---\nname: pdf-processing\ndescription: Handle PDFs.\nlicense: MIT\n---\n\nDo PDF things.\n",
+        )
+        .unwrap();
+
+        let skills = cave.list_skills().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "pdf-processing");
+        assert_eq!(skills[0].description, "Handle PDFs.");
+
+        // Unknown spec keys survive on disk: the app never rewrites the file.
+        let raw = cave.read_skill_raw("pdf-processing").unwrap();
+        assert!(raw.contains("license: MIT"));
+
+        // The body strips frontmatter.
+        assert_eq!(
+            cave.skill_body("pdf-processing").unwrap(),
+            "Do PDF things.\n"
+        );
+    }
+
+    #[test]
+    fn test_create_skill_rejects_invalid_names_and_duplicates() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        for bad in [
+            "",
+            "PDF-Processing",
+            "-pdf",
+            "pdf-",
+            "pdf--processing",
+            "a b",
+        ] {
+            let err = cave.create_skill(bad).unwrap_err();
+            assert!(
+                matches!(err, CaveError::InvalidSkillName(_)),
+                "{bad}: {err:?}"
+            );
+        }
+
+        cave.create_skill("dup").unwrap();
+        let err = cave.create_skill("dup").unwrap_err();
+        assert!(matches!(err, CaveError::SkillAlreadyExists(_)));
+    }
+
+    #[test]
+    fn test_scan_skills_finds_valid_dirs_and_skips_invalid() {
+        let dir = tempfile::tempdir().unwrap();
+        let skills_dir = dir.path().join(".granit/agent/skills");
+        std::fs::create_dir_all(skills_dir.join("good-skill")).unwrap();
+        std::fs::write(
+            skills_dir.join("good-skill/SKILL.md"),
+            "---\nname: good-skill\ndescription: ok\n---\nbody",
+        )
+        .unwrap();
+        // Invalid name: skipped, not fatal.
+        std::fs::create_dir_all(skills_dir.join("Bad Name")).unwrap();
+        std::fs::write(skills_dir.join("Bad Name/SKILL.md"), "x").unwrap();
+        // Missing SKILL.md: skipped.
+        std::fs::create_dir_all(skills_dir.join("empty-skill")).unwrap();
+
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        let skills = cave.list_skills().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "good-skill");
+
+        // Skills never leak into the note index.
+        assert!(cave.list_notes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_update_skill_renames_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_skill("old-name").unwrap();
+        let meta = cave
+            .update_skill("old-name", "new-name", "new content")
+            .unwrap();
+
+        assert_eq!(meta.slug, "new-name");
+        assert!(dir
+            .path()
+            .join(".granit/agent/skills/new-name/SKILL.md")
+            .exists());
+        assert!(!dir.path().join(".granit/agent/skills/old-name").exists());
+        assert_eq!(cave.read_skill_raw("new-name").unwrap(), "new content");
+        assert!(matches!(
+            cave.read_skill_raw("old-name").unwrap_err(),
+            CaveError::SkillNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_delete_skill_removes_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.create_skill("doomed").unwrap();
+        cave.delete_skill("doomed").unwrap();
+
+        assert!(!dir.path().join(".granit/agent/skills/doomed").exists());
+        assert!(cave.list_skills().unwrap().is_empty());
     }
 }

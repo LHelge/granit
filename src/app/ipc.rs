@@ -316,6 +316,52 @@ pub async fn delete_template(slug: &str) -> Result<(), String> {
     invoke_unit("delete_template", &HashMap::from([("name", slug)])).await
 }
 
+// ── Skills ─────────────────────────────────────────────────────────
+
+pub async fn list_skills() -> Result<Vec<granit_types::AgentDocInfo>, String> {
+    invoke_no_args("list_skills").await
+}
+
+/// Read a skill's SKILL.md — raw content, frontmatter included.
+pub async fn read_skill(name: &str) -> Result<Document, String> {
+    invoke_cmd("read_skill", &HashMap::from([("name", name)])).await
+}
+
+pub async fn create_skill(name: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd("create_skill", &HashMap::from([("name", name)])).await
+}
+
+pub async fn update_skill(
+    old_name: &str,
+    new_name: &str,
+    content: &str,
+) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+        content: &'a str,
+    }
+    invoke_cmd(
+        "update_skill",
+        &Args {
+            old_name,
+            new_name,
+            content,
+        },
+    )
+    .await
+}
+
+pub async fn delete_skill(name: &str) -> Result<(), String> {
+    invoke_unit("delete_skill", &HashMap::from([("name", name)])).await
+}
+
+pub async fn render_skill(name: &str) -> Result<RenderedDocument, String> {
+    invoke_cmd("render_skill", &HashMap::from([("name", name)])).await
+}
+
 // ── Agent system prompt ────────────────────────────────────────────
 
 pub async fn read_system_prompt() -> Result<Document, String> {

@@ -218,10 +218,18 @@ pub(super) fn Writer() -> impl IntoView {
 
     // The system prompt is a fixed file: no rename, no icon, no frontmatter.
     let is_system_prompt = move || ctx.current_kind() == Some(DocumentKind::SystemPrompt);
+    // Raw-edited agent documents keep their frontmatter in the text itself,
+    // so the icon picker and frontmatter editor don't apply.
+    let is_raw_doc = move || {
+        matches!(
+            ctx.current_kind(),
+            Some(DocumentKind::SystemPrompt) | Some(DocumentKind::Skill)
+        )
+    };
 
     view! {
         <div class="not-prose flex items-center gap-2 mb-2">
-            <Show when=move || !is_system_prompt()>
+            <Show when=move || !is_raw_doc()>
                 <IconPicker
                     value=Signal::derive(move || ctx.icon.get())
                     on_change=move |v| {
@@ -282,7 +290,7 @@ pub(super) fn Writer() -> impl IntoView {
                 }
             />
         </div>
-        <Show when=move || !is_system_prompt()>
+        <Show when=move || !is_raw_doc()>
             <FrontmatterEditor />
         </Show>
         <div

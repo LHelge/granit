@@ -20,7 +20,7 @@ impl SidebarConfig {
     pub fn sidebar_default() -> Self {
         Self {
             visible: true,
-            width: 256,
+            width: 320,
         }
     }
 

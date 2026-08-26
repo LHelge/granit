@@ -1,6 +1,7 @@
 mod navigation;
 mod organization;
 mod reading;
+mod skills;
 mod todos;
 mod web;
 mod writing;
@@ -14,6 +15,7 @@ pub use organization::{
 };
 pub use reading::ReadNoteTool;
 use rig_agent::tool::server::ToolServer;
+pub use skills::UseSkillTool;
 pub use todos::{ListTodosTool, ToggleTodoTool};
 pub use web::{WebFetchTool, WebSearchTool};
 pub use writing::{CreateNoteTool, EditNoteTool, OpenDailyNoteTool, UpdateNoteTool};
@@ -97,6 +99,10 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
     ToolMeta {
         name: "toggle_todo",
         description: "Toggle the completion status of a todo checkbox in a note",
+    },
+    ToolMeta {
+        name: "use_skill",
+        description: "Load the full instructions of a skill by name",
     },
     ToolMeta {
         name: "web_fetch",
@@ -187,6 +193,7 @@ pub fn build_toolset(cave: SharedCave, config: &AgentConfig) -> ToolServer {
         }),
         ("list_todos", |s, c| s.tool(ListTodosTool { cave: c })),
         ("toggle_todo", |s, c| s.tool(ToggleTodoTool { cave: c })),
+        ("use_skill", |s, c| s.tool(UseSkillTool { cave: c })),
     ];
 
     for (name, add) in cave_entries {

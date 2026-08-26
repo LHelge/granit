@@ -90,11 +90,15 @@ impl Agent {
             Ok(Some(content)) => content,
             _ => granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE.to_string(),
         };
+        let skills = crate::commands::with_shared_cave(&cave, |c| c.list_skills())
+            .ok()
+            .unwrap_or_default();
         let system_prompt = prompt::assemble_system_prompt(
             &base,
             &prompt::PromptContext {
                 mode: config.mode,
                 tools: tools::enabled_tool_names(config),
+                skills,
             },
         );
         let cave_tools = tools::build_toolset(cave, config);
@@ -324,7 +328,7 @@ fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
         }
         "search_notes" | "search_content" | "web_search" => Some("query"),
         "web_fetch" => Some("url"),
-        "create_note" => Some("name"),
+        "create_note" | "use_skill" => Some("name"),
         "create_folder" | "rename_folder" | "move_folder" | "delete_folder" => Some("path"),
         _ => None,
     };
