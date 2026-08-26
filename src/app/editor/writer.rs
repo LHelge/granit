@@ -282,18 +282,20 @@ pub(super) fn Writer() -> impl IntoView {
 
     // The system prompt is a fixed file: no rename, no icon, no frontmatter.
     let is_system_prompt = move || ctx.current_kind() == Some(DocumentKind::SystemPrompt);
-    // Raw-edited agent documents keep their frontmatter in the text itself,
-    // so the icon picker and frontmatter editor don't apply.
-    let is_raw_doc = move || {
+    // Agent documents (skills/tasks) have no icon or tags; their managed
+    // frontmatter is the description, edited via the input below the title.
+    let is_agent_doc = move || {
         matches!(
             ctx.current_kind(),
-            Some(DocumentKind::SystemPrompt) | Some(DocumentKind::Skill) | Some(DocumentKind::Task)
+            Some(DocumentKind::Skill) | Some(DocumentKind::Task)
         )
     };
+    // Kinds without note-style frontmatter UI (icon picker, tags).
+    let hides_note_frontmatter = move || is_system_prompt() || is_agent_doc();
 
     view! {
         <div class="not-prose flex items-center gap-2 mb-2">
-            <Show when=move || !is_raw_doc()>
+            <Show when=move || !hides_note_frontmatter()>
                 <IconPicker
                     value=Signal::derive(move || ctx.icon.get())
                     on_change=move |v| {
@@ -354,8 +356,24 @@ pub(super) fn Writer() -> impl IntoView {
                 }
             />
         </div>
-        <Show when=move || !is_raw_doc()>
+        <Show when=move || !hides_note_frontmatter()>
             <FrontmatterEditor />
+        </Show>
+        // Skills/tasks: the frontmatter description, edited like note tags —
+        // the app writes it into the file, never shown as raw YAML.
+        <Show when=is_agent_doc>
+            <div class="not-prose mb-3">
+                <input
+                    type="text"
+                    class="input input-ghost input-sm w-full px-0 text-sm text-base-content/70 placeholder:text-base-content/35 focus:outline-none focus:bg-transparent"
+                    placeholder="Description — tells the agent what this is for…"
+                    prop:value=move || ctx.description.get().unwrap_or_default()
+                    on:input=move |ev| {
+                        ctx.description.set(Some(event_target_value(&ev)));
+                        ctx.schedule_autosave();
+                    }
+                />
+            </div>
         </Show>
         <div
             node_ref=container_ref

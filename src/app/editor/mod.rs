@@ -79,6 +79,9 @@ pub(super) struct EditorCtx {
     pub icon: RwSignal<Option<String>>,
     /// Frontmatter favorite flag for the current note.
     pub favorite: RwSignal<Option<bool>>,
+    /// Frontmatter description for agent documents (skills/tasks); `None`
+    /// for every other document kind.
+    pub description: RwSignal<Option<String>>,
     /// Monotonic counter used to ignore stale async render results.
     render_request_id: RwSignal<u64>,
     /// Latest-wins queue of pending saves, processed one at a time.
@@ -149,20 +152,29 @@ impl EditorCtx {
                 let meta = ipc::update_system_prompt(&snapshot.content).await?;
                 Ok(PersistedMeta::SystemPrompt(meta))
             }
-            // Skills are edited raw (frontmatter included); the title input
-            // renames the skill directory.
+            // Agent documents: the body is the content, the description is
+            // managed frontmatter, and the title input renames.
             DocumentKind::Skill => {
-                let meta =
-                    ipc::update_skill(&snapshot.slug, &snapshot.name, &snapshot.content).await?;
+                let meta = ipc::update_skill(
+                    &snapshot.slug,
+                    &snapshot.name,
+                    &snapshot.content,
+                    snapshot.description.as_deref().unwrap_or_default(),
+                )
+                .await?;
                 if let Ok(skills) = ipc::list_skills().await {
                     self.app.skills.set(skills);
                 }
                 Ok(PersistedMeta::Skill(meta))
             }
-            // Tasks are edited raw; the title input renames the task file.
             DocumentKind::Task => {
-                let meta =
-                    ipc::update_task(&snapshot.slug, &snapshot.name, &snapshot.content).await?;
+                let meta = ipc::update_task(
+                    &snapshot.slug,
+                    &snapshot.name,
+                    &snapshot.content,
+                    snapshot.description.as_deref().unwrap_or_default(),
+                )
+                .await?;
                 if let Ok(tasks) = ipc::list_tasks().await {
                     self.app.tasks.set(tasks);
                 }
@@ -209,6 +221,7 @@ impl EditorCtx {
             && snapshot.tags.as_ref() == Some(&self.tags.get_untracked())
             && snapshot.icon == self.icon.get_untracked()
             && snapshot.favorite == self.favorite.get_untracked()
+            && snapshot.description == self.description.get_untracked()
     }
 
     fn apply_persist_result(
@@ -365,6 +378,7 @@ impl EditorCtx {
             tags: Some(self.tags.get_untracked()),
             icon: self.icon.get_untracked(),
             favorite: self.favorite.get_untracked(),
+            description: self.description.get_untracked(),
             explicit,
         })
     }
@@ -532,6 +546,7 @@ pub fn Editor() -> impl IntoView {
         tags: RwSignal::new(Vec::new()),
         icon: RwSignal::new(None),
         favorite: RwSignal::new(None),
+        description: RwSignal::new(None),
         render_request_id: RwSignal::new(0),
         save_queue: StoredValue::new_local(Rc::new(RefCell::new(SaveQueue::new()))),
         dirty: RwSignal::new(false),
@@ -600,12 +615,14 @@ pub fn Editor() -> impl IntoView {
             ctx.content.set(doc.content.clone());
             ctx.title_input.set(doc.meta.slug.clone());
             ctx.favorite.set(None);
+            ctx.description.set(doc.meta.description.clone());
         } else if let Some(note) = new_note {
             ctx.prev_doc_key
                 .set(Some(DocumentKind::Note.doc_key(&note.meta.slug)));
             ctx.content.set(note.content.clone());
             ctx.title_input.set(note.meta.slug.clone());
             ctx.favorite.set(note.meta.favorite);
+            ctx.description.set(None);
         } else {
             ctx.prev_doc_key.set(None);
             ctx.content.set(String::new());
@@ -613,6 +630,7 @@ pub fn Editor() -> impl IntoView {
             ctx.tags.set(Vec::new());
             ctx.icon.set(None);
             ctx.favorite.set(None);
+            ctx.description.set(None);
             ctx.app.selected_note_text.set(None);
         }
         ctx.error.set(None);

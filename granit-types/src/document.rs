@@ -68,6 +68,11 @@ pub struct DocumentMeta {
     /// Optional favorite flag from frontmatter. Always `None` for templates.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favorite: Option<bool>,
+    /// Frontmatter `description` of agent documents (skills and tasks),
+    /// edited via the editor UI like tags/icons on notes. Always `None`
+    /// for notes and templates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Full document content (note or template) returned when reading.

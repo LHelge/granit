@@ -92,6 +92,7 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta
         relative_path: path_str,
         icon: None,
         favorite: None,
+        description: None,
     }
 }
 
@@ -123,6 +124,7 @@ pub(crate) fn template_meta_from_path(path: &Path) -> DocumentMeta {
         relative_path,
         icon: None,
         favorite: None,
+        description: None,
     }
 }
 
