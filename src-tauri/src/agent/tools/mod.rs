@@ -21,7 +21,7 @@ pub use organization::{
 pub use reading::ReadNoteTool;
 use rig_agent::tool::server::ToolServer;
 pub use semantic::SemanticSearchTool;
-pub use skills::UseSkillTool;
+pub use skills::{ReadAgentDocTool, UseSkillTool, WriteAgentDocTool};
 pub use todos::{ListTodosTool, ToggleTodoTool};
 pub use web::{WebFetchTool, WebSearchTool};
 pub use writing::{CreateNoteTool, EditNoteTool, OpenDailyNoteTool, UpdateNoteTool};
@@ -123,6 +123,14 @@ const TOOL_CATALOGUE: &[ToolMeta] = &[
         description: "Load the full instructions of a skill by name",
     },
     ToolMeta {
+        name: "read_agent_doc",
+        description: "Read one of the agent's skills or tasks (description + body)",
+    },
+    ToolMeta {
+        name: "write_agent_doc",
+        description: "Create or update one of the agent's skills or tasks",
+    },
+    ToolMeta {
         name: "web_fetch",
         description: "Fetch a webpage and return its content as markdown",
     },
@@ -157,6 +165,7 @@ const MUTATING_TOOLS: &[&str] = &[
     "delete_folder",
     "open_daily_note",
     "toggle_todo",
+    "write_agent_doc",
 ];
 
 /// Names of the tools that will actually be registered for `config`: the
@@ -238,6 +247,12 @@ pub fn build_toolset(
         ("list_todos", |s, c| s.tool(ListTodosTool { cave: c })),
         ("toggle_todo", |s, c| s.tool(ToggleTodoTool { cave: c })),
         ("use_skill", |s, c| s.tool(UseSkillTool { cave: c })),
+        ("read_agent_doc", |s, c| {
+            s.tool(ReadAgentDocTool { cave: c })
+        }),
+        ("write_agent_doc", |s, c| {
+            s.tool(WriteAgentDocTool { cave: c })
+        }),
     ];
 
     for (name, add) in cave_entries {

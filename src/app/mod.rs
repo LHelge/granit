@@ -94,6 +94,11 @@ pub fn App() -> impl IntoView {
                 if let Ok(folders) = ipc::fetch_folders().await {
                     ctx.folders.set(folders);
                 }
+                // Agent tools can also create or edit skills and tasks;
+                // refresh their lists so the explorer and the slash-command
+                // popup stay in sync.
+                ctx.refresh_skills().await;
+                ctx.refresh_tasks().await;
             });
         });
     });

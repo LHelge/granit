@@ -328,7 +328,7 @@ fn build_tool_call_info(call: ToolCall) -> ToolCallInfo {
         "search_notes" | "search_content" | "semantic_search" | "web_search" => Some("query"),
         "web_fetch" => Some("url"),
         "open_daily_note" => Some("date"),
-        "create_note" | "use_skill" => Some("name"),
+        "create_note" | "use_skill" | "read_agent_doc" | "write_agent_doc" => Some("name"),
         "create_folder" | "rename_folder" | "move_folder" | "delete_folder" => Some("path"),
         _ => None,
     };
