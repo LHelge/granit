@@ -15,6 +15,8 @@ pub(super) struct PersistSnapshot {
     pub tags: Option<Vec<String>>,
     pub icon: Option<String>,
     pub favorite: Option<bool>,
+    /// Frontmatter description for agent documents (skills/tasks).
+    pub description: Option<String>,
     /// Whether this save was initiated explicitly (Save button / Ctrl-S).
     /// Explicit saves toggle `saving`/`editing` state and update the active
     /// document on success. Auto-saves do not.
@@ -92,6 +94,7 @@ mod tests {
             tags: None,
             icon: None,
             favorite: None,
+            description: None,
             explicit,
         }
     }

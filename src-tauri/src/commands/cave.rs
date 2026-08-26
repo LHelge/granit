@@ -162,6 +162,7 @@ fn system_prompt_meta() -> DocumentMeta {
         relative_path: ".granit/agent/system.md".to_string(),
         icon: None,
         favorite: None,
+        description: None,
     }
 }
 
@@ -198,9 +199,10 @@ pub(crate) fn update_system_prompt(
 
 // ── Skills ─────────────────────────────────────────────────────────
 //
-// Skill files are edited raw (frontmatter included), so `read_skill`
-// returns the full SKILL.md content. Every mutation resets the agent so
-// the system prompt's skill listing is rebuilt on the next message.
+// Skill frontmatter (name + description) is managed by the app; the editor
+// works on the SKILL.md body, and unknown spec keys are preserved. Every
+// mutation resets the agent so the system prompt's skill listing is rebuilt
+// on the next message.
 
 #[tauri::command]
 pub(crate) fn list_skills(
@@ -214,18 +216,7 @@ pub(crate) fn read_skill(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<Document, CaveError> {
-    state.with_cave(|cave| {
-        let content = cave.read_skill_raw(&name)?;
-        Ok(Document {
-            meta: DocumentMeta {
-                slug: name.clone(),
-                relative_path: format!(".granit/agent/skills/{name}/SKILL.md"),
-                icon: None,
-                favorite: None,
-            },
-            content,
-        })
-    })
+    state.with_cave(|cave| cave.read_skill(&name))
 }
 
 #[tauri::command]
@@ -243,9 +234,11 @@ pub(crate) fn update_skill(
     old_name: String,
     new_name: String,
     content: String,
+    description: String,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    let meta = state.with_cave(|cave| cave.update_skill(&old_name, &new_name, &content))?;
+    let meta =
+        state.with_cave(|cave| cave.update_skill(&old_name, &new_name, &content, &description))?;
     state.reset_agent();
     Ok(meta)
 }
@@ -271,8 +264,9 @@ pub(crate) fn render_skill(
 
 // ── Tasks ──────────────────────────────────────────────────────────
 //
-// Task files are edited raw (frontmatter included). Tasks are rendered
-// per-invocation, so mutations don't need an agent reset.
+// Task frontmatter (description) is managed by the app; the editor works
+// on the body. Tasks are rendered per-invocation, so mutations don't need
+// an agent reset.
 
 #[tauri::command]
 pub(crate) fn list_tasks(
@@ -286,18 +280,7 @@ pub(crate) fn read_task(
     name: String,
     state: tauri::State<AppState>,
 ) -> Result<Document, CaveError> {
-    state.with_cave(|cave| {
-        let content = cave.read_task_raw(&name)?;
-        Ok(Document {
-            meta: DocumentMeta {
-                slug: name.clone(),
-                relative_path: format!(".granit/agent/tasks/{name}.md"),
-                icon: None,
-                favorite: None,
-            },
-            content,
-        })
-    })
+    state.with_cave(|cave| cave.read_task(&name))
 }
 
 #[tauri::command]
@@ -313,9 +296,10 @@ pub(crate) fn update_task(
     old_name: String,
     new_name: String,
     content: String,
+    description: String,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.update_task(&old_name, &new_name, &content))
+    state.with_cave(|cave| cave.update_task(&old_name, &new_name, &content, &description))
 }
 
 #[tauri::command]

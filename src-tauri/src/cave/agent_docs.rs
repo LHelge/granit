@@ -1,14 +1,16 @@
 //! User-authored agent documents stored under `.granit/agent/`.
 //!
-//! These files are edited as raw text (frontmatter included) and are never
-//! round-tripped through the typed frontmatter machinery, so any keys the app
-//! does not know about survive untouched.
+//! The editor works on the body; the frontmatter is managed by the app,
+//! which owns only the `name` (skills) and `description` keys. Writes go
+//! through [`rebuild_agent_doc`], a surgical rewrite of a generic YAML
+//! mapping, so keys the app does not know about (`license`, `metadata`,
+//! `allowed-tools`, …) survive untouched — frontmatter comments do not.
 
 use super::helpers::{normalize_note_name, validate_name, write_atomic, write_new};
 use super::{Cave, CaveError};
 use crate::markdown::split_frontmatter;
 use chrono::Datelike;
-use granit_types::{AgentDocInfo, DocumentMeta};
+use granit_types::{AgentDocInfo, Document, DocumentMeta};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -46,21 +48,23 @@ fn validate_skill_name(name: &str) -> Result<(), CaveError> {
     }
 }
 
-fn skill_meta(name: &str) -> DocumentMeta {
+fn skill_meta(name: &str, description: Option<String>) -> DocumentMeta {
     DocumentMeta {
         slug: name.to_string(),
         relative_path: format!(".granit/agent/skills/{name}/SKILL.md"),
         icon: None,
         favorite: None,
+        description,
     }
 }
 
-fn task_meta(name: &str) -> DocumentMeta {
+fn task_meta(name: &str, description: Option<String>) -> DocumentMeta {
     DocumentMeta {
         slug: name.to_string(),
         relative_path: format!(".granit/agent/tasks/{name}.md"),
         icon: None,
         favorite: None,
+        description,
     }
 }
 
@@ -70,6 +74,50 @@ fn parse_agent_doc_frontmatter(raw: &str) -> AgentDocFrontmatter {
     let (yaml, _) = split_frontmatter(raw);
     yaml.and_then(|text| serde_yml::from_str(&text).ok())
         .unwrap_or_default()
+}
+
+/// Strip the frontmatter block and any blank lines that follow it.
+fn agent_doc_body(raw: &str) -> String {
+    let (_, body) = split_frontmatter(raw);
+    body.trim_start_matches(['\n', '\r']).to_string()
+}
+
+/// Rebuild an agent document from its existing raw content: the frontmatter
+/// is parsed into a generic YAML mapping, `set` updates only the keys the
+/// app owns, and everything else — including spec keys the app doesn't know
+/// (`license`, `compatibility`, `metadata`, `allowed-tools`, …) — is carried
+/// over unchanged. Comments in the frontmatter do not survive the rewrite.
+fn rebuild_agent_doc(raw: &str, body: &str, set: impl FnOnce(&mut serde_yml::Mapping)) -> String {
+    let (yaml, _) = split_frontmatter(raw);
+    let mut map: serde_yml::Mapping = yaml
+        .filter(|text| !text.trim().is_empty())
+        .and_then(|text| match serde_yml::from_str(&text) {
+            Ok(map) => Some(map),
+            Err(e) => {
+                log::warn!("agent document frontmatter is not valid YAML, rebuilding it: {e}");
+                None
+            }
+        })
+        .unwrap_or_default();
+    set(&mut map);
+    // The serializer emits no trailing newline; the closing fence needs one.
+    let mut yaml_out = serde_yml::to_string(&map).unwrap_or_default();
+    if !yaml_out.ends_with('\n') {
+        yaml_out.push('\n');
+    }
+    let body = body.trim_start_matches(['\n', '\r']);
+    let newline = if body.is_empty() || body.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    format!("---\n{yaml_out}---\n\n{body}{newline}")
+}
+
+/// Set a string key on a frontmatter mapping, preserving its position when
+/// the key already exists.
+fn set_frontmatter_key(map: &mut serde_yml::Mapping, key: &str, value: &str) {
+    map.insert(key, serde_yml::Value::from(value));
 }
 
 impl Cave {
@@ -166,9 +214,19 @@ impl Cave {
 
     /// A skill's instructions: the `SKILL.md` body with frontmatter stripped.
     pub fn skill_body(&self, name: &str) -> Result<String, CaveError> {
+        Ok(agent_doc_body(&self.read_skill_raw(name)?))
+    }
+
+    /// Read a skill for editing: the `SKILL.md` body as content, with the
+    /// frontmatter description on the metadata. The frontmatter itself is
+    /// managed by the app, like note frontmatter.
+    pub fn read_skill(&self, name: &str) -> Result<Document, CaveError> {
         let raw = self.read_skill_raw(name)?;
-        let (_, body) = split_frontmatter(&raw);
-        Ok(body.trim_start_matches(['\n', '\r']).to_string())
+        let fm = parse_agent_doc_frontmatter(&raw);
+        Ok(Document {
+            meta: skill_meta(name, Some(fm.description.unwrap_or_default())),
+            content: agent_doc_body(&raw),
+        })
     }
 
     /// Create a new skill directory with a seeded `SKILL.md`.
@@ -202,20 +260,24 @@ impl Cave {
         );
         write_new(&skill_md, seed)?;
         self.skills.insert(name.to_string(), skill_md);
-        Ok(skill_meta(name))
+        Ok(skill_meta(
+            name,
+            Some("Describe what this skill does and when to use it.".to_string()),
+        ))
     }
 
-    /// Update a skill: optionally rename its directory, then write `content`
-    /// to its `SKILL.md` (rolling the rename back if the write fails).
+    /// Update a skill: optionally rename its directory, then rebuild its
+    /// `SKILL.md` from `body` and `description` (rolling the rename back if
+    /// the write fails).
     ///
-    /// A rename does not touch the frontmatter `name:` field — files are
-    /// never rewritten by the app; a mismatch is tolerated (and logged when
-    /// listing).
+    /// The app owns the `name` (kept in sync with the directory) and
+    /// `description` frontmatter keys; all other keys are preserved.
     pub fn update_skill(
         &mut self,
         old_name: &str,
         new_name: &str,
-        content: &str,
+        body: &str,
+        description: &str,
     ) -> Result<DocumentMeta, CaveError> {
         validate_skill_name(new_name)?;
         let old_md = self.skill_md_path(old_name)?.clone();
@@ -233,7 +295,16 @@ impl Cave {
             old_md
         };
 
-        if let Err(e) = write_atomic(&final_md, content) {
+        let write_result = std::fs::read_to_string(&final_md)
+            .map_err(CaveError::from)
+            .and_then(|existing_raw| {
+                let updated = rebuild_agent_doc(&existing_raw, body, |map| {
+                    set_frontmatter_key(map, "name", new_name);
+                    set_frontmatter_key(map, "description", description);
+                });
+                write_atomic(&final_md, updated).map_err(CaveError::from)
+            });
+        if let Err(e) = write_result {
             if renamed {
                 let new_dir = self.agent_skills_dir().join(new_name);
                 let old_dir = self.agent_skills_dir().join(old_name);
@@ -243,14 +314,14 @@ impl Cave {
                     )));
                 }
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         if renamed {
             self.skills.remove(old_name);
             self.skills.insert(new_name.to_string(), final_md);
         }
-        Ok(skill_meta(new_name))
+        Ok(skill_meta(new_name, Some(description.to_string())))
     }
 
     /// Delete a skill directory and everything in it.
@@ -324,16 +395,34 @@ impl Cave {
         let seed = "---\ndescription: Describe what this task does.\n---\n\nWrite the prompt to send here. The text typed after the slash command is available as {{ input }}.\n";
         write_new(&path, seed)?;
         self.tasks.insert(name.to_string(), path);
-        Ok(task_meta(name))
+        Ok(task_meta(
+            name,
+            Some("Describe what this task does.".to_string()),
+        ))
     }
 
-    /// Update a task: optionally rename its file, then write `content`
-    /// (rolling the rename back if the write fails).
+    /// Read a task for editing: the body as content, with the frontmatter
+    /// description on the metadata. The frontmatter itself is managed by
+    /// the app, like note frontmatter.
+    pub fn read_task(&self, slug: &str) -> Result<Document, CaveError> {
+        let raw = self.read_task_raw(slug)?;
+        let fm = parse_agent_doc_frontmatter(&raw);
+        Ok(Document {
+            meta: task_meta(slug, Some(fm.description.unwrap_or_default())),
+            content: agent_doc_body(&raw),
+        })
+    }
+
+    /// Update a task: optionally rename its file, then rebuild it from
+    /// `body` and `description` (rolling the rename back if the write
+    /// fails). The app owns the `description` frontmatter key; all other
+    /// keys are preserved.
     pub fn update_task(
         &mut self,
         old_name: &str,
         new_name: &str,
-        content: &str,
+        body: &str,
+        description: &str,
     ) -> Result<DocumentMeta, CaveError> {
         let new_name = normalize_note_name(new_name);
         validate_name(new_name)?;
@@ -351,7 +440,15 @@ impl Cave {
             old_path.clone()
         };
 
-        if let Err(e) = write_atomic(&final_path, content) {
+        let write_result = std::fs::read_to_string(&final_path)
+            .map_err(CaveError::from)
+            .and_then(|existing_raw| {
+                let updated = rebuild_agent_doc(&existing_raw, body, |map| {
+                    set_frontmatter_key(map, "description", description);
+                });
+                write_atomic(&final_path, updated).map_err(CaveError::from)
+            });
+        if let Err(e) = write_result {
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_path, &old_path) {
                     return Err(CaveError::Io(format!(
@@ -359,14 +456,14 @@ impl Cave {
                     )));
                 }
             }
-            return Err(e.into());
+            return Err(e);
         }
 
         if renamed {
             self.tasks.remove(old_name);
             self.tasks.insert(new_name.to_string(), final_path);
         }
-        Ok(task_meta(new_name))
+        Ok(task_meta(new_name, Some(description.to_string())))
     }
 
     /// Delete a task file.
@@ -387,9 +484,7 @@ impl Cave {
     /// should fail visibly in the chat instead of silently sending mangled
     /// text.
     pub fn render_task(&self, slug: &str, input: &str) -> Result<String, CaveError> {
-        let raw = self.read_task_raw(slug)?;
-        let (_, body) = split_frontmatter(&raw);
-        let body = body.trim_start_matches(['\n', '\r']);
+        let body = agent_doc_body(&self.read_task_raw(slug)?);
 
         let mut context = tera::Context::new();
         context.insert("input", input);
@@ -416,7 +511,7 @@ impl Cave {
         context.insert("weekday", &now.format("%A").to_string());
         context.insert("weekday_short", &now.format("%a").to_string());
 
-        Ok(tera::Tera::one_off(body, &context, false)?)
+        Ok(tera::Tera::one_off(&body, &context, false)?)
     }
 }
 
@@ -451,7 +546,8 @@ mod tests {
         cave.update_skill(
             "pdf-processing",
             "pdf-processing",
-            "---\nname: pdf-processing\ndescription: Handle PDFs.\nlicense: MIT\n---\n\nDo PDF things.\n",
+            "Do PDF things.\n",
+            "Handle PDFs.",
         )
         .unwrap();
 
@@ -460,15 +556,45 @@ mod tests {
         assert_eq!(skills[0].name, "pdf-processing");
         assert_eq!(skills[0].description, "Handle PDFs.");
 
-        // Unknown spec keys survive on disk: the app never rewrites the file.
-        let raw = cave.read_skill_raw("pdf-processing").unwrap();
-        assert!(raw.contains("license: MIT"));
+        // Reading for editing yields the body + the description on the meta.
+        let doc = cave.read_skill("pdf-processing").unwrap();
+        assert_eq!(doc.content, "Do PDF things.\n");
+        assert_eq!(doc.meta.description.as_deref(), Some("Handle PDFs."));
 
-        // The body strips frontmatter.
+        // The tool body strips frontmatter too.
         assert_eq!(
             cave.skill_body("pdf-processing").unwrap(),
             "Do PDF things.\n"
         );
+    }
+
+    #[test]
+    fn test_update_skill_preserves_unknown_frontmatter_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let skills_dir = dir.path().join(".granit/agent/skills/spec-skill");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+        // A dropped-in spec-compliant skill with keys the app doesn't manage.
+        std::fs::write(
+            skills_dir.join("SKILL.md"),
+            "---\nname: spec-skill\ndescription: Old description.\nlicense: MIT\nmetadata:\n  author: example-org\n---\n\nOld body.\n",
+        )
+        .unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.update_skill(
+            "spec-skill",
+            "spec-skill",
+            "New body.\n",
+            "New description.",
+        )
+        .unwrap();
+
+        let raw = cave.read_skill_raw("spec-skill").unwrap();
+        assert!(raw.contains("license: MIT"), "got: {raw}");
+        assert!(raw.contains("author: example-org"), "got: {raw}");
+        assert!(raw.contains("description: New description."), "got: {raw}");
+        assert!(!raw.contains("Old description."), "got: {raw}");
+        assert!(raw.ends_with("---\n\nNew body.\n"), "got: {raw}");
     }
 
     #[test]
@@ -528,7 +654,7 @@ mod tests {
 
         cave.create_skill("old-name").unwrap();
         let meta = cave
-            .update_skill("old-name", "new-name", "new content")
+            .update_skill("old-name", "new-name", "new content", "a description")
             .unwrap();
 
         assert_eq!(meta.slug, "new-name");
@@ -537,7 +663,10 @@ mod tests {
             .join(".granit/agent/skills/new-name/SKILL.md")
             .exists());
         assert!(!dir.path().join(".granit/agent/skills/old-name").exists());
-        assert_eq!(cave.read_skill_raw("new-name").unwrap(), "new content");
+        // The frontmatter name field is kept in sync with the directory.
+        let raw = cave.read_skill_raw("new-name").unwrap();
+        assert!(raw.contains("name: new-name"), "got: {raw}");
+        assert_eq!(cave.skill_body("new-name").unwrap(), "new content\n");
         assert!(matches!(
             cave.read_skill_raw("old-name").unwrap_err(),
             CaveError::SkillNotFound(_)
@@ -555,7 +684,8 @@ mod tests {
         cave.update_task(
             "summarize",
             "summarize",
-            "---\ndescription: Summarize something.\n---\n\nSummarize: {{ input }}\n",
+            "Summarize: {{ input }}\n",
+            "Summarize something.",
         )
         .unwrap();
 
@@ -581,7 +711,8 @@ mod tests {
         cave.update_task(
             "review",
             "review",
-            "---\ndescription: d\n---\nReview {{ input }} on {{ today }} for [[{{ active_note }}]]",
+            "Review {{ input }} on {{ today }} for [[{{ active_note }}]]",
+            "d",
         )
         .unwrap();
         cave.set_active_slug(Some("my-note".to_string()));
@@ -590,7 +721,7 @@ mod tests {
         let rendered = cave.render_task("review", "chapter two").unwrap();
         assert_eq!(
             rendered,
-            format!("Review chapter two on {today} for [[my-note]]")
+            format!("Review chapter two on {today} for [[my-note]]\n")
         );
     }
 
@@ -608,7 +739,7 @@ mod tests {
         // A task referencing active_note with no note open is a render error,
         // not a silent fallback.
         cave.create_task("broken").unwrap();
-        cave.update_task("broken", "broken", "Note: {{ active_note }}")
+        cave.update_task("broken", "broken", "Note: {{ active_note }}", "d")
             .unwrap();
         assert!(matches!(
             cave.render_task("broken", "x").unwrap_err(),

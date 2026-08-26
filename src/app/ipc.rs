@@ -322,7 +322,7 @@ pub async fn list_skills() -> Result<Vec<granit_types::AgentDocInfo>, String> {
     invoke_no_args("list_skills").await
 }
 
-/// Read a skill's SKILL.md — raw content, frontmatter included.
+/// Read a skill: SKILL.md body as content, description on the meta.
 pub async fn read_skill(name: &str) -> Result<Document, String> {
     invoke_cmd("read_skill", &HashMap::from([("name", name)])).await
 }
@@ -335,6 +335,7 @@ pub async fn update_skill(
     old_name: &str,
     new_name: &str,
     content: &str,
+    description: &str,
 ) -> Result<DocumentMeta, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -342,6 +343,7 @@ pub async fn update_skill(
         old_name: &'a str,
         new_name: &'a str,
         content: &'a str,
+        description: &'a str,
     }
     invoke_cmd(
         "update_skill",
@@ -349,6 +351,7 @@ pub async fn update_skill(
             old_name,
             new_name,
             content,
+            description,
         },
     )
     .await
@@ -368,7 +371,7 @@ pub async fn list_tasks() -> Result<Vec<granit_types::AgentDocInfo>, String> {
     invoke_no_args("list_tasks").await
 }
 
-/// Read a task file — raw content, frontmatter included.
+/// Read a task: body as content, description on the meta.
 pub async fn read_task(name: &str) -> Result<Document, String> {
     invoke_cmd("read_task", &HashMap::from([("name", name)])).await
 }
@@ -381,6 +384,7 @@ pub async fn update_task(
     old_name: &str,
     new_name: &str,
     content: &str,
+    description: &str,
 ) -> Result<DocumentMeta, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -388,6 +392,7 @@ pub async fn update_task(
         old_name: &'a str,
         new_name: &'a str,
         content: &'a str,
+        description: &'a str,
     }
     invoke_cmd(
         "update_task",
@@ -395,6 +400,7 @@ pub async fn update_task(
             old_name,
             new_name,
             content,
+            description,
         },
     )
     .await

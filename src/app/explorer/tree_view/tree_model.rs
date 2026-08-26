@@ -133,6 +133,7 @@ mod tests {
             relative_path: relative_path.into(),
             icon: None,
             favorite: None,
+            description: None,
         }
     }
 

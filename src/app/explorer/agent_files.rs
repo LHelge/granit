@@ -307,13 +307,13 @@ pub fn AgentFiles() -> impl IntoView {
                                 <div>
                                     <p class="font-medium text-base-content/75">"Skills"</p>
                                     <p class="mt-1 leading-relaxed">
-                                        "Each skill is a folder with a SKILL.md following the Agent Skills format: YAML frontmatter with name (matching the folder, kebab-case) and description, then the instructions. The agent sees every name and description and loads the full instructions on demand with the use_skill tool. Only SKILL.md is used; scripts and reference files are ignored."
+                                        "Each skill is a folder with a SKILL.md following the Agent Skills format. The name (kebab-case) and description are edited in the editor like note frontmatter; other frontmatter fields are preserved. The agent sees every name and description and loads the full instructions on demand with the use_skill tool. Only SKILL.md is used; scripts and reference files are ignored."
                                     </p>
                                 </div>
                                 <div>
                                     <p class="font-medium text-base-content/75">"Tasks"</p>
                                     <p class="mt-1 leading-relaxed">
-                                        "Markdown files with a description in the frontmatter, invoked from the chat by typing / followed by the task name. The body is a Tera template that becomes the prompt. Available variables:"
+                                        "Markdown files invoked from the chat by typing / followed by the task name; the description is edited in the editor. The body is a Tera template that becomes the prompt. Available variables:"
                                     </p>
                                     <div class="mt-1 flex flex-wrap gap-1.5">
                                         <span class="badge badge-ghost badge-sm font-mono">"{{ input }}"</span>
