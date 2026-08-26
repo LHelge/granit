@@ -153,6 +153,23 @@ const granitTheme = EditorView.theme({
     "&.cm-mod-down .cm-wiki-link, &.cm-mod-down .cm-md-link": {
         cursor: "pointer",
     },
+    // ── Tera template blocks ──────────────────────────────────────
+    ".cm-tera": {
+        fontFamily: "monospace",
+        fontSize: "0.925em",
+        borderRadius: "0.25em",
+        backgroundColor: "color-mix(in oklch, var(--color-base-content) 5%, transparent)",
+    },
+    ".cm-tera-expr": {
+        color: "var(--color-accent)",
+    },
+    ".cm-tera-stmt": {
+        color: "var(--color-secondary)",
+    },
+    ".cm-tera-comment": {
+        color: "color-mix(in oklch, var(--color-base-content) 45%, transparent)",
+        fontStyle: "italic",
+    },
     // ── Search popover (Cmd/Ctrl+F) ───────────────────────────────
     // The panel container floats over the editor's top-right corner
     // instead of rendering as a full-width bar.
@@ -895,6 +912,191 @@ function alertCompletionSource(context: CompletionContext): CompletionResult | n
     };
 }
 
+// ── Tera template support ─────────────────────────────────────────
+//
+// Templates, tasks, and the agent system prompt are rendered with Tera on
+// the backend. When the host app enables Tera mode for a document (via
+// `setTeraMode`), `{{ … }}` / `{% … %}` / `{# … #}` blocks are highlighted
+// and the document's context variables, Tera keywords, and common filters
+// are offered as completions. Notes (and skills, which are loaded verbatim)
+// keep Tera mode off: the field is `null` and both the decorator and the
+// completion source turn themselves off.
+
+interface TeraVariable {
+    label: string;
+    detail?: string;
+}
+
+const teraField = StateField.define<TeraVariable[] | null>({
+    create: () => null,
+    update: (value) => value,
+});
+
+function teraExtension(variables: TeraVariable[] | null) {
+    return teraField.init(() => variables);
+}
+
+// One Tera block of any kind, non-greedy, possibly spanning lines.
+const teraBlockRegex = /\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}|\{#[\s\S]*?#\}/g;
+
+const teraExprDeco = Decoration.mark({ class: "cm-tera cm-tera-expr" });
+const teraStmtDeco = Decoration.mark({ class: "cm-tera cm-tera-stmt" });
+const teraCommentDeco = Decoration.mark({ class: "cm-tera cm-tera-comment" });
+
+function buildTeraDecorations(view: EditorView): DecorationSet {
+    if (view.state.field(teraField) === null) return Decoration.none;
+    const builder = new RangeSetBuilder<Decoration>();
+    for (const { from, to } of view.visibleRanges) {
+        const text = view.state.sliceDoc(from, to);
+        teraBlockRegex.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = teraBlockRegex.exec(text)) !== null) {
+            const deco = m[0].startsWith("{{")
+                ? teraExprDeco
+                : m[0].startsWith("{%")
+                  ? teraStmtDeco
+                  : teraCommentDeco;
+            builder.add(from + m.index, from + m.index + m[0].length, deco);
+        }
+    }
+    return builder.finish();
+}
+
+const teraDecorations = ViewPlugin.fromClass(
+    class {
+        decorations: DecorationSet;
+        constructor(view: EditorView) {
+            this.decorations = buildTeraDecorations(view);
+        }
+        update(update: ViewUpdate) {
+            if (
+                update.docChanged ||
+                update.viewportChanged ||
+                // Tera mode toggled (setTeraMode)
+                update.startState.field(teraField, false) !== update.state.field(teraField, false)
+            ) {
+                this.decorations = buildTeraDecorations(update.view);
+            }
+        }
+    },
+    { decorations: (v) => v.decorations }
+);
+
+// Statement keywords supported by Tera one-off rendering (no template
+// inheritance/imports, which need a full template registry).
+const teraKeywords = [
+    "if",
+    "elif",
+    "else",
+    "endif",
+    "for",
+    "in",
+    "endfor",
+    "set",
+    "set_global",
+    "raw",
+    "endraw",
+    "filter",
+    "endfilter",
+    "break",
+    "continue",
+    "and",
+    "or",
+    "not",
+    "is",
+    "as",
+];
+
+// Common Tera built-in filters.
+const teraFilters = [
+    "abs",
+    "capitalize",
+    "concat",
+    "date",
+    "default",
+    "escape",
+    "first",
+    "float",
+    "get",
+    "group_by",
+    "int",
+    "join",
+    "last",
+    "length",
+    "lower",
+    "map",
+    "nth",
+    "replace",
+    "reverse",
+    "round",
+    "safe",
+    "slice",
+    "slugify",
+    "sort",
+    "split",
+    "title",
+    "trim",
+    "truncate",
+    "unique",
+    "upper",
+    "urlencode",
+    "wordcount",
+];
+
+// The `{{` / `{%` opener of the unclosed Tera block the cursor is inside,
+// or null when the cursor is not inside one. Scans a bounded window back
+// from `pos` so huge documents stay cheap.
+function teraOpenerAt(state: EditorState, pos: number): "{{" | "{%" | null {
+    const windowFrom = Math.max(0, pos - 500);
+    const before = state.sliceDoc(windowFrom, pos);
+    const open = Math.max(before.lastIndexOf("{{"), before.lastIndexOf("{%"));
+    if (open === -1) return null;
+    const opener = before.slice(open, open + 2) as "{{" | "{%";
+    const closer = opener === "{{" ? "}}" : "%}";
+    return before.slice(open + 2).includes(closer) ? null : opener;
+}
+
+function teraCompletionSource(context: CompletionContext): CompletionResult | null {
+    const variables = context.state.field(teraField);
+    if (variables === null) return null;
+
+    const opener = teraOpenerAt(context.state, context.pos);
+    if (opener === null) return null;
+
+    // After a `|`: complete filter names.
+    const filterMatch = context.matchBefore(/\|\s*\w*$/);
+    if (filterMatch) {
+        const typed = filterMatch.text.replace(/^\|\s*/, "");
+        return {
+            from: context.pos - typed.length,
+            options: teraFilters.map((f) => ({ label: f, type: "function", detail: "filter" })),
+            validFor: /^\w*$/,
+            filter: typed.length > 0,
+        };
+    }
+
+    const word = context.matchBefore(/[\w.]*$/);
+    if (!word) return null;
+    // Only pop up unprompted right after the opener or while typing a word.
+    if (word.from === word.to && !context.explicit) {
+        const opened = context.matchBefore(/(\{\{|\{%)\s*$/);
+        if (!opened) return null;
+    }
+
+    const options = [
+        ...variables.map((v) => ({ label: v.label, detail: v.detail, type: "variable" })),
+        ...(opener === "{%"
+            ? teraKeywords.map((k) => ({ label: k, type: "keyword" }))
+            : []),
+    ];
+    return {
+        from: word.from,
+        options,
+        validFor: /^[\w.]*$/,
+        filter: word.text.length > 0,
+    };
+}
+
 // ── Editor instances ───────────────────────────────────────────────
 
 interface EditorInstance {
@@ -902,6 +1104,7 @@ interface EditorInstance {
     fontCompartment: Compartment;
     readOnlyCompartment: Compartment;
     slugsCompartment: Compartment;
+    teraCompartment: Compartment;
     onChange: ((content: string) => void) | null;
     onSelectionChange: ((selectedText: string) => void) | null;
 }
@@ -938,6 +1141,7 @@ export function create(
     const fontCompartment = new Compartment();
     const readOnlyCompartment = new Compartment();
     const slugsCompartment = new Compartment();
+    const teraCompartment = new Compartment();
 
     const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
         const inst = instances.get(handle);
@@ -965,8 +1169,10 @@ export function create(
             ),
             readOnlyCompartment.of(EditorState.readOnly.of(false)),
             slugsCompartment.of(slugsExtension(config.slugs ?? [], config.brokenSlugs ?? [])),
+            teraCompartment.of(teraExtension(null)),
+            teraDecorations,
             autocompletion({
-                override: [wikiLinkCompletionSource, alertCompletionSource],
+                override: [wikiLinkCompletionSource, teraCompletionSource, alertCompletionSource],
                 optionClass: (completion) =>
                     completion.type === "broken" ? "cm-completion-broken" : "",
             }),
@@ -1009,6 +1215,7 @@ export function create(
         fontCompartment,
         readOnlyCompartment,
         slugsCompartment,
+        teraCompartment,
         onChange: config.onChange ?? null,
         onSelectionChange: config.onSelectionChange ?? null,
     });
@@ -1072,6 +1279,16 @@ export function setReadOnly(handle: number, readOnly: boolean): void {
         effects: inst.readOnlyCompartment.reconfigure(
             EditorState.readOnly.of(readOnly)
         ),
+    });
+}
+
+// Enable Tera template support (highlighting + completion) with the given
+// context variables, or disable it with `null` (plain notes).
+export function setTeraMode(handle: number, variables: TeraVariable[] | null): void {
+    const inst = instances.get(handle);
+    if (!inst) return;
+    inst.view.dispatch({
+        effects: inst.teraCompartment.reconfigure(teraExtension(variables)),
     });
 }
 

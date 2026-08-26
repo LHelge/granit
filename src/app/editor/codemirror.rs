@@ -31,6 +31,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = setSlugs)]
     fn cm_set_slugs(handle: u32, slugs: js_sys::Array, broken_slugs: js_sys::Array);
 
+    #[wasm_bindgen(js_namespace = GranitEditor, js_name = setTeraMode)]
+    fn cm_set_tera_mode(handle: u32, variables: JsValue);
+
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = destroy)]
     fn cm_destroy(handle: u32);
 }
@@ -165,6 +168,29 @@ pub fn set_slugs(handle: EditorHandle, slugs: &[String], broken_slugs: &[String]
             .collect()
     };
     cm_set_slugs(handle.0, to_array(slugs), to_array(broken_slugs));
+}
+
+/// Enable Tera template support (block highlighting + completion) with the
+/// given completion variables as `(label, detail)` pairs, or disable it with
+/// `None` (plain notes).
+pub fn set_tera_mode(handle: EditorHandle, variables: Option<&[(&str, &str)]>) {
+    let js_variables = match variables {
+        Some(vars) => {
+            let arr = js_sys::Array::new();
+            for (label, detail) in vars {
+                let obj = js_sys::Object::new();
+                let _ = js_sys::Reflect::set(&obj, &"label".into(), &JsValue::from_str(label));
+                if !detail.is_empty() {
+                    let _ =
+                        js_sys::Reflect::set(&obj, &"detail".into(), &JsValue::from_str(detail));
+                }
+                arr.push(&obj);
+            }
+            arr.into()
+        }
+        None => JsValue::NULL,
+    };
+    cm_set_tera_mode(handle.0, js_variables);
 }
 
 /// Destroy the editor instance and free resources.
