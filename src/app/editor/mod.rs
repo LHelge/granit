@@ -22,6 +22,7 @@ enum PersistedMeta {
     Note(DocumentMeta),
     Template(DocumentMeta),
     SystemPrompt(DocumentMeta),
+    Skill(DocumentMeta),
 }
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -147,6 +148,16 @@ impl EditorCtx {
                 let meta = ipc::update_system_prompt(&snapshot.content).await?;
                 Ok(PersistedMeta::SystemPrompt(meta))
             }
+            // Skills are edited raw (frontmatter included); the title input
+            // renames the skill directory.
+            DocumentKind::Skill => {
+                let meta =
+                    ipc::update_skill(&snapshot.slug, &snapshot.name, &snapshot.content).await?;
+                if let Ok(skills) = ipc::list_skills().await {
+                    self.app.skills.set(skills);
+                }
+                Ok(PersistedMeta::Skill(meta))
+            }
         }
     }
 
@@ -224,6 +235,23 @@ impl EditorCtx {
                     self.dirty.set(false);
                 }
             }
+            Ok(PersistedMeta::Skill(meta)) => {
+                if snapshot.explicit {
+                    self.dirty.set(false);
+                    self.prev_doc_key
+                        .set(Some(DocumentKind::Skill.doc_key(&meta.slug)));
+                    self.app.set_active_aux_document(
+                        DocumentKind::Skill,
+                        Document {
+                            meta,
+                            content: snapshot.content.clone(),
+                        },
+                    );
+                    self.editing.set(false);
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
+                }
+            }
             Ok(PersistedMeta::SystemPrompt(meta)) => {
                 if snapshot.explicit {
                     self.dirty.set(false);
@@ -272,6 +300,7 @@ impl EditorCtx {
                 DocumentKind::Note => ipc::render_note(&slug).await,
                 DocumentKind::Template => ipc::render_template(&slug).await,
                 DocumentKind::SystemPrompt => ipc::render_system_prompt().await,
+                DocumentKind::Skill => ipc::render_skill(&slug).await,
             };
             let still_latest = self.render_request_id.get_untracked() == request_id;
             let still_active =

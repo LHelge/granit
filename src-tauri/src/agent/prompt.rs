@@ -5,13 +5,16 @@
 //! context describing the agent's current configuration.
 
 use chrono::Datelike;
-use granit_types::{AgentMode, NOTE_ICONS};
+use granit_types::{AgentDocInfo, AgentMode, NOTE_ICONS};
 
 /// Configuration-derived values exposed to the system prompt template.
 pub(crate) struct PromptContext {
     pub mode: AgentMode,
     /// Names of the tools that will be registered for this agent.
     pub tools: Vec<String>,
+    /// Skills available in the cave (name + description); the full
+    /// instructions are loaded on demand via the `use_skill` tool.
+    pub skills: Vec<AgentDocInfo>,
 }
 
 /// Render the system prompt template `base` with the standard context
@@ -37,8 +40,7 @@ pub(crate) fn assemble_system_prompt(base: &str, ctx: &PromptContext) -> String 
     let icons: Vec<&str> = NOTE_ICONS.iter().map(|e| e.id).collect();
     context.insert("icons", &icons);
 
-    // Populated once skills exist; always present so `{% if skills %}` renders.
-    context.insert("skills", &Vec::<String>::new());
+    context.insert("skills", &ctx.skills);
 
     match tera::Tera::one_off(base, &context, false) {
         Ok(rendered) => rendered,
@@ -58,6 +60,7 @@ mod tests {
         PromptContext {
             mode,
             tools: vec!["read_note".to_string(), "list_notes".to_string()],
+            skills: Vec::new(),
         }
     }
 
@@ -86,6 +89,22 @@ mod tests {
         assert!(prompt.contains("Ask mode"), "got: {prompt}");
         assert!(!prompt.contains("Agent mode"), "got: {prompt}");
         assert!(!prompt.contains("AlarmClock"), "got: {prompt}");
+    }
+
+    #[test]
+    fn default_template_lists_skills_when_present() {
+        let mut context = ctx(AgentMode::Agent);
+        context.skills = vec![AgentDocInfo {
+            name: "research-summary".to_string(),
+            description: "Write research summaries in my preferred style.".to_string(),
+        }];
+        let prompt = assemble_system_prompt(DEFAULT_SYSTEM_PROMPT_TEMPLATE, &context);
+
+        assert!(
+            prompt.contains("research-summary: Write research summaries"),
+            "got: {prompt}"
+        );
+        assert!(prompt.contains("use_skill"), "got: {prompt}");
     }
 
     #[test]

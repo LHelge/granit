@@ -37,6 +37,9 @@ pub struct Cave {
     anchors: HashMap<String, String>,
     /// In-memory index: template slug → absolute path inside `.granit/templates`.
     templates: HashMap<String, PathBuf>,
+    /// In-memory index: skill name → absolute path of its `SKILL.md` inside
+    /// `.granit/agent/skills/<name>/`.
+    skills: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
     active_slug: Option<String>,
     /// Whether the notes/backlinks/templates indexes have been populated.
@@ -55,6 +58,7 @@ impl Cave {
             broken_links: Vec::new(),
             anchors: HashMap::new(),
             templates: HashMap::new(),
+            skills: HashMap::new(),
             active_slug: None,
             scanned: false,
         }
@@ -76,6 +80,7 @@ impl Cave {
         self.anchors = anchors;
         (self.backlinks, self.broken_links) = Self::build_link_graph(&self.notes, &self.anchors);
         self.templates = Self::scan_templates(&self.templates_dir())?;
+        self.skills = Self::scan_skills(&self.agent_skills_dir())?;
         self.scanned = true;
         Ok(())
     }
@@ -104,6 +109,10 @@ impl Cave {
 
     pub fn system_prompt_path(&self) -> PathBuf {
         self.agent_dir().join("system.md")
+    }
+
+    pub fn agent_skills_dir(&self) -> PathBuf {
+        self.agent_dir().join("skills")
     }
 
     pub fn ensure_config(&self) -> Result<(), CaveError> {

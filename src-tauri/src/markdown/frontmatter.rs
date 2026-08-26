@@ -32,13 +32,14 @@ impl<'a> Markdown<'a> {
     }
 }
 
-/// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.
+/// Split raw markdown into its YAML frontmatter text and body.
 ///
 /// Uses pulldown-cmark's `ENABLE_YAML_STYLE_METADATA_BLOCKS` to detect
 /// frontmatter delimited by `---` (or `...`) at the very start of the
-/// document. If absent or malformed, `None` is returned and the remaining
-/// text is treated as the body.
-pub(super) fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
+/// document. Returns `(None, raw)` when no frontmatter block is present;
+/// the YAML text is returned unparsed so callers can deserialize it into
+/// whatever shape they need.
+pub(crate) fn split_frontmatter(raw: &str) -> (Option<String>, &str) {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
@@ -76,6 +77,18 @@ pub(super) fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
         .strip_prefix('\n')
         .or_else(|| body.strip_prefix("\r\n"))
         .unwrap_or(body);
+    (Some(yaml_text), body)
+}
+
+/// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.
+///
+/// If frontmatter is absent or malformed, `None` is returned and the
+/// remaining text is treated as the body.
+pub(super) fn extract_frontmatter(raw: &str) -> (Option<Frontmatter>, &str) {
+    let (yaml_text, body) = split_frontmatter(raw);
+    let Some(yaml_text) = yaml_text else {
+        return (None, body);
+    };
     // serde_yml 0.0.13 rejects fully empty documents, so an empty frontmatter
     // block (`---\n---`) is parsed as an empty mapping to keep yielding
     // default frontmatter instead of none.

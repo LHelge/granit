@@ -28,6 +28,15 @@ pub enum CaveError {
         conflict: String,
     },
 
+    #[error("Skill not found: {0}")]
+    SkillNotFound(String),
+
+    #[error("Skill already exists: {0}")]
+    SkillAlreadyExists(String),
+
+    #[error("Invalid skill name: {0}")]
+    InvalidSkillName(String),
+
     #[error("Invalid note name: {0}")]
     InvalidName(String),
 

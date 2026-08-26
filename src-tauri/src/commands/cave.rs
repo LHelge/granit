@@ -196,6 +196,79 @@ pub(crate) fn update_system_prompt(
     Ok(system_prompt_meta())
 }
 
+// ── Skills ─────────────────────────────────────────────────────────
+//
+// Skill files are edited raw (frontmatter included), so `read_skill`
+// returns the full SKILL.md content. Every mutation resets the agent so
+// the system prompt's skill listing is rebuilt on the next message.
+
+#[tauri::command]
+pub(crate) fn list_skills(
+    state: tauri::State<AppState>,
+) -> Result<Vec<granit_types::AgentDocInfo>, CaveError> {
+    state.with_cave(|cave| cave.list_skills())
+}
+
+#[tauri::command]
+pub(crate) fn read_skill(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<Document, CaveError> {
+    state.with_cave(|cave| {
+        let content = cave.read_skill_raw(&name)?;
+        Ok(Document {
+            meta: DocumentMeta {
+                slug: name.clone(),
+                relative_path: format!(".granit/agent/skills/{name}/SKILL.md"),
+                icon: None,
+                favorite: None,
+            },
+            content,
+        })
+    })
+}
+
+#[tauri::command]
+pub(crate) fn create_skill(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    let meta = state.with_cave(|cave| cave.create_skill(&name))?;
+    state.reset_agent();
+    Ok(meta)
+}
+
+#[tauri::command]
+pub(crate) fn update_skill(
+    old_name: String,
+    new_name: String,
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    let meta = state.with_cave(|cave| cave.update_skill(&old_name, &new_name, &content))?;
+    state.reset_agent();
+    Ok(meta)
+}
+
+#[tauri::command]
+pub(crate) fn delete_skill(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+    state.with_cave(|cave| cave.delete_skill(&name))?;
+    state.reset_agent();
+    Ok(())
+}
+
+/// Render a skill's SKILL.md as markdown for the editor's preview mode.
+#[tauri::command]
+pub(crate) fn render_skill(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<RenderedDocument, CaveError> {
+    state.with_cave(|cave| {
+        let raw = cave.read_skill_raw(&name)?;
+        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+    })
+}
+
 #[tauri::command]
 pub(crate) fn open_daily_note(state: tauri::State<AppState>) -> Result<Document, CaveError> {
     let config = state.lock_config().clone();
