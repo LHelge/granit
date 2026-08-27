@@ -24,16 +24,22 @@ The agent has access to the following tools. Read-only tools are available in bo
 | `rename_folder` | Rename a folder in-place |
 | `move_folder` | Move a folder under a new parent |
 | `delete_folder` | Delete a folder and all its notes |
-| `open_daily_note` | Open or create today's daily note |
+| `open_daily_note` | Open or create a daily note — today's, or any date passed as `YYYY-MM-DD` |
 | `list_folders` | List all folders in the cave |
+| `list_templates` | List the cave's note [[templates]] |
+| `list_tags` | List all note tags with the notes carrying each tag |
 | `search_notes` | Search notes by slug (case-insensitive) |
 | `search_content` | Search inside note bodies (full-text) |
+| `semantic_search` | Find notes related to a query by meaning, using the retrieval index |
 | `list_todos` | List todo checkboxes from notes, with optional filtering |
 | `toggle_todo` | Toggle the completion status of a todo checkbox in a note |
+| `use_skill` | Load the full instructions of a [[skills-and-tasks|skill]] by name |
+| `read_agent_doc` | Read one of the agent's own [[skills-and-tasks|skills or tasks]] |
+| `write_agent_doc` | Create or update one of the agent's own skills or tasks |
 | `web_fetch` | Fetch a webpage and return its content as markdown |
 | `web_search` | Search the web using Brave Search |
 
-`web_fetch` is always available and needs no API key. `web_search` is registered only when a Brave Search API key is configured.
+`create_note` accepts an optional template slug, so the agent can seed new notes from your [[templates]]. A few tools are registered only when their requirements are met: `web_search` needs a Brave Search API key, and `semantic_search` needs retrieval to be enabled (see below). `web_fetch` is always available and needs no API key.
 
 > [!WARNING]
 > In Agent mode the agent can create, edit, move, and delete notes and folders. These actions write to your files. Review what the agent proposes, and keep your cave under version control or backed up if you let the agent make changes unattended.
@@ -50,7 +56,9 @@ In Ask mode the agent answers from your notes using retrieval-augmented generati
 
 When you ask a question, the most similar notes are retrieved and injected into the conversation as context. The `rag_top_n` setting controls how many notes are injected per query. A higher value gives the model more context at the cost of a larger prompt.
 
+The same index also powers the `semantic_search` tool, which is available in **both** modes whenever retrieval is enabled. In Agent mode, where no context is injected automatically, this is how the model finds notes by meaning on its own initiative; in Ask mode it lets the model dig beyond the automatically injected excerpts. The [[system-prompt|default system prompt]] explains this arrangement to the model, and only when it is actually true.
+
 The index is built or rebuilt in the background when a cave is opened or when the RAG configuration changes. After that it is updated incrementally as you work: creating, saving, renaming, or deleting a note updates only the affected entries rather than rebuilding the whole index.
 
 > [!NOTE]
-> Retrieval context is injected only in Ask mode. In Agent mode the model gathers information through the tools above instead. See [[ai-agent]] for the mode distinction and [[configuration]] for the RAG settings.
+> Retrieval context is injected automatically only in Ask mode. In Agent mode the model gathers information through the tools above — including `semantic_search` — instead. See [[ai-agent]] for the mode distinction and [[configuration]] for the RAG settings.

@@ -36,7 +36,7 @@ agent_font:
 # Sidebar panels
 sidebar:
   visible: true
-  width: 256
+  width: 320
 agent_panel:
   visible: false
   width: 320
@@ -59,7 +59,6 @@ agent:
   mode: agent
   max_history: 100
   max_turns: 10
-  system_prompt: null
   disabled_tools:
     - delete_note
   tool_config:
@@ -105,13 +104,13 @@ left sidebar contains.
 
 | Key | Panel | Default `visible` | Default `width` |
 | --- | --- | --- | --- |
-| `sidebar` | Left explorer sidebar | `true` | `256` |
+| `sidebar` | Left explorer sidebar | `true` | `320` |
 | `agent_panel` | Right agent chat panel | `false` | `320` |
 
 Each block has:
 
 - `visible` (boolean) — whether the panel is shown on load.
-- `width` (number) — panel width in pixels.
+- `width` (number) — panel width in pixels. Widths are clamped to the 320–600 range on load.
 
 # Daily notes
 
@@ -172,8 +171,15 @@ At least one provider must be configured.
   messages are dropped once the limit is exceeded. Must be greater than 0.
 - `max_turns` (number, default `10`) — maximum number of multi-turn tool-call rounds per prompt.
   Must be greater than 0.
-- `system_prompt` (string, optional) — overrides the built-in system prompt. When omitted (or
-  `null`), Granit uses its default prompt.
+
+## System prompt, skills, and tasks
+
+The system prompt is not part of `config.yml`: it lives as an editable Tera-templated file at
+`.granit/agent/system.md`, alongside the cave's skills (`.granit/agent/skills/`) and slash-command
+tasks (`.granit/agent/tasks/`). See [[system-prompt]] and [[skills-and-tasks]].
+
+A `system_prompt` key from older versions is still accepted: on the first open its value is
+migrated into `.granit/agent/system.md` and the key is removed from the config.
 
 ## Tools
 
