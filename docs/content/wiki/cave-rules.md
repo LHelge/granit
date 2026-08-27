@@ -28,7 +28,7 @@ This is why [[wiki-links]] of the form `[[note]]` resolve by filename across the
 Not every file in the cave directory becomes a note:
 
 - **Hidden directories** (those whose name begins with a dot) are excluded from note scans.
-- **The `.granit/` directory** is excluded as well. It holds the cave's `config.yml` and `templates/` folder rather than notes — see [[configuration]] for what lives there.
+- **The `.granit/` directory** is excluded as well. It holds the cave's `config.yml`, its `templates/` folder, and the agent's files under `agent/` (the [[system-prompt]], [[skills-and-tasks|skills, and tasks]]) rather than notes — see [[configuration]] for what lives there.
 
 Templates are deliberately kept outside the note tree in `.granit/templates/` and use their own separate, flat slug namespace, so a template name never collides with a note name. See [[templates]] for details.
 

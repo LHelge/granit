@@ -4,7 +4,7 @@ category: Notes & Writing
 tags: [explorer, sidebar, navigation, search]
 ---
 
-The explorer is the sidebar on the left of the Granit window. It collects several ways to navigate your cave — a file tree, full-text search, tags, favorites, todos, templates, and a calendar — into tabbed views. This page summarizes each tab; several have their own dedicated pages for detail.
+The explorer is the sidebar on the left of the Granit window. It collects several ways to navigate your cave — a file tree, full-text search, tags, favorites, todos, templates, the agent's files, and a calendar — into tabbed views. This page summarizes each tab; several have their own dedicated pages for detail.
 
 # File tree
 
@@ -28,6 +28,10 @@ The Favorites tab lists notes whose frontmatter sets the `favorite` flag, giving
 # Calendar
 
 The calendar lets you browse [[daily-notes]] by date — jump to a previous day's note or see which days already have one.
+
+# Agent
+
+The Agent tab manages the AI agent's files: the [[system-prompt]] and the cave's [[skills-and-tasks|skills and tasks]], with a help panel summarizing their formats and template variables.
 
 # Other tabs
 

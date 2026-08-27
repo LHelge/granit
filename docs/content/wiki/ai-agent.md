@@ -30,9 +30,17 @@ Once a provider is active, Granit queries it for the list of models it offers an
 The agent operates in one of two modes, switchable from the chat panel.
 
 - **Ask mode** is for questions about your existing notes. Relevant notes are retrieved from your cave and injected into the conversation as context, so the model can answer from what you have written. Ask mode is read-only — it does not modify your cave.
-- **Agent mode** gives the model the full toolset, so it can create, edit, move, and delete notes and folders, manage daily notes and todos, search, and fetch from the web. No retrieval context is injected in Agent mode; the model gathers what it needs through tools instead.
+- **Agent mode** gives the model the full toolset, so it can create, edit, move, and delete notes and folders, manage daily notes and todos, search, and fetch from the web. No retrieval context is injected automatically in Agent mode; the model gathers what it needs through tools instead, including semantic search over the retrieval index.
 
-Retrieval context (RAG) is injected only in Ask mode. The retrieval mechanism and the available tools are described in [[agent-tools-and-rag]].
+The agent is told which mode it is in, so it will not offer edits it cannot perform in Ask mode. The retrieval mechanism and the available tools are described in [[agent-tools-and-rag]].
+
+# Making it yours
+
+The agent's behavior is customizable through files in your cave, edited from the Agent tab in the [[explorer]] sidebar:
+
+- The [[system-prompt]] is a Tera-templated file holding the agent's standing instructions.
+- [[skills-and-tasks|Skills]] teach the agent reusable workflows it loads on demand.
+- [[skills-and-tasks#tasks|Tasks]] are reusable prompts you invoke with `/task-name` in the chat.
 
 # Streaming responses
 
