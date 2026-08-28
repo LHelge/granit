@@ -1,10 +1,10 @@
 ---
 id: aph
 title: Backend CI job
-status: open
+status: done
 priority: P2
 created: "2026-08-28T12:46:07.857843Z"
-updated: "2026-08-28T12:46:07.857843Z"
+updated: "2026-08-28T13:15:09.808369Z"
 depends_on:
   - wqy
   - "2ws"
