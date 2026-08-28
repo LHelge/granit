@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: granit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-granit}
+      POSTGRES_DB: granit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U granit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - rustfs-data:/data
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    # ensure_bucket at startup needs RustFS, which has no healthcheck to
+    # wait on — restart until it comes up.
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://granit:${POSTGRES_PASSWORD:-granit}@postgres:5432/granit
+      BIND_ADDR: 0.0.0.0:8080
+      S3_ENDPOINT: http://rustfs:9000
+      # Presigned URLs are signed against this origin. It MUST be the Caddy
+      # origin as reached by the desktop app, or uploads will fail.
+      S3_PUBLIC_ENDPOINT: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      S3_BUCKET: granit-backups
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      # The only host-published service. For a real domain, publish 80/443
+      # instead and set CADDY_SITE_ADDRESS + PUBLIC_ORIGIN (see README).
+      - "8080:8080"
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:8080}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  rustfs-data:
+  caddy-data:
+  caddy-config:
