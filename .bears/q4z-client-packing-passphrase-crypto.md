@@ -1,10 +1,10 @@
 ---
 id: q4z
 title: Client packing + passphrase crypto
-status: open
+status: in_progress
 priority: P2
 created: "2026-08-28T12:45:51.769685Z"
-updated: "2026-08-28T12:45:51.769685Z"
+updated: "2026-08-28T13:09:04.411528Z"
 parent: psq
 ---
 

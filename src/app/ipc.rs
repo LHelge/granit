@@ -1,6 +1,8 @@
+use granit_api::BackupInfo;
 use granit_types::{
-    AppConfig, AppMetadata, AttachedNote, ContentMatch, Document, DocumentMeta, ReleaseNotes,
-    RenderedDocument, SidebarConfig, TodoList, ToolCallInfo, ToolInfo, UpdateCheckStatus,
+    AppConfig, AppMetadata, AttachedNote, BackupProgress, ContentMatch, Document, DocumentMeta,
+    ReleaseNotes, RenderedDocument, SidebarConfig, TodoList, ToolCallInfo, ToolInfo,
+    UpdateCheckStatus,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -611,6 +613,34 @@ pub async fn pick_folder() -> Option<String> {
     result.as_string()
 }
 
+// ── Backup ─────────────────────────────────────────────────────────
+
+/// Take a snapshot of the open cave and upload it to the backup backend.
+/// Stays pending for the whole run; progress arrives via the
+/// `backup:progress` / `backup:done` / `backup:error` events.
+pub async fn backup_now() -> Result<BackupInfo, String> {
+    invoke_no_args("backup_now").await
+}
+
+/// Derive and cache the backup encryption key from a passphrase.
+pub async fn set_backup_passphrase(passphrase: &str) -> Result<(), String> {
+    invoke_unit(
+        "set_backup_passphrase",
+        &HashMap::from([("passphrase", passphrase)]),
+    )
+    .await
+}
+
+/// Whether the open cave has a backup passphrase set.
+pub async fn has_backup_key() -> Result<bool, String> {
+    invoke_no_args("has_backup_key").await
+}
+
+/// List all snapshots stored on the backend.
+pub async fn list_backups() -> Result<Vec<BackupInfo>, String> {
+    invoke_no_args("list_backups").await
+}
+
 // ── Event listening (agent streaming) ──────────────────────────────
 
 /// Register a closure to be called for each streaming text chunk.
@@ -653,6 +683,44 @@ pub async fn listen_tool_call(cb: impl Fn(ToolCallInfo) + 'static) -> Option<Eve
         if let Ok(info) = serde_wasm_bindgen::from_value::<ToolCallInfo>(inner) {
             cb(info);
         }
+    })
+    .await
+}
+
+/// Register a closure called with each backup progress stage.
+pub async fn listen_backup_progress(cb: impl Fn(BackupProgress) + 'static) -> Option<EventHandle> {
+    listen_event("backup:progress", move |payload: JsValue| {
+        let inner = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .unwrap_or(payload);
+        if let Ok(progress) = serde_wasm_bindgen::from_value::<BackupProgress>(inner) {
+            cb(progress);
+        }
+    })
+    .await
+}
+
+/// Register a closure called when a backup finishes successfully.
+pub async fn listen_backup_done(cb: impl Fn(BackupInfo) + 'static) -> Option<EventHandle> {
+    listen_event("backup:done", move |payload: JsValue| {
+        let inner = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .unwrap_or(payload);
+        if let Ok(info) = serde_wasm_bindgen::from_value::<BackupInfo>(inner) {
+            cb(info);
+        }
+    })
+    .await
+}
+
+/// Register a closure called when a backup fails.
+pub async fn listen_backup_error(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
+    listen_event("backup:error", move |payload: JsValue| {
+        let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown error".to_string());
+        cb(msg);
     })
     .await
 }

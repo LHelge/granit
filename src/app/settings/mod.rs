@@ -1,4 +1,5 @@
 mod agent;
+mod backup;
 mod markdown;
 mod notes;
 mod reading;
@@ -7,9 +8,10 @@ mod theme;
 use crate::app::components::modal::Modal;
 use crate::app::{ipc, AppCtx};
 use agent::AgentSettings;
+use backup::BackupSettings;
 use granit_types::{
-    AgentConfig, AppConfig, FontConfig, ProviderConfig, ProviderEntry, RagConfig, ToolInfo,
-    ToolsConfig, WebFetchConfig, WebSearchConfig,
+    AgentConfig, AppConfig, BackupConfig, FontConfig, ProviderConfig, ProviderEntry, RagConfig,
+    ToolInfo, ToolsConfig, WebFetchConfig, WebSearchConfig,
 };
 use leptos::prelude::*;
 use markdown::MarkdownSettings;
@@ -146,6 +148,9 @@ pub(super) struct SettingsForm {
     pub rag_embedding_model: Option<String>,
     // Theme
     pub theme: String,
+    // Backup
+    pub backup_backend_url: String,
+    pub backup_api_key: String,
     // Available tools (loaded async, read-only after init)
     pub available_tools: Vec<ToolInfo>,
     // System fonts (loaded async, read-only after init)
@@ -185,6 +190,8 @@ impl SettingsForm {
             rag_top_n: config.agent.rag.top_n,
             rag_embedding_model: config.agent.rag.embedding_model.clone(),
             theme: config.theme.clone(),
+            backup_backend_url: config.backup.backend_url.clone(),
+            backup_api_key: config.backup.api_key.clone(),
             available_tools: Vec::new(),
             system_fonts: Vec::new(),
         }
@@ -199,6 +206,7 @@ enum SettingsSection {
     Agent,
     Notes,
     Theme,
+    Backup,
 }
 
 impl SettingsSection {
@@ -209,15 +217,17 @@ impl SettingsSection {
             Self::Agent => "Agent",
             Self::Notes => "Notes",
             Self::Theme => "Theme",
+            Self::Backup => "Backup",
         }
     }
 
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Markdown,
         Self::Reading,
         Self::Agent,
         Self::Notes,
         Self::Theme,
+        Self::Backup,
     ];
 }
 
@@ -323,6 +333,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
             next_config.daily_note_folder = f.daily_note_folder;
             next_config.daily_note_template_slug = f.daily_note_template_slug;
             next_config.theme = f.theme;
+            next_config.backup = BackupConfig {
+                backend_url: f.backup_backend_url,
+                api_key: f.backup_api_key,
+            };
 
             match ipc::save_config(next_config).await {
                 Ok(new_config) => {
@@ -395,6 +409,10 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
 
                         <Show when=move || active_section.get() == SettingsSection::Theme>
                             <ThemeSettings form=form />
+                        </Show>
+
+                        <Show when=move || active_section.get() == SettingsSection::Backup>
+                            <BackupSettings form=form />
                         </Show>
                     </div>
 

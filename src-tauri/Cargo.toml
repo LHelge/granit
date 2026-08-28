@@ -27,6 +27,7 @@ thiserror = "2.0.20"
 serde_yml = "0.0.13"
 tauri-plugin-dialog = "2.7.2"
 granit-types = { path = "../granit-types" }
+granit-api = { path = "../granit-api" }
 pulldown-cmark = "0.13.4"
 chrono = { version = "0.4.45", features = ["serde"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
@@ -46,6 +47,15 @@ atomic-write-file = { version = "0.3", features = ["unnamed-tmpfile"] }
 parking_lot = "0.12"
 rig-agent = "0.42.0"
 tauri-plugin-clipboard-manager = "2"
+tar = "0.4"
+zstd = "0.13"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+rand = "0.9"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+uuid = { version = "1", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
