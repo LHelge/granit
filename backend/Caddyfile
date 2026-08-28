@@ -1,0 +1,21 @@
+# Single public origin for the backup service. With a real domain as the
+# site address, Caddy provisions HTTPS automatically.
+{$CADDY_SITE_ADDRESS::8080} {
+	# REST API and health endpoint → granit-server.
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+	handle /healthz {
+		reverse_proxy backend:8080
+	}
+
+	# Path-style presigned S3 URLs start with the bucket name — route the
+	# bucket prefix straight to the object store.
+	handle /granit-backups/* {
+		reverse_proxy rustfs:9000
+	}
+
+	handle {
+		respond "granit backup server" 200
+	}
+}
