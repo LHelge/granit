@@ -1,10 +1,10 @@
 ---
 id: m78
 title: Backup settings UI section
-status: open
+status: done
 priority: P2
 created: "2026-08-28T12:46:02.771722Z"
-updated: "2026-08-28T12:46:02.771722Z"
+updated: "2026-08-28T13:14:40.967221Z"
 depends_on:
   - "2ws"
 parent: psq
