@@ -68,3 +68,43 @@ jobs:
 
       - name: Run frontend WASM tests
         run: wasm-pack test --headless --firefox
+
+  backend:
+    name: Backend (clippy, test)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: granit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Compilation uses the committed .sqlx offline data; only the
+      # #[sqlx::test] databases need the live service container.
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://postgres:granit@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Clippy (server + api)
+        run: cargo clippy -p granit-server -p granit-api --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test -p granit-api -p granit-server

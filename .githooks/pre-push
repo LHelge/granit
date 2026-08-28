@@ -10,6 +10,14 @@ cargo clippy -p granit --all-targets -- -D warnings
 echo "pre-push: cargo clippy -p granit-ui (frontend, wasm32)"
 cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
 
+# The backup server compiles against the committed .sqlx offline data, so
+# no local postgres is needed here (its DB tests run in CI instead).
+echo "pre-push: cargo clippy -p granit-server -p granit-api"
+SQLX_OFFLINE=true cargo clippy -p granit-server -p granit-api --all-targets -- -D warnings
+
+echo "pre-push: cargo test -p granit-api"
+cargo test -p granit-api
+
 echo "pre-push: cargo test -p granit"
 cargo test -p granit
 
