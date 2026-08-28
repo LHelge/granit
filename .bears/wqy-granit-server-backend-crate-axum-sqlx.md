@@ -1,10 +1,10 @@
 ---
 id: wqy
 title: granit-server backend crate (axum + sqlx)
-status: in_progress
+status: done
 priority: P2
 created: "2026-08-28T12:45:39.785918Z"
-updated: "2026-08-28T12:47:26.719884Z"
+updated: "2026-08-28T12:55:08.348500Z"
 depends_on:
   - kq2
 parent: psq

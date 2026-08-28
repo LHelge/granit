@@ -1,4 +1,5 @@
 mod agent;
+mod backup;
 mod cave;
 mod commands;
 mod markdown;
@@ -23,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new(config))
         .manage(UpdateCheckGuard::default())
+        .manage(BackupGuard::default())
         .setup(|app| {
             spawn_startup_update_check(app);
             restore_active_cave(app)
@@ -92,6 +94,10 @@ pub fn run() {
             send_message,
             clear_chat,
             list_tools,
+            backup_now,
+            set_backup_passphrase,
+            has_backup_key,
+            list_backups,
             get_pending_release_notes,
             acknowledge_release_notes,
             check_for_updates,

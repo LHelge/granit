@@ -86,6 +86,9 @@ pub struct AppConfig {
     /// Optional template slug used when creating a new daily note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub daily_note_template_slug: Option<String>,
+    /// Cloud backup settings (backend URL and API key).
+    #[serde(default)]
+    pub backup: crate::BackupConfig,
     /// The currently open cave path, if any. Runtime-only in backend persistence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_cave: Option<String>,
@@ -103,6 +106,7 @@ impl Default for AppConfig {
             theme: "dark".to_string(),
             daily_note_folder: "Daily".to_string(),
             daily_note_template_slug: None,
+            backup: crate::BackupConfig::default(),
             active_cave: None,
         }
     }

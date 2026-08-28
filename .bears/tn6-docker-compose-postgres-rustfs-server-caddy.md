@@ -1,10 +1,10 @@
 ---
 id: tn6
 title: "Docker compose: postgres + RustFS + server + Caddy"
-status: open
+status: done
 priority: P2
 created: "2026-08-28T12:45:45.736336Z"
-updated: "2026-08-28T12:45:45.736336Z"
+updated: "2026-08-28T13:09:02.814932Z"
 depends_on:
   - wqy
 parent: psq
