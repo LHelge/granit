@@ -2545,6 +2545,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "granit-api"
+version = "0.8.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "granit-types"
 version = "0.8.0"
 dependencies = [

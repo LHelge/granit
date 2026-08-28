@@ -38,7 +38,7 @@ icondata_mdi = "0.1.0"
 wasm-bindgen-test = "0.3"
 
 [workspace]
-members = ["src-tauri", "granit-types"]
+members = ["src-tauri", "granit-types", "granit-api"]
 
 [workspace.package]
 version = "0.8.0"
