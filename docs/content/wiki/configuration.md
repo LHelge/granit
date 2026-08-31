@@ -45,6 +45,11 @@ agent_panel:
 daily_note_folder: "Daily"
 daily_note_template_slug: "daily-template"
 
+# Cloud backups
+backup:
+  backend_url: "https://backup.example.com"
+  api_key: "grnt_..."
+
 # AI agent
 agent:
   providers:
@@ -121,6 +126,18 @@ These keys control where daily notes are created and whether they start from a t
   notes are stored.
 - `daily_note_template_slug` (string, optional) — slug of a template used to seed a new daily note.
   Omit the key (or set it to `null`) to create blank daily notes.
+
+# Backup
+
+The `backup` block connects the cave to a self-hosted backup server. See [[backups]] for the
+feature, including an important warning about syncing the cave's key file.
+
+- `backup.backend_url` (string, default empty) — public origin of the backup server.
+- `backup.api_key` (string, default empty) — API key created with
+  `granit-server create-key`.
+
+The encryption passphrase is deliberately **not** part of the configuration; only the derived
+key is cached, in `.granit/backup.key`.
 
 # Agent
 
