@@ -1,10 +1,10 @@
 ---
 id: "97a"
 title: Download endpoint with presigned GET
-status: open
+status: in_progress
 priority: P1
 created: "2026-08-31T11:00:24.468065Z"
-updated: "2026-08-31T11:00:24.468065Z"
+updated: "2026-08-31T11:12:01.625764Z"
 tags:
   - server
   - api

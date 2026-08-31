@@ -21,7 +21,8 @@ pub fn router(ctx: AppCtx) -> Router {
             "/api/v1",
             Router::new()
                 .route("/backups", post(backups::create).get(backups::list))
-                .route("/backups/{id}/complete", post(backups::complete)),
+                .route("/backups/{id}/complete", post(backups::complete))
+                .route("/backups/{id}/download", get(backups::download)),
         )
         .route("/healthz", get(|| async { "ok" }))
         .with_state(ctx)

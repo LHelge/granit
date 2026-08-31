@@ -69,6 +69,18 @@ pub struct ListBackupsResponse {
     pub backups: Vec<BackupInfo>,
 }
 
+/// Response body for `GET /api/v1/backups/{id}/download`.
+///
+/// Only [`BackupState::Complete`] snapshots can be downloaded; requesting a
+/// pending one yields 409 Conflict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadBackupResponse {
+    /// Presigned S3 GET URL; fetch the encrypted archive with a plain HTTP GET.
+    pub download_url: String,
+    /// When the presigned URL stops being valid.
+    pub download_expires_at: DateTime<Utc>,
+}
+
 /// Uniform JSON error body for all non-2xx responses.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiErrorBody {
@@ -140,6 +152,21 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert_eq!(
             serde_json::from_str::<ListBackupsResponse>(&json).unwrap(),
+            resp
+        );
+    }
+
+    #[test]
+    fn download_backup_round_trip() {
+        let resp = DownloadBackupResponse {
+            download_url: "http://localhost:8080/granit-backups/backups/x.grnt?sig=y".to_string(),
+            download_expires_at: DateTime::parse_from_rfc3339("2026-08-28T12:15:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert_eq!(
+            serde_json::from_str::<DownloadBackupResponse>(&json).unwrap(),
             resp
         );
     }
