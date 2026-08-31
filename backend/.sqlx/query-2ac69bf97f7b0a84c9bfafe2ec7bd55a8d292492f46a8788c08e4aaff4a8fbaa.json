@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT object_key, state FROM backups WHERE id = $1 AND api_key_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "object_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "state",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2ac69bf97f7b0a84c9bfafe2ec7bd55a8d292492f46a8788c08e4aaff4a8fbaa"
+}

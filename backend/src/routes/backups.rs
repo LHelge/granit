@@ -2,7 +2,8 @@ use axum::extract::{Path, State};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use granit_api::{
-    BackupInfo, BackupState, CreateBackupRequest, CreateBackupResponse, ListBackupsResponse,
+    BackupInfo, BackupState, CreateBackupRequest, CreateBackupResponse, DownloadBackupResponse,
+    ListBackupsResponse,
 };
 use uuid::Uuid;
 
@@ -118,6 +119,35 @@ pub async fn complete(
     .fetch_one(&ctx.db)
     .await?;
     Ok(Json(row.into()))
+}
+
+/// `GET /api/v1/backups/{id}/download` — presign a GET for a complete snapshot.
+pub async fn download(
+    State(ctx): State<AppCtx>,
+    auth: AuthedKey,
+    Path(id): Path<Uuid>,
+) -> Result<Json<DownloadBackupResponse>, ServerError> {
+    let row = sqlx::query!(
+        "SELECT object_key, state FROM backups WHERE id = $1 AND api_key_id = $2",
+        id,
+        auth.api_key_id,
+    )
+    .fetch_optional(&ctx.db)
+    .await?
+    .ok_or(ServerError::NotFound)?;
+
+    if row.state != "complete" {
+        return Err(ServerError::Conflict(
+            "backup upload has not been completed".to_string(),
+        ));
+    }
+
+    let (download_url, download_expires_at) = ctx.storage.presign_get(&row.object_key).await?;
+
+    Ok(Json(DownloadBackupResponse {
+        download_url,
+        download_expires_at,
+    }))
 }
 
 /// `GET /api/v1/backups` — all snapshots for this key, newest first.
@@ -307,6 +337,72 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let again: BackupInfo = json_body(response).await;
         assert_eq!(again.completed_at, info.completed_at);
+    }
+
+    #[sqlx::test]
+    async fn download_presigns_complete_backups_only(pool: PgPool) {
+        let ctx = test_ctx(pool.clone());
+        let (token, key_id) = insert_key(&pool, "laptop").await;
+
+        let response = router(ctx.clone())
+            .oneshot(create_request(&token, "my-cave"))
+            .await
+            .unwrap();
+        let created: CreateBackupResponse = json_body(response).await;
+        let download_request = |token: &str| {
+            Request::builder()
+                .method("GET")
+                .uri(format!("/api/v1/backups/{}/download", created.backup.id))
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        // Still pending → conflict.
+        let response = router(ctx.clone())
+            .oneshot(download_request(&token))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+
+        ctx.storage.stub_set_head_size(Some(1234));
+        let complete = Request::builder()
+            .method("POST")
+            .uri(format!("/api/v1/backups/{}/complete", created.backup.id))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = router(ctx.clone()).oneshot(complete).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Complete → presigned URL for the snapshot's object.
+        let response = router(ctx.clone())
+            .oneshot(download_request(&token))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let downloaded: DownloadBackupResponse = json_body(response).await;
+        let expected_key = format!("backups/{key_id}/{}.grnt", created.backup.id);
+        assert!(downloaded.download_url.contains(&expected_key));
+        assert!(downloaded.download_expires_at > Utc::now());
+
+        // Another key's backup → not found.
+        let (foreign_token, _) = insert_key(&pool, "desktop").await;
+        let response = router(ctx.clone())
+            .oneshot(download_request(&foreign_token))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        // Unknown id → not found.
+        let unknown = Request::builder()
+            .method("GET")
+            .uri(format!("/api/v1/backups/{}/download", Uuid::new_v4()))
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = router(ctx).oneshot(unknown).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[sqlx::test]

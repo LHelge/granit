@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use crate::config::S3Config;
 use crate::error::ServerError;
 
-/// How long a presigned upload URL stays valid.
-pub const UPLOAD_URL_TTL: Duration = Duration::from_secs(15 * 60);
+/// How long presigned upload and download URLs stay valid.
+pub const PRESIGN_URL_TTL: Duration = Duration::from_secs(15 * 60);
 
 /// Object storage access for backup archives.
 ///
@@ -107,13 +107,37 @@ impl Storage {
 
     /// Presign a PUT for `key`, returning the URL and its expiry time.
     pub async fn presign_put(&self, key: &str) -> Result<(String, DateTime<Utc>), ServerError> {
-        let expires_at = Utc::now() + UPLOAD_URL_TTL;
+        let expires_at = Utc::now() + PRESIGN_URL_TTL;
         match &self.inner {
             StorageInner::S3 { presign, .. } => {
-                let presigning = PresigningConfig::expires_in(UPLOAD_URL_TTL)
+                let presigning = PresigningConfig::expires_in(PRESIGN_URL_TTL)
                     .map_err(|err| ServerError::S3(err.to_string()))?;
                 let request = presign
                     .put_object()
+                    .bucket(&self.bucket)
+                    .key(key)
+                    .presigned(presigning)
+                    .await
+                    .map_err(|err| ServerError::S3(err.to_string()))?;
+                Ok((request.uri().to_string(), expires_at))
+            }
+            #[cfg(test)]
+            StorageInner::Stub { .. } => Ok((
+                format!("http://stub.local/{}/{key}?sig=test", self.bucket),
+                expires_at,
+            )),
+        }
+    }
+
+    /// Presign a GET for `key`, returning the URL and its expiry time.
+    pub async fn presign_get(&self, key: &str) -> Result<(String, DateTime<Utc>), ServerError> {
+        let expires_at = Utc::now() + PRESIGN_URL_TTL;
+        match &self.inner {
+            StorageInner::S3 { presign, .. } => {
+                let presigning = PresigningConfig::expires_in(PRESIGN_URL_TTL)
+                    .map_err(|err| ServerError::S3(err.to_string()))?;
+                let request = presign
+                    .get_object()
                     .bucket(&self.bucket)
                     .key(key)
                     .presigned(presigning)
