@@ -150,6 +150,31 @@ pub async fn download(
     }))
 }
 
+/// `DELETE /api/v1/backups/{id}` — remove the stored object and the record.
+/// Pending records may be deleted too (cleanup of abandoned uploads).
+pub async fn delete(
+    State(ctx): State<AppCtx>,
+    auth: AuthedKey,
+    Path(id): Path<Uuid>,
+) -> Result<axum::http::StatusCode, ServerError> {
+    let row = sqlx::query!(
+        "SELECT object_key FROM backups WHERE id = $1 AND api_key_id = $2",
+        id,
+        auth.api_key_id,
+    )
+    .fetch_optional(&ctx.db)
+    .await?
+    .ok_or(ServerError::NotFound)?;
+
+    // Object first, row second: a failure in between leaves a row whose
+    // object is gone, which a retried delete still removes.
+    ctx.storage.delete_object(&row.object_key).await?;
+    sqlx::query!("DELETE FROM backups WHERE id = $1", id)
+        .execute(&ctx.db)
+        .await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 /// `GET /api/v1/backups` — all snapshots for this key, newest first.
 pub async fn list(
     State(ctx): State<AppCtx>,
@@ -402,6 +427,54 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let response = router(ctx).oneshot(unknown).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test]
+    async fn delete_removes_pending_and_complete_rows_but_not_foreign_ones(pool: PgPool) {
+        let ctx = test_ctx(pool.clone());
+        let (token, _) = insert_key(&pool, "laptop").await;
+
+        let response = router(ctx.clone())
+            .oneshot(create_request(&token, "my-cave"))
+            .await
+            .unwrap();
+        let created: CreateBackupResponse = json_body(response).await;
+        let delete_request = |token: &str, id: Uuid| {
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/backups/{id}"))
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap()
+        };
+
+        // Another key cannot delete it.
+        let (foreign_token, _) = insert_key(&pool, "desktop").await;
+        let response = router(ctx.clone())
+            .oneshot(delete_request(&foreign_token, created.backup.id))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        // Deleting the still-pending record is allowed (abandoned upload
+        // cleanup) even though its object was never stored.
+        let response = router(ctx.clone())
+            .oneshot(delete_request(&token, created.backup.id))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let remaining = sqlx::query!("SELECT count(*) AS n FROM backups")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(remaining.n, Some(0));
+
+        // Deleting it again → 404 (row already gone).
+        let response = router(ctx)
+            .oneshot(delete_request(&token, created.backup.id))
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 

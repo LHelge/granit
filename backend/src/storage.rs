@@ -153,6 +153,24 @@ impl Storage {
         }
     }
 
+    /// Delete the object at `key`. Deleting a missing object is not an
+    /// error — S3 DeleteObject is idempotent, and a dangling row whose
+    /// upload never happened must still be removable.
+    pub async fn delete_object(&self, key: &str) -> Result<(), ServerError> {
+        match &self.inner {
+            StorageInner::S3 { internal, .. } => internal
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send()
+                .await
+                .map(|_| ())
+                .map_err(|err| ServerError::S3(err.into_service_error().to_string())),
+            #[cfg(test)]
+            StorageInner::Stub { .. } => Ok(()),
+        }
+    }
+
     /// Size of the object at `key`, or `None` if it does not exist.
     pub async fn head_size(&self, key: &str) -> Result<Option<u64>, ServerError> {
         match &self.inner {

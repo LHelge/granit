@@ -646,6 +646,12 @@ pub async fn list_backups(credentials: Option<&BackupConfig>) -> Result<Vec<Back
     invoke_cmd("list_backups", &Args { credentials }).await
 }
 
+/// Delete one snapshot from the backend (object store and record).
+/// `id` is the snapshot's UUID in string form.
+pub async fn delete_backup(id: &str) -> Result<(), String> {
+    invoke_unit("delete_backup", &HashMap::from([("id", id)])).await
+}
+
 /// Restore one snapshot into a new directory or over the current cave.
 /// Stays pending for the whole run (progress arrives via the `restore:*`
 /// events) and resolves to the restored cave's config, already opened

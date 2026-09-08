@@ -2,7 +2,7 @@ mod backups;
 
 use std::sync::Arc;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use sqlx::PgPool;
 
@@ -21,6 +21,7 @@ pub fn router(ctx: AppCtx) -> Router {
             "/api/v1",
             Router::new()
                 .route("/backups", post(backups::create).get(backups::list))
+                .route("/backups/{id}", delete(backups::delete))
                 .route("/backups/{id}/complete", post(backups::complete))
                 .route("/backups/{id}/download", get(backups::download)),
         )
