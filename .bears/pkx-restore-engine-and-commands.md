@@ -1,10 +1,10 @@
 ---
 id: pkx
 title: Restore engine and commands
-status: in_progress
+status: done
 priority: P1
 created: "2026-08-31T11:07:46.918085Z"
-updated: "2026-08-31T11:17:31.495139Z"
+updated: "2026-09-08T13:52:06.013977Z"
 tags:
   - core
 depends_on:

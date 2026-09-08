@@ -412,7 +412,7 @@ pub fn SettingsModal(set_open: WriteSignal<bool>) -> impl IntoView {
                         </Show>
 
                         <Show when=move || active_section.get() == SettingsSection::Backup>
-                            <BackupSettings form=form />
+                            <BackupSettings form=form set_open=set_open />
                         </Show>
                     </div>
 
