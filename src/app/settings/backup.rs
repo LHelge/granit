@@ -22,6 +22,17 @@ fn stage_label(stage: BackupStage) -> &'static str {
     }
 }
 
+/// Smoothly reveal `panel` inside the modal's scroll area, deferred one
+/// frame so the render that opened or grew it has already laid out.
+fn scroll_panel_into_view(panel: web_sys::HtmlDivElement) {
+    request_animation_frame(move || {
+        let opts = web_sys::ScrollIntoViewOptions::new();
+        opts.set_behavior(web_sys::ScrollBehavior::Smooth);
+        opts.set_block(web_sys::ScrollLogicalPosition::Nearest);
+        panel.scroll_into_view_with_scroll_into_view_options(&opts);
+    });
+}
+
 pub(crate) fn restore_stage_label(stage: RestoreStage) -> &'static str {
     match stage {
         RestoreStage::Downloading => "Downloading…",
@@ -61,11 +72,43 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
     let restore_stage = RwSignal::new(None::<RestoreStage>);
     let restore_error = RwSignal::new(None::<String>);
 
-    // Deletion state, keyed by the snapshot's UUID in string form.
-    let confirm_delete = RwSignal::new(None::<String>);
-    let deleting = RwSignal::new(None::<String>);
+    // Deletion state: the snapshot awaiting confirmation, if any. Only one
+    // of the restore and delete panels is open at a time.
+    let confirm_delete = RwSignal::new(None::<BackupInfo>);
+    let deleting = RwSignal::new(false);
     let delete_error = RwSignal::new(None::<String>);
 
+    // The restore and delete panels render below the snapshot table,
+    // usually past the bottom of the modal's scroll area. Scroll a panel
+    // into view when it opens and whenever it grows into a further step
+    // (rollback confirmation, passphrase prompt, error) so the user does
+    // not have to hunt for it.
+    let restore_panel = NodeRef::<leptos::html::Div>::new();
+    let delete_panel = NodeRef::<leptos::html::Div>::new();
+    Effect::new(move || {
+        if let Some(panel) = restore_panel.get() {
+            confirm_rollback.track();
+            need_passphrase.track();
+            restore_error.track();
+            scroll_panel_into_view(panel);
+        }
+    });
+    Effect::new(move || {
+        if let Some(panel) = delete_panel.get() {
+            delete_error.track();
+            scroll_panel_into_view(panel);
+        }
+    });
+
+    // Event handlers run under the reactive owner of the view they were
+    // created in. For the per-row delete button that is the row's own
+    // closure, which is re-run (and its owner cleaned up) as soon as the
+    // confirm state is cleared — aborting any future spawned from it. Pin
+    // the refresh to the component's owner so it only dies on unmount.
+    // StoredValue keeps `refresh_backups` Copy (Owner itself is only Clone).
+    let owner = StoredValue::new(
+        Owner::current().expect("BackupSettings rendered without a reactive owner"),
+    );
     let refresh_backups = move || {
         let configured = {
             let f = form.get_untracked();
@@ -75,8 +118,12 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
             backups.set(None);
             return;
         }
-        leptos::task::spawn_local_scoped_with_cancellation(async move {
-            backups.set(Some(ipc::list_backups(None).await));
+        owner.with_value(|owner| {
+            owner.with(|| {
+                leptos::task::spawn_local_scoped_with_cancellation(async move {
+                    backups.set(Some(ipc::list_backups(None).await));
+                });
+            })
         });
     };
 
@@ -230,7 +277,7 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
     let operation_running = move || running_stage.get().is_some() || restore_stage.get().is_some();
     let can_backup = move || connection_configured() && key_set.get() && !operation_running();
     // Row actions additionally wait for an in-flight deletion.
-    let row_actions_disabled = move || operation_running() || deleting.get().is_some();
+    let row_actions_disabled = move || operation_running() || deleting.get();
 
     view! {
         <fieldset class="fieldset space-y-3">
@@ -368,6 +415,7 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                                 <tbody>
                                     {list.into_iter().map(|info| {
                                         let restore_info = info.clone();
+                                        let delete_info = info.clone();
                                         let is_complete = info.state == BackupState::Complete;
                                         let state = match info.state {
                                             BackupState::Complete => view! {
@@ -393,6 +441,7 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                                                                 class="btn btn-ghost btn-xs"
                                                                 disabled=row_actions_disabled
                                                                 on:click=move |_| {
+                                                                    confirm_delete.set(None);
                                                                     restore_for.set(Some(restore_info.clone()));
                                                                     confirm_rollback.set(false);
                                                                     need_passphrase.set(false);
@@ -404,71 +453,18 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                                                                 "Restore"
                                                             </button>
                                                         })}
-                                                        {
-                                                            let row_id = info.id.to_string();
-                                                            move || {
-                                                                let row_id = row_id.clone();
-                                                                if confirm_delete.get().as_deref() == Some(row_id.as_str()) {
-                                                                    let yes_id = row_id.clone();
-                                                                    let spinner_id = row_id.clone();
-                                                                    view! {
-                                                                        <span class="flex items-center gap-1">
-                                                                            <button
-                                                                                type="button"
-                                                                                class="btn btn-ghost btn-xs text-error"
-                                                                                disabled=row_actions_disabled
-                                                                                on:click=move |_| {
-                                                                                    let id = yes_id.clone();
-                                                                                    deleting.set(Some(id.clone()));
-                                                                                    delete_error.set(None);
-                                                                                    leptos::task::spawn_local_scoped_with_cancellation(async move {
-                                                                                        match ipc::delete_backup(&id).await {
-                                                                                            Ok(()) => {
-                                                                                                confirm_delete.set(None);
-                                                                                                // Close the restore panel if it
-                                                                                                // points at the deleted snapshot.
-                                                                                                if restore_for.get_untracked()
-                                                                                                    .is_some_and(|b| b.id.to_string() == id)
-                                                                                                {
-                                                                                                    restore_for.set(None);
-                                                                                                }
-                                                                                                refresh_backups();
-                                                                                            }
-                                                                                            Err(e) => delete_error.set(Some(e)),
-                                                                                        }
-                                                                                        deleting.set(None);
-                                                                                    });
-                                                                                }
-                                                                            >
-                                                                                {move || if deleting.get().as_deref() == Some(spinner_id.as_str()) {
-                                                                                    view! { <span class="loading loading-spinner loading-xs"></span> }.into_any()
-                                                                                } else {
-                                                                                    view! { "Really delete" }.into_any()
-                                                                                }}
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                class="btn btn-ghost btn-xs"
-                                                                                on:click=move |_| confirm_delete.set(None)
-                                                                            >
-                                                                                "Keep"
-                                                                            </button>
-                                                                        </span>
-                                                                    }.into_any()
-                                                                } else {
-                                                                    view! {
-                                                                        <button
-                                                                            type="button"
-                                                                            class="btn btn-ghost btn-xs text-error"
-                                                                            disabled=row_actions_disabled
-                                                                            on:click=move |_| confirm_delete.set(Some(row_id.clone()))
-                                                                        >
-                                                                            "Delete"
-                                                                        </button>
-                                                                    }.into_any()
-                                                                }
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-ghost btn-xs text-error"
+                                                            disabled=row_actions_disabled
+                                                            on:click=move |_| {
+                                                                restore_for.set(None);
+                                                                delete_error.set(None);
+                                                                confirm_delete.set(Some(delete_info.clone()));
                                                             }
-                                                        }
+                                                        >
+                                                            "Delete"
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -480,8 +476,60 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                     }.into_any(),
                 }}
 
-                {move || delete_error.get().map(|e| view! {
-                    <p class="text-xs text-error">{format!("Could not delete snapshot: {e}")}</p>
+                // ── Delete confirmation ────────────────────────────
+                {move || confirm_delete.get().map(|info| {
+                    let title = format!(
+                        "Delete snapshot from {} ({}, {})",
+                        info.created_at.format("%Y-%m-%d %H:%M"),
+                        info.cave_name,
+                        format_size(info.size_bytes),
+                    );
+                    let id = info.id.to_string();
+                    view! {
+                        <div node_ref=delete_panel class="rounded-box border border-base-content/20 p-3 space-y-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <p class="text-xs font-medium">{title}</p>
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost btn-xs shrink-0"
+                                    disabled=move || deleting.get()
+                                    on:click=move |_| confirm_delete.set(None)
+                                >
+                                    "Cancel"
+                                </button>
+                            </div>
+                            <p class="text-xs text-warning">"This permanently removes the snapshot from the backend. It cannot be recovered."</p>
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-error"
+                                disabled=row_actions_disabled
+                                on:click=move |_| {
+                                    let id = id.clone();
+                                    deleting.set(true);
+                                    delete_error.set(None);
+                                    leptos::task::spawn_local_scoped_with_cancellation(async move {
+                                        match ipc::delete_backup(&id).await {
+                                            Ok(()) => {
+                                                confirm_delete.set(None);
+                                                refresh_backups();
+                                            }
+                                            Err(e) => delete_error.set(Some(e)),
+                                        }
+                                        deleting.set(false);
+                                    });
+                                }
+                            >
+                                {move || if deleting.get() {
+                                    view! { <span class="loading loading-spinner loading-xs"></span> }.into_any()
+                                } else {
+                                    view! { "Delete snapshot" }.into_any()
+                                }}
+                            </button>
+                            {move || delete_error.get().map(|e| view! {
+                                <div class="alert alert-error py-2 text-xs">{format!("Could not delete snapshot: {e}")}</div>
+                            })}
+                        </div>
+                    }
                 })}
 
                 // ── Restore flow ───────────────────────────────────
@@ -493,7 +541,7 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                         format_size(info.size_bytes),
                     );
                     view! {
-                        <div class="rounded-box border border-base-content/20 p-3 space-y-2">
+                        <div node_ref=restore_panel class="rounded-box border border-base-content/20 p-3 space-y-2">
                             <div class="flex items-start justify-between gap-2">
                                 <p class="text-xs font-medium">{title}</p>
                                 <button

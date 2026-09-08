@@ -25,6 +25,9 @@ web-sys = { version = "0.3.104", features = [
     "DataTransfer",
     "DragEvent",
     "Navigator",
+    "ScrollIntoViewOptions",
+    "ScrollBehavior",
+    "ScrollLogicalPosition",
 ] }
 granit-types = { path = "granit-types" }
 granit-api = { path = "granit-api" }
