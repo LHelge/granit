@@ -1,3 +1,4 @@
+use crate::app::components::disaster_restore::DisasterRestoreModal;
 use crate::app::{components::icons::Icon, ipc, AppCtx};
 use leptos::prelude::*;
 
@@ -8,6 +9,11 @@ pub fn CaveSelector(
     set_keybinds_open: WriteSignal<bool>,
 ) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
+
+    // Disaster restore dialog, offered only while no cave is open. Owned
+    // here rather than threaded from the app root — this is its only
+    // launch point.
+    let (restore_open, set_restore_open) = signal(false);
 
     let open_and_refresh = move |path: String| {
         leptos::task::spawn_local(async move {
@@ -95,6 +101,21 @@ pub fn CaveSelector(
                     </button>
                 </div>
             </div>
+
+            // Lost-machine escape hatch: with no cave open there are no
+            // saved settings, so recovery starts here.
+            <Show when=move || ctx.config.get().active_cave.is_none()>
+                <button
+                    class="w-full mt-1 px-2 py-1 text-xs text-base-content/50 hover:text-base-content/80 transition-colors text-left"
+                    on:click=move |_| set_restore_open.set(true)
+                >
+                    "Restore a cave from backup…"
+                </button>
+            </Show>
+
+            <Show when=move || restore_open.get()>
+                <DisasterRestoreModal set_open=set_restore_open />
+            </Show>
         </div>
     }
 }

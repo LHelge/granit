@@ -4,7 +4,7 @@ use granit_api::{BackupInfo, BackupState};
 use granit_types::{BackupConfig, BackupStage, RestoreStage, RestoreTarget};
 use leptos::prelude::*;
 
-fn format_size(bytes: u64) -> String {
+pub(crate) fn format_size(bytes: u64) -> String {
     if bytes >= 1024 * 1024 {
         format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
     } else if bytes >= 1024 {
@@ -22,7 +22,7 @@ fn stage_label(stage: BackupStage) -> &'static str {
     }
 }
 
-fn restore_stage_label(stage: RestoreStage) -> &'static str {
+pub(crate) fn restore_stage_label(stage: RestoreStage) -> &'static str {
     match stage {
         RestoreStage::Downloading => "Downloading…",
         RestoreStage::Decrypting => "Decrypting…",
