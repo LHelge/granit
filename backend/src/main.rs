@@ -37,7 +37,7 @@ enum Command {
     },
     /// List all API keys.
     ListKeys,
-    /// Revoke an API key by id.
+    /// Revoke an API key's token and print a replacement, preserving backup access.
     RevokeKey {
         #[arg(long)]
         id: Uuid,

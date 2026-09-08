@@ -43,6 +43,8 @@ pub enum BackupError {
     OpenRestored(String),
     #[error("Invalid backup key file: {0}")]
     InvalidKeyFile(String),
+    #[error("Unsupported backup key derivation parameters")]
+    UnsupportedKdfParams,
     #[error("I/O error: {0}")]
     Io(String),
     #[error("Encryption failed")]

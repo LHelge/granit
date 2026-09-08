@@ -59,6 +59,18 @@ const DEFAULT_KDF_PARAMS: KdfParams = KdfParams {
     p: 4,
 };
 
+impl KdfParams {
+    /// Archive headers are untrusted until after key derivation. Bound the
+    /// work before Argon2 allocates memory, including when using a cached key.
+    fn checked(self) -> Result<Params, BackupError> {
+        if self.m_kib > 256 * 1024 || self.t > 10 || self.p > 16 {
+            return Err(BackupError::UnsupportedKdfParams);
+        }
+        Params::new(self.m_kib, self.t, self.p, Some(KEY_LEN))
+            .map_err(|_| BackupError::UnsupportedKdfParams)
+    }
+}
+
 /// The cached derived key plus everything needed to stamp archive headers.
 pub(crate) struct CachedKey {
     pub key: [u8; KEY_LEN],
@@ -75,8 +87,7 @@ fn derive_key(
     salt: &[u8; SALT_LEN],
     params: KdfParams,
 ) -> Result<[u8; KEY_LEN], BackupError> {
-    let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
-        .map_err(|_| BackupError::Encrypt)?;
+    let argon_params = params.checked()?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
     let mut key = [0u8; KEY_LEN];
     argon
@@ -112,12 +123,21 @@ pub(crate) fn set_passphrase(granit_dir: &Path, passphrase: &str) -> Result<(), 
         BASE64.encode(key),
     );
     let path = key_file_path(granit_dir);
-    crate::cave::write_atomic(&path, contents.as_bytes())?;
+    use std::io::Write;
+    let options = atomic_write_file::OpenOptions::new();
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
+    let options = {
+        use atomic_write_file::unix::OpenOptionsExt;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        // Restrict the temporary inode before writing any key bytes. Do not
+        // inherit permissions from an older, potentially permissive cache.
+        let mut options = options;
+        options.mode(0o600).preserve_mode(false);
+        options
+    };
+    let mut file = options.open(&path)?;
+    file.write_all(contents.as_bytes())?;
+    file.commit()?;
     Ok(())
 }
 
@@ -179,10 +199,12 @@ fn parse_key_file(contents: &str) -> Result<CachedKey, BackupError> {
             return Err(invalid("unrecognized line"));
         }
     }
+    let params = params.ok_or_else(|| invalid("missing kdf parameters"))?;
+    params.checked()?;
     Ok(CachedKey {
         key: key.ok_or_else(|| invalid("missing key"))?,
         salt: salt.ok_or_else(|| invalid("missing salt"))?,
-        params: params.ok_or_else(|| invalid("missing kdf parameters"))?,
+        params,
     })
 }
 
@@ -239,12 +261,14 @@ fn parse_container(container: &[u8]) -> Result<ParsedContainer<'_>, BackupError>
     let read_u32 = |offset: usize| {
         u32::from_le_bytes(container[offset..offset + 4].try_into().expect("in bounds"))
     };
+    let params = KdfParams {
+        m_kib: read_u32(5),
+        t: read_u32(9),
+        p: read_u32(13),
+    };
+    params.checked()?;
     Ok(ParsedContainer {
-        params: KdfParams {
-            m_kib: read_u32(5),
-            t: read_u32(9),
-            p: read_u32(13),
-        },
+        params,
         salt: container[17..17 + SALT_LEN].try_into().expect("in bounds"),
         nonce: &container[17 + SALT_LEN..HEADER_LEN],
         header: &container[..HEADER_LEN],
@@ -316,6 +340,43 @@ pub(crate) fn fast_key(passphrase: &str) -> CachedKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untrusted_kdf_costs_are_rejected_before_derivation() {
+        let cached = fast_key("correct horse battery");
+        for (offset, cost) in [(5, u32::MAX), (9, u32::MAX), (13, u32::MAX), (9, 0)] {
+            let mut container = encrypt(&cached, b"payload").unwrap();
+            container[offset..offset + 4].copy_from_slice(&cost.to_le_bytes());
+            assert!(matches!(
+                decrypt("passphrase", &container),
+                Err(BackupError::UnsupportedKdfParams)
+            ));
+            assert!(matches!(
+                key_matches(&cached, &container),
+                Err(BackupError::UnsupportedKdfParams)
+            ));
+        }
+        assert!(DEFAULT_KDF_PARAMS.checked().is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn key_file_is_private_on_creation_and_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = key_file_path(dir.path());
+        set_passphrase(dir.path(), "correct horse battery").unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        set_passphrase(dir.path(), "another long passphrase").unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
 
     #[test]
     fn encrypt_decrypt_round_trip_needs_only_the_passphrase() {

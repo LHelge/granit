@@ -60,6 +60,10 @@ anywhere.
 Changing the passphrase only affects future snapshots: older ones still require the
 passphrase they were made with.
 
+Restoring validates the archive's key-derivation parameters before running
+Argon2: at most 256 MiB of memory, 10 iterations, and 16 lanes. Current backups
+use 64 MiB, 3 iterations, and 4 lanes. Unsupported parameters are rejected.
+
 # Restoring a snapshot {#restoring-a-snapshot}
 
 Every complete snapshot in the list (**Settings → Backup**) has a **Restore** action
@@ -108,6 +112,9 @@ The derived encryption key is cached in `.granit/backup.key` inside the cave. It
 never included in backup archives and never sent to the server, and on its own machine
 it adds little risk — anyone with access to the cave directory already has your notes
 in plaintext.
+
+On Unix, the key file is created with owner-only permissions before any key
+bytes are written, including when replacing an existing cache.
 
 > [!WARNING]
 > The key file travels with the cave. If you sync or version the cave directory with

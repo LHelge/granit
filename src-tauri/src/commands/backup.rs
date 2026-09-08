@@ -93,7 +93,9 @@ async fn run_backup(app: &tauri::AppHandle, state: &AppState) -> Result<BackupIn
             sha256_hex,
         })
         .await?;
-    client.upload(&created.upload_url, container).await?;
+    client
+        .upload(&created.upload_url, &created.upload_headers, container)
+        .await?;
     client.complete_backup(created.backup.id).await
 }
 

@@ -137,9 +137,14 @@ impl BackupApiClient {
     pub(crate) async fn upload(
         &self,
         presigned_url: &str,
+        headers: &std::collections::BTreeMap<String, String>,
         body: Vec<u8>,
     ) -> Result<(), BackupError> {
-        let response = self.http.put(presigned_url).body(body).send().await?;
+        let mut request = self.http.put(presigned_url).body(body);
+        for (name, value) in headers {
+            request = request.header(name, value);
+        }
+        let response = request.send().await?;
         let status = response.status();
         if !status.is_success() {
             return Err(BackupError::Api {
