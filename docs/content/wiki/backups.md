@@ -32,20 +32,13 @@ first, with their size and state.
 
 # Setting up a server
 
-The server is part of the Granit repository (`backend/`) and runs as a small Docker
-Compose stack: postgres for the snapshot catalog, an S3-compatible object store, the
-`granit-server` API, and a Caddy reverse proxy as the single public entry point. See
-`backend/README.md` in the repository for deployment instructions.
+The server is designed to be self-hosted: a small Docker Compose stack — postgres for
+the snapshot catalog, an S3-compatible object store, the `granit-server` API, and a
+Caddy reverse proxy as the single public entry point — that runs on a home server, a
+NAS, or a VPS. [[backup-server]] covers deploying it, creating API keys, upgrading, and
+what to back up on the server side.
 
-API keys are created on the server:
-
-```sh
-docker compose exec backend granit-server create-key --name laptop
-```
-
-The `grnt_…` token is printed exactly once — only a hash of it is stored.
-
-# Configuring a cave
+# Configuring a cave {#configuring-a-cave}
 
 In **Settings → Backup**:
 
@@ -101,8 +94,8 @@ for a passphrase once to rebuild the local key file.
 
 # Deleting snapshots {#deleting-snapshots}
 
-Each snapshot row has a **Delete** action with an inline confirmation. Deleting removes
-both the stored archive and the server's record; pending snapshots — uploads that never
+Each snapshot row has a **Delete** action that opens a confirmation panel below the
+list. Deleting removes both the stored archive and the server's record; pending snapshots — uploads that never
 completed — can be deleted too, which is how abandoned uploads are cleaned up.
 
 Deletion is also the only way snapshots actually disappear after a passphrase change:
