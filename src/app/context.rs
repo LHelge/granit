@@ -254,6 +254,10 @@ impl AppCtx {
     /// `open_cave` or `restore_backup` result) and refresh all frontend
     /// state that depends on it.
     pub async fn apply_opened_cave(self, new_config: granit_types::AppConfig) {
+        // Config is cave-local, so the theme can change with the cave; the
+        // `data-theme` attribute is only written imperatively, never derived
+        // from `config`, so re-apply it here.
+        self.set_theme(&new_config.theme);
         self.config.set(new_config);
 
         self.refresh_notes().await;

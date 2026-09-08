@@ -121,6 +121,18 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    // Panel layout is cave-local config held in local signals. Follow the
+    // config signal so the layout tracks whatever config is current: the
+    // initial load, a settings save, or another cave being opened or
+    // restored (which swaps in that cave's config).
+    Effect::new(move |_| {
+        let cfg = ctx.config.get();
+        set_sidebar_visible.set(cfg.sidebar.visible);
+        set_sidebar_width.set(cfg.sidebar.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
+        set_agent_visible.set(cfg.agent_panel.visible);
+        set_agent_width.set(cfg.agent_panel.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
+    });
+
     // Load config from backend on mount.
     leptos::task::spawn_local(async move {
         let cfg = match ipc::fetch_config().await {
@@ -131,11 +143,6 @@ pub fn App() -> impl IntoView {
             }
         };
         let has_active_cave = cfg.active_cave.is_some();
-        // Apply persisted sidebar state
-        set_sidebar_visible.set(cfg.sidebar.visible);
-        set_sidebar_width.set(cfg.sidebar.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
-        set_agent_visible.set(cfg.agent_panel.visible);
-        set_agent_width.set(cfg.agent_panel.width.clamp(MIN_SIDEBAR_W, MAX_SIDEBAR_W));
         let theme_name = cfg.theme.clone();
         ctx.config.set(cfg);
 
@@ -159,6 +166,12 @@ pub fn App() -> impl IntoView {
             visible: agent_visible.get_untracked(),
             width: agent_width.get_untracked(),
         };
+        // Keep the frontend copy current: the settings modal saves the
+        // whole config from it, and the layout effect above reads it.
+        ctx.config.update(|c| {
+            c.sidebar = sb.clone();
+            c.agent_panel = ap.clone();
+        });
         leptos::task::spawn_local(async move {
             if let Err(e) = ipc::save_sidebar_state(sb, ap).await {
                 ctx.push_error("config", format!("Failed to save layout: {e}"));
