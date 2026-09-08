@@ -125,9 +125,10 @@ operate on that key's snapshots only, which has two practical consequences:
   encryption passphrase. A new key created after a machine is lost cannot see the old
   machine's snapshots. Store the token in the same password manager entry as the
   passphrase.
-- **Revoking a key hides its snapshots.** They stay on disk but nothing can list or
-  restore them. Revoke a key only when you are sure you no longer need what it uploaded,
-  or after restoring from it elsewhere.
+- **Revoking a key replaces its token.** The command invalidates the old token and
+  prints a new one once, keeping the same ownership ID and access to all existing
+  snapshots. Save the replacement and update Granit's settings. Previously issued
+  upload and download URLs remain valid until their expiry, up to 15 minutes.
 
 One key per machine keeps the blast radius small: a leaked token can only list, upload,
 or delete that machine's snapshots, and it can never decrypt any of them.

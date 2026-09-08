@@ -10,6 +10,10 @@ use uuid::Uuid;
 use crate::auth::AuthedKey;
 use crate::error::ServerError;
 use crate::routes::AppCtx;
+use crate::storage::{checksum_sha256, StoredObject};
+
+/// The desktop packs archives in memory; reject oversized uploads up front.
+const MAX_BACKUP_BYTES: u64 = 1024 * 1024 * 1024;
 
 struct BackupRow {
     id: Uuid,
@@ -46,6 +50,12 @@ pub async fn create(
     auth: AuthedKey,
     Json(req): Json<CreateBackupRequest>,
 ) -> Result<Json<CreateBackupResponse>, ServerError> {
+    if req.size_bytes == 0 || req.size_bytes > MAX_BACKUP_BYTES {
+        return Err(ServerError::BadRequest(
+            "size_bytes must be between 1 byte and 1 GiB".into(),
+        ));
+    }
+    let checksum = checksum_sha256(&req.sha256_hex)?;
     let size_bytes = i64::try_from(req.size_bytes)
         .map_err(|_| ServerError::BadRequest("size_bytes out of range".to_string()))?;
     if req.cave_name.is_empty() {
@@ -54,6 +64,10 @@ pub async fn create(
 
     let id = Uuid::new_v4();
     let object_key = format!("backups/{}/{}.grnt", auth.api_key_id, id);
+    let upload = ctx
+        .storage
+        .presign_put(&object_key, size_bytes, &checksum)
+        .await?;
 
     let row = sqlx::query_as!(
         BackupRow,
@@ -70,12 +84,11 @@ pub async fn create(
     .fetch_one(&ctx.db)
     .await?;
 
-    let (upload_url, upload_expires_at) = ctx.storage.presign_put(&object_key).await?;
-
     Ok(Json(CreateBackupResponse {
         backup: row.into(),
-        upload_url,
-        upload_expires_at,
+        upload_url: upload.url,
+        upload_headers: upload.headers,
+        upload_expires_at: upload.expires_at,
     }))
 }
 
@@ -87,7 +100,7 @@ pub async fn complete(
     Path(id): Path<Uuid>,
 ) -> Result<Json<BackupInfo>, ServerError> {
     let row = sqlx::query!(
-        "SELECT object_key, size_bytes, state FROM backups WHERE id = $1 AND api_key_id = $2",
+        "SELECT object_key, size_bytes, state, sha256_hex FROM backups WHERE id = $1 AND api_key_id = $2",
         id,
         auth.api_key_id,
     )
@@ -96,10 +109,14 @@ pub async fn complete(
     .ok_or(ServerError::NotFound)?;
 
     if row.state != "complete" {
-        let stored = ctx.storage.head_size(&row.object_key).await?;
-        if stored != Some(row.size_bytes.max(0) as u64) {
+        let stored = ctx.storage.head_object(&row.object_key).await?;
+        let expected = StoredObject {
+            size_bytes: row.size_bytes.max(0) as u64,
+            checksum_sha256: Some(checksum_sha256(&row.sha256_hex)?),
+        };
+        if stored != Some(expected) {
             return Err(ServerError::Conflict(
-                "uploaded object is missing or its size does not match".to_string(),
+                "uploaded object is missing or its size or checksum does not match".to_string(),
             ));
         }
         sqlx::query!(
@@ -304,6 +321,8 @@ mod tests {
         assert_eq!(created.backup.size_bytes, 1234);
         let expected_key = format!("backups/{key_id}/{}.grnt", created.backup.id);
         assert!(created.upload_url.contains(&expected_key));
+        assert_eq!(created.upload_headers["if-none-match"], "*");
+        assert_eq!(created.upload_headers["content-length"], "1234");
         assert!(created.upload_expires_at > Utc::now());
     }
 
@@ -335,15 +354,32 @@ mod tests {
         assert_eq!(response.status(), StatusCode::CONFLICT);
 
         // Wrong size → conflict.
-        ctx.storage.stub_set_head_size(Some(999));
+        ctx.storage.stub_set_object(Some(StoredObject {
+            size_bytes: 999,
+            checksum_sha256: Some(checksum_sha256(&"ab".repeat(32)).unwrap()),
+        }));
         let response = router(ctx.clone())
             .oneshot(complete_request())
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
 
-        // Matching size → complete.
-        ctx.storage.stub_set_head_size(Some(1234));
+        // Matching size alone must not accept missing or incorrect checksums.
+        for checksum in [None, Some(checksum_sha256(&"cd".repeat(32)).unwrap())] {
+            ctx.storage.stub_set_object(Some(StoredObject {
+                size_bytes: 1234,
+                checksum_sha256: checksum,
+            }));
+            let response = router(ctx.clone())
+                .oneshot(complete_request())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+        }
+        ctx.storage.stub_set_object(Some(StoredObject {
+            size_bytes: 1234,
+            checksum_sha256: Some(checksum_sha256(&"ab".repeat(32)).unwrap()),
+        }));
         let response = router(ctx.clone())
             .oneshot(complete_request())
             .await
@@ -354,7 +390,7 @@ mod tests {
         assert!(info.completed_at.is_some());
 
         // Second complete is idempotent even if the object vanished.
-        ctx.storage.stub_set_head_size(None);
+        ctx.storage.stub_set_object(None);
         let response = router(ctx.clone())
             .oneshot(complete_request())
             .await
@@ -362,6 +398,40 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let again: BackupInfo = json_body(response).await;
         assert_eq!(again.completed_at, info.completed_at);
+    }
+
+    #[sqlx::test]
+    async fn create_rejects_invalid_upload_constraints(pool: PgPool) {
+        let ctx = test_ctx(pool.clone());
+        let (token, _) = insert_key(&pool, "laptop").await;
+        for (size, digest) in [
+            (0, "ab".repeat(32)),
+            (MAX_BACKUP_BYTES + 1, "ab".repeat(32)),
+            (1234, "invalid".into()),
+            (1234, "AB".repeat(32)),
+        ] {
+            let req = CreateBackupRequest {
+                cave_name: "cave".into(),
+                size_bytes: size,
+                sha256_hex: digest,
+            };
+            let request = Request::builder()
+                .method("POST")
+                .uri("/api/v1/backups")
+                .header(AUTHORIZATION, format!("Bearer {token}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(&req).unwrap()))
+                .unwrap();
+            assert_eq!(
+                router(ctx.clone()).oneshot(request).await.unwrap().status(),
+                StatusCode::BAD_REQUEST
+            );
+        }
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM backups")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[sqlx::test]
@@ -390,7 +460,10 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::CONFLICT);
 
-        ctx.storage.stub_set_head_size(Some(1234));
+        ctx.storage.stub_set_object(Some(StoredObject {
+            size_bytes: 1234,
+            checksum_sha256: Some(checksum_sha256(&"ab".repeat(32)).unwrap()),
+        }));
         let complete = Request::builder()
             .method("POST")
             .uri(format!("/api/v1/backups/{}/complete", created.backup.id))

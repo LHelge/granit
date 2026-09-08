@@ -11,6 +11,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 /// Request body for `POST /api/v1/backups`.
@@ -32,8 +33,11 @@ pub struct CreateBackupRequest {
 pub struct CreateBackupResponse {
     /// The freshly created backup record (state [`BackupState::Pending`]).
     pub backup: BackupInfo,
-    /// Presigned S3 PUT URL; upload the archive here with a plain HTTP PUT.
+    /// Presigned S3 PUT URL; send the archive with `upload_headers`.
     pub upload_url: String,
+    /// Required signed headers, including size, checksum and write condition.
+    #[serde(default)]
+    pub upload_headers: BTreeMap<String, String>,
     /// When the presigned URL stops being valid.
     pub upload_expires_at: DateTime<Utc>,
 }
@@ -133,6 +137,7 @@ mod tests {
         let resp = CreateBackupResponse {
             backup: sample_backup(),
             upload_url: "http://localhost:8080/granit-backups/backups/x.grnt?sig=y".to_string(),
+            upload_headers: BTreeMap::from([("if-none-match".into(), "*".into())]),
             upload_expires_at: DateTime::parse_from_rfc3339("2026-08-28T12:15:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
