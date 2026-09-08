@@ -1,10 +1,10 @@
 ---
 id: "3ph"
 title: Disaster restore from the no-cave state
-status: in_progress
+status: done
 priority: P2
 created: "2026-08-31T11:08:06.428469Z"
-updated: "2026-09-08T14:41:44.242304Z"
+updated: "2026-09-08T14:44:12.140804Z"
 tags:
   - ui
 depends_on:

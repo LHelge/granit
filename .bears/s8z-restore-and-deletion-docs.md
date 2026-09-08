@@ -1,10 +1,10 @@
 ---
 id: s8z
 title: Restore and deletion docs
-status: open
+status: in_progress
 priority: P3
 created: "2026-08-31T11:08:14.321329Z"
-updated: "2026-08-31T11:08:14.321329Z"
+updated: "2026-09-08T14:44:13.901597Z"
 tags:
   - docs
 depends_on:
