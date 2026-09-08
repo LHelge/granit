@@ -220,11 +220,16 @@ pub(crate) fn encrypt(cached: &CachedKey, plaintext: &[u8]) -> Result<Vec<u8>, B
     Ok(container)
 }
 
-/// Decrypt a container using only the passphrase — the salt and KDF
-/// parameters come from the header, so this works on a machine that has
-/// never seen the cave. Used by tests today, restore later.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, BackupError> {
+/// The unencrypted parts of a container, split out for decryption.
+struct ParsedContainer<'a> {
+    params: KdfParams,
+    salt: [u8; SALT_LEN],
+    nonce: &'a [u8],
+    header: &'a [u8],
+    ciphertext: &'a [u8],
+}
+
+fn parse_container(container: &[u8]) -> Result<ParsedContainer<'_>, BackupError> {
     if container.len() < HEADER_LEN || &container[..4] != MAGIC {
         return Err(BackupError::Decrypt);
     }
@@ -234,47 +239,83 @@ pub(crate) fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, Bac
     let read_u32 = |offset: usize| {
         u32::from_le_bytes(container[offset..offset + 4].try_into().expect("in bounds"))
     };
-    let params = KdfParams {
-        m_kib: read_u32(5),
-        t: read_u32(9),
-        p: read_u32(13),
-    };
-    let salt: [u8; SALT_LEN] = container[17..17 + SALT_LEN].try_into().expect("in bounds");
-    let nonce = &container[17 + SALT_LEN..HEADER_LEN];
-    let header = &container[..HEADER_LEN];
-    let ciphertext = &container[HEADER_LEN..];
+    Ok(ParsedContainer {
+        params: KdfParams {
+            m_kib: read_u32(5),
+            t: read_u32(9),
+            p: read_u32(13),
+        },
+        salt: container[17..17 + SALT_LEN].try_into().expect("in bounds"),
+        nonce: &container[17 + SALT_LEN..HEADER_LEN],
+        header: &container[..HEADER_LEN],
+        ciphertext: &container[HEADER_LEN..],
+    })
+}
 
-    let key = derive_key(passphrase, &salt, params)?;
-    let cipher = XChaCha20Poly1305::new((&key).into());
+fn decrypt_parsed(key: &[u8; KEY_LEN], parsed: &ParsedContainer) -> Result<Vec<u8>, BackupError> {
+    let cipher = XChaCha20Poly1305::new(key.into());
     cipher
         .decrypt(
-            XNonce::from_slice(nonce),
+            XNonce::from_slice(parsed.nonce),
             Payload {
-                msg: ciphertext,
-                aad: header,
+                msg: parsed.ciphertext,
+                aad: parsed.header,
             },
         )
         .map_err(|_| BackupError::Decrypt)
 }
 
+/// Whether `cached` was derived with the exact salt and KDF parameters
+/// recorded in this container's header — i.e. whether it can decrypt the
+/// archive without re-prompting for the passphrase.
+pub(crate) fn key_matches(cached: &CachedKey, container: &[u8]) -> Result<bool, BackupError> {
+    let parsed = parse_container(container)?;
+    Ok(parsed.salt == cached.salt && parsed.params == cached.params)
+}
+
+/// Decrypt a container with the cached key. Fails as [`BackupError::Decrypt`]
+/// when the header's salt or KDF parameters differ from the cache — check
+/// [`key_matches`] first to decide whether to prompt for the passphrase.
+pub(crate) fn decrypt_with_cached(
+    cached: &CachedKey,
+    container: &[u8],
+) -> Result<Vec<u8>, BackupError> {
+    let parsed = parse_container(container)?;
+    if parsed.salt != cached.salt || parsed.params != cached.params {
+        return Err(BackupError::Decrypt);
+    }
+    decrypt_parsed(&cached.key, &parsed)
+}
+
+/// Decrypt a container using only the passphrase — the salt and KDF
+/// parameters come from the header, so this works on a machine that has
+/// never seen the cave.
+pub(crate) fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, BackupError> {
+    let parsed = parse_container(container)?;
+    let key = derive_key(passphrase, &parsed.salt, parsed.params)?;
+    decrypt_parsed(&key, &parsed)
+}
+
+/// Cheap test-only key: tiny Argon2 parameters so tests don't burn
+/// 64 MiB × 3 iterations per derive. Shared with the restore tests.
+#[cfg(test)]
+pub(crate) fn fast_key(passphrase: &str) -> CachedKey {
+    let params = KdfParams {
+        m_kib: 8,
+        t: 1,
+        p: 1,
+    };
+    let salt = [7u8; SALT_LEN];
+    CachedKey {
+        key: derive_key(passphrase, &salt, params).unwrap(),
+        salt,
+        params,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Cheap parameters so tests don't burn 64 MiB × 3 iterations per derive.
-    fn fast_key(passphrase: &str) -> CachedKey {
-        let params = KdfParams {
-            m_kib: 8,
-            t: 1,
-            p: 1,
-        };
-        let salt = [7u8; SALT_LEN];
-        CachedKey {
-            key: derive_key(passphrase, &salt, params).unwrap(),
-            salt,
-            params,
-        }
-    }
 
     #[test]
     fn encrypt_decrypt_round_trip_needs_only_the_passphrase() {
@@ -283,6 +324,64 @@ mod tests {
         assert_eq!(&container[..4], MAGIC);
         let plain = decrypt("correct horse battery", &container).unwrap();
         assert_eq!(plain, b"cave contents");
+    }
+
+    #[test]
+    fn cached_key_decrypts_matching_containers_only() {
+        let cached = fast_key("correct horse battery");
+        let container = encrypt(&cached, b"cave contents").unwrap();
+        assert!(key_matches(&cached, &container).unwrap());
+        assert_eq!(
+            decrypt_with_cached(&cached, &container).unwrap(),
+            b"cave contents"
+        );
+
+        // A key cached under a different salt must not match, and must not
+        // be used to decrypt.
+        let other = CachedKey {
+            key: cached.key,
+            salt: [9u8; SALT_LEN],
+            params: cached.params,
+        };
+        assert!(!key_matches(&other, &container).unwrap());
+        assert!(matches!(
+            decrypt_with_cached(&other, &container),
+            Err(BackupError::Decrypt)
+        ));
+    }
+
+    #[test]
+    fn packed_cave_survives_encrypt_decrypt_restore() {
+        let cave = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(cave.path().join(".granit")).unwrap();
+        std::fs::write(cave.path().join("note.md"), "# A note\n").unwrap();
+        std::fs::write(cave.path().join(".granit/config.yml"), "theme: default\n").unwrap();
+
+        let cached = fast_key("correct horse battery");
+        let packed = crate::backup::pack_cave(cave.path()).unwrap();
+        let container = encrypt(&cached, &packed).unwrap();
+
+        // Fresh-machine path: passphrase only, restore into a new directory.
+        let plaintext = decrypt("correct horse battery", &container).unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let restored = target.path().join("restored");
+        crate::backup::restore_to_new_dir(&plaintext, &restored).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(restored.join("note.md")).unwrap(),
+            "# A note\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(restored.join(".granit/config.yml")).unwrap(),
+            "theme: default\n"
+        );
+    }
+
+    #[test]
+    fn truncated_container_is_rejected() {
+        assert!(matches!(
+            key_matches(&fast_key("correct horse battery"), b"GRNT"),
+            Err(BackupError::Decrypt)
+        ));
     }
 
     #[test]

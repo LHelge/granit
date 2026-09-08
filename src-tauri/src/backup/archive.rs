@@ -47,6 +47,16 @@ pub(crate) fn pack_cave(cave_root: &Path) -> Result<Vec<u8>, BackupError> {
     Ok(encoder.finish()?)
 }
 
+/// Unpack a tar.zst archive (the decrypted payload of a backup container)
+/// into `target`, which must already exist. `tar::Archive::unpack` refuses
+/// entries that would escape the target directory.
+pub(crate) fn unpack_cave(archive: &[u8], target: &Path) -> Result<(), BackupError> {
+    let decoder = zstd::Decoder::new(archive)?;
+    let mut tar = tar::Archive::new(decoder);
+    tar.unpack(target)?;
+    Ok(())
+}
+
 fn append_dir<W: Write>(
     builder: &mut tar::Builder<W>,
     root: &Path,

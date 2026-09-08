@@ -36,6 +36,32 @@ pub struct BackupProgress {
     pub stage: BackupStage,
 }
 
+/// Where a restore unpacks the snapshot, chosen by the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum RestoreTarget {
+    /// Unpack into `path`, which must be an empty or nonexistent directory,
+    /// and open it as a cave.
+    NewDirectory { path: String },
+    /// Replace the currently open cave in place; the previous contents are
+    /// kept next to it as a `<name>.pre-restore-<timestamp>` directory.
+    CurrentCave,
+}
+
+/// Coarse progress stage of a running restore, sent with `restore:progress`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RestoreStage {
+    Downloading,
+    Decrypting,
+    Unpacking,
+}
+
+/// Payload of the `restore:progress` event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestoreProgress {
+    pub stage: RestoreStage,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,6 +88,36 @@ mod tests {
         };
         let json = serde_json::to_string(&progress).unwrap();
         let back: BackupProgress = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, progress);
+    }
+
+    #[test]
+    fn restore_target_round_trips() {
+        let new_dir = RestoreTarget::NewDirectory {
+            path: "/tmp/restored".into(),
+        };
+        let json = serde_json::to_string(&new_dir).unwrap();
+        assert_eq!(json, r#"{"mode":"new_directory","path":"/tmp/restored"}"#);
+        assert_eq!(
+            serde_json::from_str::<RestoreTarget>(&json).unwrap(),
+            new_dir
+        );
+
+        let json = serde_json::to_string(&RestoreTarget::CurrentCave).unwrap();
+        assert_eq!(json, r#"{"mode":"current_cave"}"#);
+        assert_eq!(
+            serde_json::from_str::<RestoreTarget>(&json).unwrap(),
+            RestoreTarget::CurrentCave
+        );
+    }
+
+    #[test]
+    fn restore_progress_round_trips() {
+        let progress = RestoreProgress {
+            stage: RestoreStage::Downloading,
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        let back: RestoreProgress = serde_json::from_str(&json).unwrap();
         assert_eq!(back, progress);
     }
 }

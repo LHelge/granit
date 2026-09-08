@@ -400,18 +400,19 @@ fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_conf
     });
 }
 
-#[tauri::command]
-pub(crate) fn open_cave(
+/// The full open-cave flow, shared by the `open_cave` command and restore
+/// (which reopens the restored directory the same way).
+pub(crate) fn open_cave_at(
     path: PathBuf,
-    app: tauri::AppHandle,
-    state: tauri::State<AppState>,
+    app: &tauri::AppHandle,
+    state: &AppState,
 ) -> Result<AppConfig, CaveError> {
     let cave = Cave::open(path.clone())?;
     cave.ensure_config()?;
     let mut config = cave.load_config()?;
     ensure_system_prompt_file(&cave, &mut config);
 
-    let store = Store::new(&app);
+    let store = Store::new(app);
     store.persist_active_cave(&path).map_err(CaveError::Io)?;
 
     *state.lock_config() = config;
@@ -420,13 +421,22 @@ pub(crate) fn open_cave(
 
     let rag_config = state.lock_config().agent.rag.clone();
     if rag_config.enabled {
-        build_vector_index(&app, &state, &rag_config);
+        build_vector_index(app, state, &rag_config);
     } else {
         state.set_vector_index(None);
     }
 
     let config = state.lock_config();
     Ok(state.ipc_response(&config))
+}
+
+#[tauri::command]
+pub(crate) fn open_cave(
+    path: PathBuf,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<AppConfig, CaveError> {
+    open_cave_at(path, &app, &state)
 }
 
 #[tauri::command]
