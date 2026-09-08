@@ -96,6 +96,7 @@ pub fn run() {
             list_tools,
             backup_now,
             restore_backup,
+            delete_backup,
             set_backup_passphrase,
             has_backup_key,
             list_backups,

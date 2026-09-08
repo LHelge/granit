@@ -94,6 +94,17 @@ impl BackupApiClient {
         Ok(listed.backups)
     }
 
+    pub(crate) async fn delete_backup(&self, id: Uuid) -> Result<(), BackupError> {
+        let response = self
+            .http
+            .delete(format!("{}/api/v1/backups/{id}", self.base_url))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await?;
+        Self::expect_success(response).await?;
+        Ok(())
+    }
+
     pub(crate) async fn download_backup(
         &self,
         id: Uuid,

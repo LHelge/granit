@@ -61,6 +61,11 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
     let restore_stage = RwSignal::new(None::<RestoreStage>);
     let restore_error = RwSignal::new(None::<String>);
 
+    // Deletion state, keyed by the snapshot's UUID in string form.
+    let confirm_delete = RwSignal::new(None::<String>);
+    let deleting = RwSignal::new(None::<String>);
+    let delete_error = RwSignal::new(None::<String>);
+
     let refresh_backups = move || {
         let configured = {
             let f = form.get_untracked();
@@ -224,6 +229,8 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
     // OperationGuard); mirror that in the controls.
     let operation_running = move || running_stage.get().is_some() || restore_stage.get().is_some();
     let can_backup = move || connection_configured() && key_set.get() && !operation_running();
+    // Row actions additionally wait for an in-flight deletion.
+    let row_actions_disabled = move || operation_running() || deleting.get().is_some();
 
     view! {
         <fieldset class="fieldset space-y-3">
@@ -377,25 +384,92 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                                                 <td>{format_size(info.size_bytes)}</td>
                                                 <td>{state}</td>
                                                 <td>
-                                                    // Only verified snapshots can be restored;
-                                                    // the backend answers 409 for pending ones.
-                                                    {is_complete.then(move || view! {
-                                                        <button
-                                                            type="button"
-                                                            class="btn btn-ghost btn-xs"
-                                                            disabled=operation_running
-                                                            on:click=move |_| {
-                                                                restore_for.set(Some(restore_info.clone()));
-                                                                confirm_rollback.set(false);
-                                                                need_passphrase.set(false);
-                                                                pending_target.set(None);
-                                                                restore_passphrase.set(String::new());
-                                                                restore_error.set(None);
+                                                    <div class="flex items-center gap-1">
+                                                        // Only verified snapshots can be restored;
+                                                        // the backend answers 409 for pending ones.
+                                                        {is_complete.then(move || view! {
+                                                            <button
+                                                                type="button"
+                                                                class="btn btn-ghost btn-xs"
+                                                                disabled=row_actions_disabled
+                                                                on:click=move |_| {
+                                                                    restore_for.set(Some(restore_info.clone()));
+                                                                    confirm_rollback.set(false);
+                                                                    need_passphrase.set(false);
+                                                                    pending_target.set(None);
+                                                                    restore_passphrase.set(String::new());
+                                                                    restore_error.set(None);
+                                                                }
+                                                            >
+                                                                "Restore"
+                                                            </button>
+                                                        })}
+                                                        {
+                                                            let row_id = info.id.to_string();
+                                                            move || {
+                                                                let row_id = row_id.clone();
+                                                                if confirm_delete.get().as_deref() == Some(row_id.as_str()) {
+                                                                    let yes_id = row_id.clone();
+                                                                    let spinner_id = row_id.clone();
+                                                                    view! {
+                                                                        <span class="flex items-center gap-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                class="btn btn-ghost btn-xs text-error"
+                                                                                disabled=row_actions_disabled
+                                                                                on:click=move |_| {
+                                                                                    let id = yes_id.clone();
+                                                                                    deleting.set(Some(id.clone()));
+                                                                                    delete_error.set(None);
+                                                                                    leptos::task::spawn_local_scoped_with_cancellation(async move {
+                                                                                        match ipc::delete_backup(&id).await {
+                                                                                            Ok(()) => {
+                                                                                                confirm_delete.set(None);
+                                                                                                // Close the restore panel if it
+                                                                                                // points at the deleted snapshot.
+                                                                                                if restore_for.get_untracked()
+                                                                                                    .is_some_and(|b| b.id.to_string() == id)
+                                                                                                {
+                                                                                                    restore_for.set(None);
+                                                                                                }
+                                                                                                refresh_backups();
+                                                                                            }
+                                                                                            Err(e) => delete_error.set(Some(e)),
+                                                                                        }
+                                                                                        deleting.set(None);
+                                                                                    });
+                                                                                }
+                                                                            >
+                                                                                {move || if deleting.get().as_deref() == Some(spinner_id.as_str()) {
+                                                                                    view! { <span class="loading loading-spinner loading-xs"></span> }.into_any()
+                                                                                } else {
+                                                                                    view! { "Really delete" }.into_any()
+                                                                                }}
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                class="btn btn-ghost btn-xs"
+                                                                                on:click=move |_| confirm_delete.set(None)
+                                                                            >
+                                                                                "Keep"
+                                                                            </button>
+                                                                        </span>
+                                                                    }.into_any()
+                                                                } else {
+                                                                    view! {
+                                                                        <button
+                                                                            type="button"
+                                                                            class="btn btn-ghost btn-xs text-error"
+                                                                            disabled=row_actions_disabled
+                                                                            on:click=move |_| confirm_delete.set(Some(row_id.clone()))
+                                                                        >
+                                                                            "Delete"
+                                                                        </button>
+                                                                    }.into_any()
+                                                                }
                                                             }
-                                                        >
-                                                            "Restore"
-                                                        </button>
-                                                    })}
+                                                        }
+                                                    </div>
                                                 </td>
                                             </tr>
                                         }
@@ -405,6 +479,10 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>)
                         </div>
                     }.into_any(),
                 }}
+
+                {move || delete_error.get().map(|e| view! {
+                    <p class="text-xs text-error">{format!("Could not delete snapshot: {e}")}</p>
+                })}
 
                 // ── Restore flow ───────────────────────────────────
                 {move || restore_for.get().map(|info| {

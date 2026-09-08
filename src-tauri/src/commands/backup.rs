@@ -273,6 +273,19 @@ pub(crate) fn has_backup_key(state: tauri::State<'_, AppState>) -> bool {
         .unwrap_or(false)
 }
 
+/// Delete one snapshot from the backend (object store and record). Allowed
+/// for pending snapshots too — that is how abandoned uploads get cleaned up.
+#[tauri::command]
+pub(crate) async fn delete_backup(
+    id: Uuid,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), BackupError> {
+    let config = resolve_credentials(&state, None)?;
+    BackupApiClient::new(&config.backend_url, &config.api_key)?
+        .delete_backup(id)
+        .await
+}
+
 /// List all snapshots stored on the backend. Uses the open cave's saved
 /// config, or explicit `credentials` when restoring with no cave open.
 #[tauri::command]

@@ -1,10 +1,10 @@
 ---
 id: yxj
 title: Snapshot deletion end-to-end
-status: open
+status: in_progress
 priority: P2
 created: "2026-08-31T11:07:30.397820Z"
-updated: "2026-08-31T11:07:30.397820Z"
+updated: "2026-09-08T14:37:43.433851Z"
 tags:
   - server
   - api
