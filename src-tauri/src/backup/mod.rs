@@ -11,10 +11,12 @@
 mod archive;
 mod client;
 mod crypto;
+mod restore;
 
 pub(crate) use archive::pack_cave;
 pub(crate) use client::BackupApiClient;
 pub(crate) use crypto::{encrypt, has_key_file, load_key, set_passphrase};
+pub(crate) use restore::{restore_in_place, restore_to_new_dir, verify_and_decrypt};
 
 /// Errors from packing, encrypting, or uploading a backup.
 #[derive(Debug, thiserror::Error)]
@@ -27,8 +29,18 @@ pub enum BackupError {
     PassphraseNotSet,
     #[error("The passphrase must be at least {min} characters", min = crypto::MIN_PASSPHRASE_LEN)]
     WeakPassphrase,
-    #[error("A backup is already running")]
+    #[error("A backup or restore is already running")]
     AlreadyRunning,
+    #[error("This archive needs its passphrase — the cave's cached key does not match")]
+    PassphraseRequired,
+    #[error("Downloaded archive is corrupted — its checksum does not match the record")]
+    ChecksumMismatch,
+    #[error("The target folder is not empty")]
+    TargetNotEmpty,
+    #[error("Snapshot not found on the backend")]
+    SnapshotNotFound,
+    #[error("Restore finished, but opening the restored cave failed: {0}")]
+    OpenRestored(String),
     #[error("Invalid backup key file: {0}")]
     InvalidKeyFile(String),
     #[error("I/O error: {0}")]

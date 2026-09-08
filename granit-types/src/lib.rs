@@ -11,7 +11,9 @@ pub use agent::{
     ProviderConfig, ProviderEntry, ProviderInfo, RagConfig, ToolCallInfo, ToolInfo, ToolsConfig,
     WebFetchConfig, WebSearchConfig, DEFAULT_SYSTEM_PROMPT_TEMPLATE,
 };
-pub use backup::{BackupConfig, BackupProgress, BackupStage};
+pub use backup::{
+    BackupConfig, BackupProgress, BackupStage, RestoreProgress, RestoreStage, RestoreTarget,
+};
 pub use config::{AppConfig, FontConfig, SidebarConfig};
 pub use document::{
     ContentMatch, Document, DocumentMeta, Frontmatter, RenderedDocument, TagMap, TodoItem, TodoList,

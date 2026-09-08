@@ -24,7 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new(config))
         .manage(UpdateCheckGuard::default())
-        .manage(BackupGuard::default())
+        .manage(OperationGuard::default())
         .setup(|app| {
             spawn_startup_update_check(app);
             restore_active_cave(app)
@@ -95,6 +95,7 @@ pub fn run() {
             clear_chat,
             list_tools,
             backup_now,
+            restore_backup,
             set_backup_passphrase,
             has_backup_key,
             list_backups,

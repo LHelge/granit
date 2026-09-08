@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use granit_api::{
-    ApiErrorBody, BackupInfo, CreateBackupRequest, CreateBackupResponse, ListBackupsResponse,
+    ApiErrorBody, BackupInfo, CreateBackupRequest, CreateBackupResponse, DownloadBackupResponse,
+    ListBackupsResponse,
 };
 use uuid::Uuid;
 
@@ -91,6 +92,33 @@ impl BackupApiClient {
             .await?;
         let listed: ListBackupsResponse = Self::expect_success(response).await?.json().await?;
         Ok(listed.backups)
+    }
+
+    pub(crate) async fn download_backup(
+        &self,
+        id: Uuid,
+    ) -> Result<DownloadBackupResponse, BackupError> {
+        let response = self
+            .http
+            .get(format!("{}/api/v1/backups/{id}/download", self.base_url))
+            .bearer_auth(&self.api_key)
+            .send()
+            .await?;
+        Ok(Self::expect_success(response).await?.json().await?)
+    }
+
+    /// Fetch the encrypted archive from the presigned URL. Like `upload`,
+    /// a plain request with no auth header — the signature is in the URL.
+    pub(crate) async fn download(&self, presigned_url: &str) -> Result<Vec<u8>, BackupError> {
+        let response = self.http.get(presigned_url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(BackupError::Api {
+                status: status.as_u16(),
+                message: "download from object storage was rejected".to_string(),
+            });
+        }
+        Ok(response.bytes().await?.to_vec())
     }
 
     /// Upload the encrypted archive to the presigned URL. Deliberately a
