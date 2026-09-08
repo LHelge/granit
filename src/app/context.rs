@@ -246,6 +246,14 @@ impl AppCtx {
     /// Open a cave through IPC and refresh all frontend state that depends on it.
     pub async fn open_cave_and_refresh(self, path: &str) -> Result<(), String> {
         let new_config = ipc::open_cave(path).await?;
+        self.apply_opened_cave(new_config).await;
+        Ok(())
+    }
+
+    /// Apply the config of a cave the backend has already opened (the
+    /// `open_cave` or `restore_backup` result) and refresh all frontend
+    /// state that depends on it.
+    pub async fn apply_opened_cave(self, new_config: granit_types::AppConfig) {
         self.config.set(new_config);
 
         self.refresh_notes().await;
@@ -255,6 +263,5 @@ impl AppCtx {
         self.refresh_tasks().await;
 
         self.clear_active_document();
-        Ok(())
     }
 }

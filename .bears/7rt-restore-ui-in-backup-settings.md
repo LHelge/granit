@@ -1,10 +1,10 @@
 ---
 id: "7rt"
 title: Restore UI in Backup settings
-status: open
+status: in_progress
 priority: P1
 created: "2026-08-31T11:07:56.891306Z"
-updated: "2026-08-31T11:07:56.891306Z"
+updated: "2026-09-08T13:52:14.176168Z"
 tags:
   - ui
 depends_on:

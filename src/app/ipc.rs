@@ -1,8 +1,8 @@
 use granit_api::BackupInfo;
 use granit_types::{
-    AppConfig, AppMetadata, AttachedNote, BackupProgress, ContentMatch, Document, DocumentMeta,
-    ReleaseNotes, RenderedDocument, SidebarConfig, TodoList, ToolCallInfo, ToolInfo,
-    UpdateCheckStatus,
+    AppConfig, AppMetadata, AttachedNote, BackupConfig, BackupProgress, ContentMatch, Document,
+    DocumentMeta, ReleaseNotes, RenderedDocument, RestoreProgress, RestoreTarget, SidebarConfig,
+    TodoList, ToolCallInfo, ToolInfo, UpdateCheckStatus,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
@@ -636,9 +636,43 @@ pub async fn has_backup_key() -> Result<bool, String> {
     invoke_no_args("has_backup_key").await
 }
 
-/// List all snapshots stored on the backend.
-pub async fn list_backups() -> Result<Vec<BackupInfo>, String> {
-    invoke_no_args("list_backups").await
+/// List all snapshots stored on the backend. `credentials` overrides the
+/// open cave's saved connection (disaster restore with no cave open).
+pub async fn list_backups(credentials: Option<&BackupConfig>) -> Result<Vec<BackupInfo>, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        credentials: Option<&'a BackupConfig>,
+    }
+    invoke_cmd("list_backups", &Args { credentials }).await
+}
+
+/// Restore one snapshot into a new directory or over the current cave.
+/// Stays pending for the whole run (progress arrives via the `restore:*`
+/// events) and resolves to the restored cave's config, already opened
+/// backend-side. `id` is the snapshot's UUID in string form.
+pub async fn restore_backup(
+    id: &str,
+    target: &RestoreTarget,
+    passphrase: Option<&str>,
+    credentials: Option<&BackupConfig>,
+) -> Result<AppConfig, String> {
+    #[derive(Serialize)]
+    struct Args<'a> {
+        id: &'a str,
+        target: &'a RestoreTarget,
+        passphrase: Option<&'a str>,
+        credentials: Option<&'a BackupConfig>,
+    }
+    invoke_cmd(
+        "restore_backup",
+        &Args {
+            id,
+            target,
+            passphrase,
+            credentials,
+        },
+    )
+    .await
 }
 
 // ── Event listening (agent streaming) ──────────────────────────────
@@ -716,6 +750,40 @@ pub async fn listen_backup_done(cb: impl Fn(BackupInfo) + 'static) -> Option<Eve
 /// Register a closure called when a backup fails.
 pub async fn listen_backup_error(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
     listen_event("backup:error", move |payload: JsValue| {
+        let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown error".to_string());
+        cb(msg);
+    })
+    .await
+}
+
+/// Register a closure called with each restore progress stage.
+pub async fn listen_restore_progress(
+    cb: impl Fn(RestoreProgress) + 'static,
+) -> Option<EventHandle> {
+    listen_event("restore:progress", move |payload: JsValue| {
+        let inner = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
+            .ok()
+            .unwrap_or(payload);
+        if let Ok(progress) = serde_wasm_bindgen::from_value::<RestoreProgress>(inner) {
+            cb(progress);
+        }
+    })
+    .await
+}
+
+/// Register a closure called when a restore finishes successfully. The
+/// restored cave's config arrives as the `restore_backup` invoke result;
+/// this event only signals completion.
+pub async fn listen_restore_done(cb: impl Fn() + 'static) -> Option<EventHandle> {
+    listen_event("restore:done", move |_| cb()).await
+}
+
+/// Register a closure called when a restore fails.
+pub async fn listen_restore_error(cb: impl Fn(String) + 'static) -> Option<EventHandle> {
+    listen_event("restore:error", move |payload: JsValue| {
         let msg = js_sys::Reflect::get(&payload, &JsValue::from_str("payload"))
             .ok()
             .and_then(|v| v.as_string())

@@ -1,7 +1,7 @@
 use super::SettingsForm;
 use crate::app::{ipc, AppCtx};
 use granit_api::{BackupInfo, BackupState};
-use granit_types::{BackupConfig, BackupStage};
+use granit_types::{BackupConfig, BackupStage, RestoreStage, RestoreTarget};
 use leptos::prelude::*;
 
 fn format_size(bytes: u64) -> String {
@@ -22,8 +22,16 @@ fn stage_label(stage: BackupStage) -> &'static str {
     }
 }
 
+fn restore_stage_label(stage: RestoreStage) -> &'static str {
+    match stage {
+        RestoreStage::Downloading => "Downloading…",
+        RestoreStage::Decrypting => "Decrypting…",
+        RestoreStage::Unpacking => "Unpacking…",
+    }
+}
+
 #[component]
-pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
+pub fn BackupSettings(form: RwSignal<SettingsForm>, set_open: WriteSignal<bool>) -> impl IntoView {
     let ctx = expect_context::<AppCtx>();
     let config = ctx.config;
 
@@ -43,6 +51,16 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
     // Snapshot list from the backend.
     let backups = RwSignal::new(None::<Result<Vec<BackupInfo>, String>>);
 
+    // Restore flow state: which snapshot the restore panel is open for,
+    // and how far along the flow is.
+    let restore_for = RwSignal::new(None::<BackupInfo>);
+    let confirm_rollback = RwSignal::new(false);
+    let need_passphrase = RwSignal::new(false);
+    let pending_target = RwSignal::new(None::<RestoreTarget>);
+    let restore_passphrase = RwSignal::new(String::new());
+    let restore_stage = RwSignal::new(None::<RestoreStage>);
+    let restore_error = RwSignal::new(None::<String>);
+
     let refresh_backups = move || {
         let configured = {
             let f = form.get_untracked();
@@ -53,7 +71,7 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             return;
         }
         leptos::task::spawn_local_scoped_with_cancellation(async move {
-            backups.set(Some(ipc::list_backups().await));
+            backups.set(Some(ipc::list_backups(None).await));
         });
     };
 
@@ -87,8 +105,58 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
             backup_message.set(Some(Err(message)));
         })
         .await;
+        // Restore listeners only drive the stage spinner; the outcome
+        // (config to apply, error to show) is the invoke result.
+        let _restore_progress = ipc::listen_restore_progress(move |progress| {
+            restore_stage.set(Some(progress.stage));
+        })
+        .await;
+        let _restore_done = ipc::listen_restore_done(move || {
+            restore_stage.set(None);
+        })
+        .await;
+        let _restore_error = ipc::listen_restore_error(move |_| {
+            restore_stage.set(None);
+        })
+        .await;
         std::future::pending::<()>().await;
     });
+
+    // Kick off a restore of the snapshot in `restore_for`. Runs unscoped:
+    // a restore switches the app to the restored cave, and that must be
+    // applied even if the user closes the settings modal mid-run — so
+    // app-level state (ctx, set_open) is written normally, while the
+    // component-local signals use try_set in case the section unmounted.
+    let start_restore = move |target: RestoreTarget, passphrase: Option<String>| {
+        let Some(info) = restore_for.get_untracked() else {
+            return;
+        };
+        restore_error.set(None);
+        restore_stage.set(Some(RestoreStage::Downloading));
+        leptos::task::spawn_local(async move {
+            let result =
+                ipc::restore_backup(&info.id.to_string(), &target, passphrase.as_deref(), None)
+                    .await;
+            restore_stage.try_set(None);
+            match result {
+                Ok(new_config) => {
+                    ctx.apply_opened_cave(new_config).await;
+                    set_open.set(false);
+                }
+                // The engine reports an unusable cached key (missing, or
+                // salt/params not matching this archive's header) with this
+                // exact error — see BackupError::PassphraseRequired. Only
+                // then is the passphrase prompt shown.
+                Err(e) if e.contains("needs its passphrase") => {
+                    pending_target.try_set(Some(target));
+                    need_passphrase.try_set(true);
+                }
+                Err(e) => {
+                    restore_error.try_set(Some(e));
+                }
+            }
+        });
+    };
 
     let on_set_passphrase = move |_| {
         let pass = passphrase.get_untracked();
@@ -152,8 +220,10 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
         let f = form.get();
         !f.backup_backend_url.trim().is_empty() && !f.backup_api_key.trim().is_empty()
     };
-    let can_backup =
-        move || connection_configured() && key_set.get() && running_stage.get().is_none();
+    // Backup and restore are mutually exclusive backend-side (one
+    // OperationGuard); mirror that in the controls.
+    let operation_running = move || running_stage.get().is_some() || restore_stage.get().is_some();
+    let can_backup = move || connection_configured() && key_set.get() && !operation_running();
 
     view! {
         <fieldset class="fieldset space-y-3">
@@ -285,10 +355,13 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                                         <th>"Cave"</th>
                                         <th>"Size"</th>
                                         <th>"State"</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {list.into_iter().map(|info| {
+                                        let restore_info = info.clone();
+                                        let is_complete = info.state == BackupState::Complete;
                                         let state = match info.state {
                                             BackupState::Complete => view! {
                                                 <span class="badge badge-success badge-xs">"complete"</span>
@@ -303,6 +376,27 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                                                 <td>{info.cave_name}</td>
                                                 <td>{format_size(info.size_bytes)}</td>
                                                 <td>{state}</td>
+                                                <td>
+                                                    // Only verified snapshots can be restored;
+                                                    // the backend answers 409 for pending ones.
+                                                    {is_complete.then(move || view! {
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-ghost btn-xs"
+                                                            disabled=operation_running
+                                                            on:click=move |_| {
+                                                                restore_for.set(Some(restore_info.clone()));
+                                                                confirm_rollback.set(false);
+                                                                need_passphrase.set(false);
+                                                                pending_target.set(None);
+                                                                restore_passphrase.set(String::new());
+                                                                restore_error.set(None);
+                                                            }
+                                                        >
+                                                            "Restore"
+                                                        </button>
+                                                    })}
+                                                </td>
                                             </tr>
                                         }
                                     }).collect_view()}
@@ -311,6 +405,119 @@ pub fn BackupSettings(form: RwSignal<SettingsForm>) -> impl IntoView {
                         </div>
                     }.into_any(),
                 }}
+
+                // ── Restore flow ───────────────────────────────────
+                {move || restore_for.get().map(|info| {
+                    let title = format!(
+                        "Restore snapshot from {} ({}, {})",
+                        info.created_at.format("%Y-%m-%d %H:%M"),
+                        info.cave_name,
+                        format_size(info.size_bytes),
+                    );
+                    view! {
+                        <div class="rounded-box border border-base-content/20 p-3 space-y-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <p class="text-xs font-medium">{title}</p>
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost btn-xs shrink-0"
+                                    disabled=move || restore_stage.get().is_some()
+                                    on:click=move |_| restore_for.set(None)
+                                >
+                                    "Cancel"
+                                </button>
+                            </div>
+                            {move || if let Some(stage) = restore_stage.get() {
+                                view! {
+                                    <span class="flex items-center gap-2 text-xs text-base-content/60">
+                                        <span class="loading loading-spinner loading-xs"></span>
+                                        {restore_stage_label(stage)}
+                                    </span>
+                                }.into_any()
+                            } else if need_passphrase.get() {
+                                view! {
+                                    <div class="space-y-2">
+                                        <p class="text-xs text-base-content/35">"This cave's cached key does not fit this snapshot. Enter the passphrase the snapshot was encrypted with."</p>
+                                        <div class="flex gap-2">
+                                            <input
+                                                type="password"
+                                                class="input input-bordered input-sm flex-1"
+                                                placeholder="Backup passphrase"
+                                                prop:value=move || restore_passphrase.get()
+                                                on:input=move |ev| restore_passphrase.set(event_target_value(&ev))
+                                            />
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-primary shrink-0"
+                                                disabled=move || restore_passphrase.get().is_empty()
+                                                on:click=move |_| {
+                                                    if let Some(target) = pending_target.get_untracked() {
+                                                        start_restore(target, Some(restore_passphrase.get_untracked()));
+                                                    }
+                                                }
+                                            >
+                                                "Restore"
+                                            </button>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else if confirm_rollback.get() {
+                                view! {
+                                    <div class="space-y-2">
+                                        <p class="text-xs text-warning">"This replaces everything in the current cave with the snapshot. The current contents are kept beside the cave folder as a \"<cave>.pre-restore-<timestamp>\" copy until you delete it."</p>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-warning"
+                                                on:click=move |_| start_restore(RestoreTarget::CurrentCave, None)
+                                            >
+                                                "Replace current cave"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-ghost"
+                                                on:click=move |_| confirm_rollback.set(false)
+                                            >
+                                                "Back"
+                                            </button>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="space-y-2">
+                                        <p class="text-xs text-base-content/35">"Restore into a new empty folder and switch to it, or replace the contents of the current cave."</p>
+                                        <div class="flex flex-wrap gap-2">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm"
+                                                on:click=move |_| {
+                                                    leptos::task::spawn_local_scoped_with_cancellation(async move {
+                                                        if let Some(path) = ipc::pick_folder().await {
+                                                            start_restore(RestoreTarget::NewDirectory { path }, None);
+                                                        }
+                                                    });
+                                                }
+                                            >
+                                                "Restore to new folder…"
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm"
+                                                on:click=move |_| confirm_rollback.set(true)
+                                            >
+                                                "Replace current cave…"
+                                            </button>
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            }}
+                            {move || restore_error.get().map(|e| view! {
+                                <div class="alert alert-error py-2 text-xs">{e}</div>
+                            })}
+                        </div>
+                    }
+                })}
             </div>
         </fieldset>
     }
