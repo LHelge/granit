@@ -35,6 +35,51 @@ jobs:
             echo 'CHANGELOG_EOF'
           } >> "$GITHUB_OUTPUT"
 
+  # Publish the backup backend as a container image. Runs alongside the
+  # desktop builds (both gate on the same CI check) but is independent of
+  # them: a failed image push must not hold back the desktop release and
+  # vice versa. The Dockerfile expects the repository root as build
+  # context because granit-server depends on the granit-api path crate.
+  backend-image:
+    needs: check
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # v0.8.0 -> 0.8.0, 0.8, latest
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/lhelge/granit-server
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # No attestation manifest: it shows up as a confusing extra
+          # "unknown/unknown" entry on the GHCR package page.
+          provenance: false
+
   build:
     needs: [check, changelog]
     permissions:

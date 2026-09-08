@@ -23,6 +23,21 @@ In Granit, open **Settings → Backup** and enter:
 - **Backend URL**: `http://localhost:8080` (the Caddy origin)
 - **API key**: the `grnt_…` token printed above
 
+## Prebuilt image
+
+Every release also publishes the backend as a container image, so a
+deployment need not build from source:
+
+```
+ghcr.io/lhelge/granit-server:<version>   # e.g. 0.8.0
+ghcr.io/lhelge/granit-server:latest
+```
+
+Only the backend is published; postgres, RustFS, and Caddy come from their
+upstream images as in `docker-compose.yml`. To use the prebuilt image with
+compose, replace the `build:` block of the `backend` service with
+`image: ghcr.io/lhelge/granit-server:latest`.
+
 ## Key management
 
 ```sh
