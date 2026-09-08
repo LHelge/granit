@@ -1,5 +1,5 @@
 mod agent;
-mod backup;
+pub(crate) mod backup;
 mod markdown;
 mod notes;
 mod reading;
