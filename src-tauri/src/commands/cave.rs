@@ -258,7 +258,9 @@ pub(crate) fn render_skill(
 ) -> Result<RenderedDocument, CaveError> {
     state.with_cave(|cave| {
         let raw = cave.read_skill_raw(&name)?;
-        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+        Ok(Markdown::new(&raw)
+            .with_image_base(cave.relative_dir(&cave.agent_skills_dir().join(&name)))
+            .render(&name, |s| cave.resolve_link(s)))
     })
 }
 
@@ -316,7 +318,9 @@ pub(crate) fn render_task(
 ) -> Result<RenderedDocument, CaveError> {
     state.with_cave(|cave| {
         let raw = cave.read_task_raw(&name)?;
-        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+        Ok(Markdown::new(&raw)
+            .with_image_base(cave.relative_dir(&cave.agent_tasks_dir()))
+            .render(&name, |s| cave.resolve_link(s)))
     })
 }
 
@@ -519,7 +523,9 @@ pub(crate) fn render_note(
     state.with_cave(|cave| {
         let slug = cave.resolve_slug(&name)?;
         let raw = cave.read_note_raw(&slug)?;
-        let mut rendered = Markdown::new(&raw).render(&slug, |s| cave.resolve_link(s));
+        let mut rendered = Markdown::new(&raw)
+            .with_image_base(cave.note_dir(&slug)?)
+            .render(&slug, |s| cave.resolve_link(s));
         rendered.backlinks = cave.backlink_note_metas(&slug)?;
         Ok(rendered)
     })
@@ -532,7 +538,9 @@ pub(crate) fn render_template(
 ) -> Result<RenderedDocument, CaveError> {
     state.with_cave(|cave| {
         let raw = cave.read_template_raw(&name)?;
-        Ok(Markdown::new(&raw).render(&name, |s| cave.resolve_link(s)))
+        Ok(Markdown::new(&raw)
+            .with_image_base(cave.relative_dir(&cave.templates_dir()))
+            .render(&name, |s| cave.resolve_link(s)))
     })
 }
 
@@ -554,7 +562,9 @@ pub(super) fn render_system_prompt_for_state(
             &raw,
             &crate::agent::prompt::PromptContext::from_config(&agent_config, has_index, skills),
         );
-        Ok(Markdown::new(&rendered).render("system", |s| cave.resolve_link(s)))
+        Ok(Markdown::new(&rendered)
+            .with_image_base(cave.relative_dir(&cave.agent_dir()))
+            .render("system", |s| cave.resolve_link(s)))
     })
 }
 

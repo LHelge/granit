@@ -103,7 +103,12 @@ impl<'a> Markdown<'a> {
         resolve: impl Fn(&str) -> Option<String>,
     ) -> RenderedDocument {
         let frontmatter = self.frontmatter().cloned();
-        let (html, outgoing_links) = render_core(self.body(), Some(&resolve), true);
+        let (html, outgoing_links) = render_core(
+            self.body(),
+            Some(&resolve),
+            true,
+            self.image_base.as_deref(),
+        );
         let fmt = |d: chrono::DateTime<Utc>| {
             d.with_timezone(&Local)
                 .format("%Y-%m-%d %H:%M:%S")
@@ -127,7 +132,7 @@ impl<'a> Markdown<'a> {
 
     /// Render markdown to standalone HTML (no wiki-link resolution).
     pub fn render_html(&self) -> String {
-        render_core(self.body(), None, false).0
+        render_core(self.body(), None, false, self.image_base.as_deref()).0
     }
 
     /// Render markdown to HTML with wiki-link resolution.
@@ -135,7 +140,13 @@ impl<'a> Markdown<'a> {
     /// Used for agent chat messages where wiki-links should be clickable
     /// but checkboxes are non-interactive.
     pub fn render_with_links(&self, resolve: impl Fn(&str) -> Option<String>) -> String {
-        render_core(self.body(), Some(&resolve), false).0
+        render_core(
+            self.body(),
+            Some(&resolve),
+            false,
+            self.image_base.as_deref(),
+        )
+        .0
     }
 
     /// Render markdown to standalone HTML for use outside the app (clipboard
@@ -292,12 +303,15 @@ type Lookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 /// - `lookup`: when `Some`, enables `ENABLE_WIKILINKS` and resolves links via
 ///   the closure. When `None`, wiki-link syntax is left as-is (literal text).
 /// - `interactive_checkboxes`: if `true`, emits checkboxes without `disabled`.
+/// - `image_base`: when `Some`, relative image sources are resolved against
+///   this cave-relative directory and rewritten to the `granit://` cave route.
 ///
 /// Returns `(html, outgoing_links)`.
 fn render_core(
     markdown: &str,
     lookup: Option<Lookup>,
     interactive_checkboxes: bool,
+    image_base: Option<&str>,
 ) -> (String, Vec<String>) {
     let mut options = base_options();
     if lookup.is_some() {
@@ -378,6 +392,23 @@ fn render_core(
                 }
             })]
         }
+        // Point relative image sources at the cave file route.
+        Event::Start(Tag::Image {
+            link_type,
+            dest_url,
+            title,
+            id,
+        }) => {
+            let dest_url = image_base
+                .and_then(|base| rewrite_image_src(base, &dest_url))
+                .map_or(dest_url, Into::into);
+            vec![Event::Start(Tag::Image {
+                link_type,
+                dest_url,
+                title,
+                id,
+            })]
+        }
         // Sanitize raw HTML
         Event::Html(raw) | Event::InlineHtml(raw) => sanitize_html_event_vec(raw),
         other => vec![other],
@@ -386,6 +417,57 @@ fn render_core(
     let mut html_output = String::new();
     html::push_html(&mut html_output, events);
     (html_output, outgoing_links)
+}
+
+/// Rewrite a relative image source to its `granit://` cave URL.
+///
+/// `base` is the cave-relative directory of the document (forward slashes,
+/// `""` for the root). A source with a scheme (`https:`, `data:`, …), a
+/// protocol-relative `//host` or a bare `#fragment` is left alone and yields
+/// `None`. A leading `/` resolves from the cave root; anything else from
+/// `base`. `.` and `..` segments are folded lexically; a path that would
+/// climb above the cave root yields `None` (it could never be served).
+fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
+    if src.is_empty() || src.starts_with('#') || src.starts_with("//") || has_url_scheme(src) {
+        return None;
+    }
+    // Markdown authors may already percent-encode (`my%20img.png`); decode
+    // so the URL builder encodes each segment exactly once.
+    let decoded = percent_encoding::percent_decode_str(src)
+        .decode_utf8()
+        .ok()?;
+    let (start, path) = match decoded.strip_prefix('/') {
+        Some(rest) => (Vec::new(), rest),
+        None => (
+            base.split('/').filter(|s| !s.is_empty()).collect(),
+            decoded.as_ref(),
+        ),
+    };
+    let mut segments: Vec<&str> = start;
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            other => segments.push(other),
+        }
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    Some(crate::scheme::cave_file_url(&segments.join("/")))
+}
+
+/// Whether `src` starts with a URL scheme (`scheme:` per RFC 3986).
+fn has_url_scheme(src: &str) -> bool {
+    let Some(colon) = src.find(':') else {
+        return false;
+    };
+    let scheme = &src[..colon];
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
 }
 
 /// Convert raw HTML into escaped code block events so untrusted content
@@ -626,6 +708,105 @@ mod tests {
         let targets =
             Markdown::new("[[Target]] and [[Other|label]] but not `[[code]]`").wiki_link_targets();
         assert_eq!(targets, vec!["Target".to_string(), "Other".to_string()]);
+    }
+
+    // ── Image sources ────────────────────────────────────────────────
+
+    #[test]
+    fn test_relative_image_resolves_against_note_directory() {
+        let html = Markdown::new("![logo](img/logo.png)")
+            .with_image_base("projects/alpha")
+            .render_html();
+        let expected = crate::scheme::cave_file_url("projects/alpha/img/logo.png");
+        assert!(
+            html.contains(&format!(r#"src="{expected}""#)),
+            "got: {html}"
+        );
+        assert!(html.contains(r#"alt="logo""#), "got: {html}");
+    }
+
+    #[test]
+    fn test_image_at_cave_root_and_leading_slash() {
+        let root = Markdown::new("![](logo.png)")
+            .with_image_base("")
+            .render_html();
+        assert!(
+            root.contains(&crate::scheme::cave_file_url("logo.png")),
+            "got: {root}"
+        );
+
+        let absolute = Markdown::new("![](/assets/logo.png)")
+            .with_image_base("deep/folder")
+            .render_html();
+        assert!(
+            absolute.contains(&crate::scheme::cave_file_url("assets/logo.png")),
+            "got: {absolute}"
+        );
+    }
+
+    #[test]
+    fn test_image_parent_segments_fold_and_cannot_escape_root() {
+        let html = Markdown::new("![](../shared/a.png)")
+            .with_image_base("sub")
+            .render_html();
+        assert!(
+            html.contains(&crate::scheme::cave_file_url("shared/a.png")),
+            "got: {html}"
+        );
+
+        // Climbing above the root is left as-is (and later 404s) rather
+        // than mapped onto some unrelated cave file.
+        let escaped = Markdown::new("![](../../etc/passwd)")
+            .with_image_base("sub")
+            .render_html();
+        assert!(
+            escaped.contains(r#"src="../../etc/passwd""#),
+            "got: {escaped}"
+        );
+    }
+
+    #[test]
+    fn test_image_with_encoded_name_is_encoded_once() {
+        let html = Markdown::new("![](my%20img.png) ![](<my img.png>)")
+            .with_image_base("")
+            .render_html();
+        let expected = crate::scheme::cave_file_url("my img.png");
+        assert_eq!(html.matches(&expected).count(), 2, "got: {html}");
+        assert!(!html.contains("%2520"), "got: {html}");
+    }
+
+    #[test]
+    fn test_absolute_and_data_image_sources_untouched() {
+        let md = "![](https://example.com/a.png) ![](http://x/b.png) ![](data:image/png;base64,AAAA) ![](//cdn/c.png)";
+        let html = Markdown::new(md).with_image_base("sub").render_html();
+        assert!(
+            html.contains(r#"src="https://example.com/a.png""#),
+            "got: {html}"
+        );
+        assert!(html.contains(r#"src="http://x/b.png""#), "got: {html}");
+        assert!(
+            html.contains(r#"src="data:image/png;base64,AAAA""#),
+            "got: {html}"
+        );
+        assert!(html.contains(r#"src="//cdn/c.png""#), "got: {html}");
+        assert!(!html.contains("granit"), "got: {html}");
+    }
+
+    #[test]
+    fn test_images_untouched_without_image_base() {
+        let html = Markdown::new("![](img.png)").render_html();
+        assert!(html.contains(r#"src="img.png""#), "got: {html}");
+    }
+
+    #[test]
+    fn test_has_url_scheme() {
+        use super::has_url_scheme;
+        assert!(has_url_scheme("https://x"));
+        assert!(has_url_scheme("data:image/png;base64,AA"));
+        assert!(has_url_scheme("granit://localhost/cave/a.png"));
+        assert!(!has_url_scheme("img.png"));
+        assert!(!has_url_scheme("folder/img:1.png"));
+        assert!(!has_url_scheme("1abc:x"));
     }
 
     // ── render_for_export ────────────────────────────────────────────

@@ -3327,6 +3327,7 @@ dependencies = [
  "html-to-markdown-rs",
  "log",
  "parking_lot",
+ "percent-encoding",
  "pulldown-cmark",
  "rand 0.9.5",
  "reqwest 0.13.4",

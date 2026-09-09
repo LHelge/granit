@@ -3,9 +3,11 @@ mod backup;
 mod cave;
 mod commands;
 mod markdown;
+mod scheme;
 
 use commands::*;
 use granit_types::AppConfig;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +27,12 @@ pub fn run() {
         .manage(AppState::new(config))
         .manage(UpdateCheckGuard::default())
         .manage(OperationGuard::default())
+        // Serves cave files (note images, presentation templates and their
+        // assets) to every webview of the app; see `scheme.rs`.
+        .register_uri_scheme_protocol(scheme::SCHEME, |ctx, request| {
+            let cave_root = ctx.app_handle().state::<AppState>().active_cave_path();
+            scheme::respond(cave_root.as_deref(), &request)
+        })
         .setup(|app| {
             spawn_startup_update_check(app);
             restore_active_cave(app)
