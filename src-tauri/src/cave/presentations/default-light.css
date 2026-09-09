@@ -1,0 +1,263 @@
+/*
+ * Granit presentation template: default-light
+ *
+ * Granit renders a note as <section class="slide"> elements on a fixed
+ * 1280 x 720 canvas (available as --slide-width / --slide-height) and
+ * scales that canvas to the screen. Exactly one section carries the
+ * "active" class; each has data-index (0-based) and data-number
+ * (1-based), and the numbers are also available for CSS arithmetic as
+ * --slide-index on the section and --slide-count on <body>. Content that
+ * does not fit a slide is clipped.
+ *
+ * Style the slide contents freely. Which slide is shown, scaling and
+ * clipping are handled by Granit's base stylesheet, which is loaded
+ * before this file. Files placed next to this one (logos, fonts) can be
+ * referenced by relative path, e.g. url("logo.png").
+ *
+ * See the Presentations page in the Granit docs for the full DOM contract.
+ */
+
+/* The letterbox area around the canvas. */
+html,
+body {
+  background: #dce0e8;
+}
+
+.slide {
+  background: #eff1f5;
+  color: #4c4f69;
+  font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 32px;
+  line-height: 1.4;
+  padding: 64px 80px 96px;
+  /* Content starts at a fixed distance from the top, so headings sit at
+   * the same height on every slide; what does not fit is clipped below. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* The first slide is the title slide: centred in both directions. A slide
+ * whose heading carries {.section} (e.g. "# Chapter {.section}") is laid
+ * out the same way, as a chapter divider. */
+.slide:first-child,
+.slide.section {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+
+.slide:first-child h1,
+.slide.section h1 {
+  font-size: 96px;
+}
+
+/* {.two-column}: the heading spans the slide, everything after it flows
+ * into two columns (e.g. text on the left, an image on the right). */
+.slide.two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: max-content;
+  column-gap: 48px;
+  align-content: start;
+}
+
+.slide.two-column > h1,
+.slide.two-column > h2,
+.slide.two-column > h3 {
+  grid-column: 1 / -1;
+}
+
+/* ── Headings ─────────────────────────────────────────────────── */
+
+.slide h1 {
+  font-size: 72px;
+  line-height: 1.1;
+  margin: 0 0 0.4em;
+  color: #1e1e2e;
+}
+
+.slide h2 {
+  font-size: 52px;
+  line-height: 1.15;
+  margin: 0 0 0.5em;
+  color: #1e1e2e;
+}
+
+.slide h3 {
+  font-size: 40px;
+  margin: 0 0 0.5em;
+}
+
+.slide h4,
+.slide h5,
+.slide h6 {
+  font-size: 34px;
+  margin: 0 0 0.5em;
+}
+
+/* ── Body text ────────────────────────────────────────────────── */
+
+.slide p,
+.slide ul,
+.slide ol,
+.slide pre,
+.slide blockquote,
+.slide table {
+  margin: 0 0 0.6em;
+}
+
+.slide ul,
+.slide ol {
+  padding-left: 1.2em;
+}
+
+.slide li {
+  margin-bottom: 0.2em;
+}
+
+.slide a {
+  color: #1e66f5;
+}
+
+.slide strong {
+  color: #1e1e2e;
+}
+
+.slide blockquote {
+  border-left: 6px solid #1e66f5;
+  padding-left: 0.6em;
+  color: #5c5f77;
+}
+
+/* GitHub-style alerts (> [!NOTE] etc.) render as a blockquote with a
+ * markdown-alert-<kind> class: each kind gets its own colour and label. */
+.slide blockquote[class^="markdown-alert-"]::before {
+  display: block;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.2em;
+}
+
+.slide blockquote.markdown-alert-note::before {
+  content: "Note";
+  color: #1e66f5;
+}
+
+.slide blockquote.markdown-alert-tip {
+  border-left-color: #40a02b;
+}
+
+.slide blockquote.markdown-alert-tip::before {
+  content: "Tip";
+  color: #40a02b;
+}
+
+.slide blockquote.markdown-alert-important {
+  border-left-color: #8839ef;
+}
+
+.slide blockquote.markdown-alert-important::before {
+  content: "Important";
+  color: #8839ef;
+}
+
+.slide blockquote.markdown-alert-warning {
+  border-left-color: #df8e1d;
+}
+
+.slide blockquote.markdown-alert-warning::before {
+  content: "Warning";
+  color: #df8e1d;
+}
+
+.slide blockquote.markdown-alert-caution {
+  border-left-color: #d20f39;
+}
+
+.slide blockquote.markdown-alert-caution::before {
+  content: "Caution";
+  color: #d20f39;
+}
+
+/* ── Code ─────────────────────────────────────────────────────── */
+
+.slide code {
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85em;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+
+.slide pre {
+  background: #e6e9ef;
+  padding: 0.6em 0.8em;
+  border-radius: 8px;
+  font-size: 24px;
+  overflow: hidden;
+}
+
+.slide pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ── Tables, images, checkboxes ───────────────────────────────── */
+
+.slide table {
+  border-collapse: collapse;
+}
+
+.slide th,
+.slide td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  padding: 0.2em 0.6em;
+  text-align: left;
+}
+
+.slide th {
+  color: #1e1e2e;
+}
+
+.slide img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.slide input[type="checkbox"] {
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.3em;
+  accent-color: #1e66f5;
+}
+
+/* ── Progress dots ────────────────────────────────────────────── */
+/* One dot per slide, centred along the bottom edge; the current slide is
+ * a wider pill in the accent colour. Each dot occupies an 18px cell. */
+
+.slide::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  width: calc(var(--slide-count) * 18px);
+  height: 8px;
+  background-image: radial-gradient(circle, #9ca0b0 3px, transparent 3.5px);
+  background-size: 18px 8px;
+}
+
+.slide::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: calc(50% - var(--slide-count) * 9px + var(--slide-index) * 18px);
+  bottom: 32px;
+  width: 18px;
+  height: 8px;
+  border-radius: 4px;
+  background: #1e66f5;
+}

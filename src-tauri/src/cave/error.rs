@@ -28,6 +28,12 @@ pub enum CaveError {
         conflict: String,
     },
 
+    #[error("Presentation template not found: {0}")]
+    PresentationNotFound(String),
+
+    #[error("Presentation template already exists: {0}")]
+    PresentationAlreadyExists(String),
+
     #[error("Task not found: {0}")]
     TaskNotFound(String),
 

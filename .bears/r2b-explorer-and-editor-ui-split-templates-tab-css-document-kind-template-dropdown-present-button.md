@@ -4,7 +4,7 @@ title: "Explorer and editor UI: split Templates tab, CSS document kind, template
 status: open
 priority: P2
 created: "2026-09-08T22:03:04.991561433Z"
-updated: "2026-09-08T22:03:04.991561433Z"
+updated: "2026-09-09T08:14:38.599700Z"
 tags:
   - presentation
   - frontend
@@ -21,6 +21,8 @@ Explorer (`src/app/explorer/templates.rs`):
 - Split the Templates tab into two stacked sections, "Note templates" and "Presentation templates", each with its own header row (title + directory subtitle) and its own new button. No new tab icon. Each section scrolls independently and shares the vertical space.
 - Presentation rows mirror note-template rows: click opens in the editor, delete button with the same confirmation behaviour. Rename happens via the editor title as for note templates.
 - `AppCtx` gains a `presentations` signal and a refresh, like `templates`.
+
+IPC wrappers (`src/app/ipc.rs`), deferred here from the backend templates task so they land next to their first use: `fetch_presentations`, `read_presentation`, `create_presentation`, `save_presentation`, `rename_presentation`, `delete_presentation`, and the `presentation` argument of `update_note` (backend command already accepts it; `Some("")` clears, `None` preserves).
 
 Editor:
 - New `DocumentKind::Presentation` with its persist path (`save_presentation`), rename via title, and doc-key handling, following the `Template` arm in `src/app/editor/mod.rs`.

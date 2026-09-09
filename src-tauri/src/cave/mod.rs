@@ -3,6 +3,7 @@ mod error;
 mod folders;
 mod helpers;
 mod notes;
+mod presentations;
 mod search;
 mod tags;
 mod templates;
@@ -13,6 +14,7 @@ use granit_types::AppConfig;
 pub(crate) use helpers::write_atomic;
 use helpers::{ensure_md_extension, validate_folder_path};
 pub use helpers::{Document, DocumentMeta, RenderedDocument};
+pub use presentations::PRESENTATIONS_DIR;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -42,6 +44,9 @@ pub struct Cave {
     skills: HashMap<String, PathBuf>,
     /// In-memory index: task slug → absolute path inside `.granit/agent/tasks`.
     tasks: HashMap<String, PathBuf>,
+    /// In-memory index: presentation template slug → absolute path of its
+    /// `.css` file inside `.granit/presentations`.
+    presentations: HashMap<String, PathBuf>,
     /// Slug of the note currently open in the editor, if any.
     active_slug: Option<String>,
     /// Whether the notes/backlinks/templates indexes have been populated.
@@ -62,6 +67,7 @@ impl Cave {
             templates: HashMap::new(),
             skills: HashMap::new(),
             tasks: HashMap::new(),
+            presentations: HashMap::new(),
             active_slug: None,
             scanned: false,
         }
@@ -86,6 +92,7 @@ impl Cave {
         self.skills = Self::scan_skills(&self.agent_skills_dir())?;
         // Tasks are a flat markdown directory, same shape as templates.
         self.tasks = Self::scan_templates(&self.agent_tasks_dir())?;
+        self.presentations = Self::scan_presentations(&self.presentations_dir())?;
         self.scanned = true;
         Ok(())
     }
@@ -250,6 +257,15 @@ impl Cave {
 
     /// Scan the flat `.granit/templates` directory for markdown template files.
     pub(crate) fn scan_templates(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+        Self::scan_flat_dir(dir, "md")
+    }
+
+    /// Scan a flat directory for files with the given extension and return a
+    /// slug (file stem) → absolute-path map. A missing directory is empty.
+    pub(crate) fn scan_flat_dir(
+        dir: &Path,
+        extension: &str,
+    ) -> Result<HashMap<String, PathBuf>, CaveError> {
         if !dir.is_dir() {
             return Ok(HashMap::new());
         }
@@ -258,7 +274,7 @@ impl Cave {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_file() || path.extension().is_none_or(|ext| ext != "md") {
+            if !path.is_file() || path.extension().is_none_or(|ext| ext != extension) {
                 continue;
             }
 

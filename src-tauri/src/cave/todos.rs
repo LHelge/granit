@@ -143,7 +143,7 @@ impl Cave {
         }
 
         let updated =
-            crate::markdown::Markdown::rebuild(&new_content, &new_content, None, None, None);
+            crate::markdown::Markdown::rebuild(&new_content, &new_content, None, None, None, None);
         super::helpers::write_atomic(abs_path, updated)?;
         Ok(())
     }

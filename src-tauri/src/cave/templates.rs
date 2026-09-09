@@ -93,7 +93,8 @@ impl Cave {
             .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
 
         let existing_raw = std::fs::read_to_string(abs_path)?;
-        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None);
+        let updated =
+            crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None, None);
         write_atomic(abs_path, updated.as_str())?;
         let mut meta = template_meta_from_path(abs_path);
         meta.icon = crate::markdown::Markdown::new(&updated).icon();
@@ -188,7 +189,8 @@ impl Cave {
         };
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
-        let updated = crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, None);
+        let updated =
+            crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, None, None);
         if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
@@ -271,6 +273,18 @@ impl Cave {
         Ok(crate::markdown::Markdown::new(&raw).icon())
     }
 
+    pub(crate) fn initial_presentation_for_new_note(
+        &self,
+        template_slug: Option<&str>,
+    ) -> Result<Option<String>, CaveError> {
+        let Some(template_slug) = template_slug else {
+            return Ok(None);
+        };
+
+        let raw = self.read_template_raw(template_slug)?;
+        Ok(crate::markdown::Markdown::new(&raw).presentation())
+    }
+
     pub(crate) fn initial_tags_for_new_note(
         &self,
         template_slug: Option<&str>,
@@ -342,10 +356,14 @@ impl Cave {
                 .and_then(|slug| self.initial_tags_for_new_note(Some(slug)).ok())
                 .unwrap_or_default();
             let final_path = abs_folder.join(format!("{date}.md"));
+            let presentation = template_slug
+                .and_then(|slug| self.initial_presentation_for_new_note(Some(slug)).ok())
+                .flatten();
             let initial_content = crate::markdown::Markdown::new_note_with_body(
                 &body,
                 tags,
                 Some("Calendar".to_string()),
+                presentation,
             );
             write_new(&final_path, initial_content)?;
             self.notes.insert(date.to_string(), final_path);
