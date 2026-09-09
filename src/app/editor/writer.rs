@@ -176,6 +176,7 @@ pub(super) fn Writer() -> impl IntoView {
         let h = codemirror::create(
             html_el,
             &content,
+            codemirror::EditorLanguage::Markdown,
             &config.markdown_font.font_family,
             &config.markdown_font.font_size.to_string(),
             &slugs,

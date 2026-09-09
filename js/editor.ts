@@ -26,6 +26,7 @@ import {
     historyKeymap,
 } from "@codemirror/commands";
 import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
+import { css } from "@codemirror/lang-css";
 import {
     search,
     searchKeymap,
@@ -78,6 +79,18 @@ const granitHighlightStyle = HighlightStyle.define([
     { tag: tags.quote, color: "var(--color-base-content)", opacity: "0.7", fontStyle: "italic" },
     { tag: tags.meta, color: "var(--color-base-content)", opacity: "0.5" },
     { tag: tags.processingInstruction, color: "var(--color-base-content)", opacity: "0.4" },
+]);
+
+// Highlighting for CSS documents (presentation templates).
+const granitCssHighlightStyle = HighlightStyle.define([
+    { tag: tags.comment, color: "var(--color-base-content)", opacity: "0.5", fontStyle: "italic" },
+    { tag: tags.propertyName, color: "var(--color-primary)" },
+    { tag: [tags.className, tags.tagName, tags.labelName], color: "var(--color-secondary)" },
+    { tag: [tags.keyword, tags.modifier, tags.definitionKeyword], color: "var(--color-secondary)", fontWeight: "600" },
+    { tag: [tags.string, tags.color], color: "var(--color-accent)" },
+    { tag: [tags.number, tags.unit, tags.atom], color: "var(--color-accent)" },
+    { tag: tags.variableName, color: "var(--color-warning)" },
+    { tag: [tags.operator, tags.punctuation], color: "var(--color-base-content)", opacity: "0.7" },
 ]);
 
 const granitTheme = EditorView.theme({
@@ -1097,6 +1110,47 @@ function teraCompletionSource(context: CompletionContext): CompletionResult | nu
     };
 }
 
+// ── Languages ──────────────────────────────────────────────────────
+//
+// The document language lives in a compartment so one editor instance can
+// switch between a markdown note and a CSS presentation template. Markdown
+// carries everything note-specific: wiki-link decorations and completion,
+// Cmd/Ctrl+click link following, URL paste, the formatting keymap, the
+// markdown keymap and Tera blocks. CSS loads the CSS language, its
+// highlighting and its built-in property/value completion, nothing else.
+
+export type EditorLanguage = "markdown" | "css";
+
+function languageExtensions(
+    language: EditorLanguage,
+    onLinkClick: ((kind: "wiki" | "url", target: string) => void) | null
+) {
+    if (language === "css") {
+        return [css(), syntaxHighlighting(granitCssHighlightStyle), autocompletion()];
+    }
+    return [
+        markdown(),
+        syntaxHighlighting(granitHighlightStyle),
+        markdownBlockSpacing,
+        teraDecorations,
+        autocompletion({
+            override: [wikiLinkCompletionSource, teraCompletionSource, alertCompletionSource],
+            optionClass: (completion) =>
+                completion.type === "broken" ? "cm-completion-broken" : "",
+        }),
+        linkDecorations,
+        modKeyWatcher,
+        ...(onLinkClick ? [linkClickExtension(onLinkClick)] : []),
+        urlPasteExtension,
+        keymap.of([
+            ...editingKeymap,
+            // Before defaultKeymap: Enter continues lists/quotes and
+            // Backspace dissolves an empty list marker.
+            ...markdownKeymap,
+        ]),
+    ];
+}
+
 // ── Editor instances ───────────────────────────────────────────────
 
 interface EditorInstance {
@@ -1105,8 +1159,10 @@ interface EditorInstance {
     readOnlyCompartment: Compartment;
     slugsCompartment: Compartment;
     teraCompartment: Compartment;
+    languageCompartment: Compartment;
     onChange: ((content: string) => void) | null;
     onSelectionChange: ((selectedText: string) => void) | null;
+    onLinkClick: ((kind: "wiki" | "url", target: string) => void) | null;
 }
 
 let nextHandle = 1;
@@ -1125,6 +1181,8 @@ function fontExtension(family: string, size: string) {
 
 export interface CreateConfig {
     content?: string;
+    /** Document language; defaults to markdown. */
+    language?: EditorLanguage;
     fontFamily?: string;
     fontSize?: string;
     slugs?: string[];
@@ -1142,6 +1200,8 @@ export function create(
     const readOnlyCompartment = new Compartment();
     const slugsCompartment = new Compartment();
     const teraCompartment = new Compartment();
+    const languageCompartment = new Compartment();
+    const onLinkClick = config.onLinkClick ?? null;
 
     const updateListener = EditorView.updateListener.of((update: ViewUpdate) => {
         const inst = instances.get(handle);
@@ -1163,20 +1223,18 @@ export function create(
         extensions: [
             granitTheme,
             granitTooltipTheme,
-            syntaxHighlighting(granitHighlightStyle),
             fontCompartment.of(
                 fontExtension(config.fontFamily ?? "", config.fontSize ?? "")
             ),
             readOnlyCompartment.of(EditorState.readOnly.of(false)),
             slugsCompartment.of(slugsExtension(config.slugs ?? [], config.brokenSlugs ?? [])),
             teraCompartment.of(teraExtension(null)),
-            teraDecorations,
-            autocompletion({
-                override: [wikiLinkCompletionSource, teraCompletionSource, alertCompletionSource],
-                optionClass: (completion) =>
-                    completion.type === "broken" ? "cm-completion-broken" : "",
-            }),
-            markdown(),
+            // Bracket-pair Backspace runs before the language keymaps, as it
+            // did when all keymaps lived in one list.
+            keymap.of(closeBracketsKeymap),
+            languageCompartment.of(
+                languageExtensions(config.language ?? "markdown", onLinkClick)
+            ),
             closeBrackets(),
             bracketMatching(),
             indentOnInput(),
@@ -1187,17 +1245,7 @@ export function create(
             search({ top: true, createPanel: createSearchPanel }),
             scrollPastEnd(),
             EditorView.lineWrapping,
-            markdownBlockSpacing,
-            linkDecorations,
-            modKeyWatcher,
-            ...(config.onLinkClick ? [linkClickExtension(config.onLinkClick)] : []),
-            urlPasteExtension,
             keymap.of([
-                ...editingKeymap,
-                ...closeBracketsKeymap,
-                // Before defaultKeymap: Enter continues lists/quotes and
-                // Backspace dissolves an empty list marker.
-                ...markdownKeymap,
                 ...searchKeymap,
                 ...defaultKeymap,
                 ...historyKeymap,
@@ -1216,8 +1264,10 @@ export function create(
         readOnlyCompartment,
         slugsCompartment,
         teraCompartment,
+        languageCompartment,
         onChange: config.onChange ?? null,
         onSelectionChange: config.onSelectionChange ?? null,
+        onLinkClick,
     });
 
     return handle;
@@ -1289,6 +1339,18 @@ export function setTeraMode(handle: number, variables: TeraVariable[] | null): v
     if (!inst) return;
     inst.view.dispatch({
         effects: inst.teraCompartment.reconfigure(teraExtension(variables)),
+    });
+}
+
+// Switch the document language (markdown note or CSS presentation
+// template). Content, fonts, read-only state and search are untouched.
+export function setLanguage(handle: number, language: EditorLanguage): void {
+    const inst = instances.get(handle);
+    if (!inst) return;
+    inst.view.dispatch({
+        effects: inst.languageCompartment.reconfigure(
+            languageExtensions(language, inst.onLinkClick)
+        ),
     });
 }
 

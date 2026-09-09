@@ -34,6 +34,9 @@ extern "C" {
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = setTeraMode)]
     fn cm_set_tera_mode(handle: u32, variables: JsValue);
 
+    #[wasm_bindgen(js_namespace = GranitEditor, js_name = setLanguage)]
+    fn cm_set_language(handle: u32, language: &str);
+
     #[wasm_bindgen(js_namespace = GranitEditor, js_name = destroy)]
     fn cm_destroy(handle: u32);
 }
@@ -41,6 +44,28 @@ extern "C" {
 /// Opaque handle to a CodeMirror editor instance.
 #[derive(Clone, Copy)]
 pub struct EditorHandle(u32);
+
+/// Document language of an editor instance.
+///
+/// Markdown carries the note-specific extensions (wiki-link decorations and
+/// completion, link following, the formatting and markdown keymaps, Tera
+/// blocks); CSS loads only the CSS language, highlighting and completion.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EditorLanguage {
+    Markdown,
+    // Selected by the editor for presentation templates.
+    #[allow(dead_code)]
+    Css,
+}
+
+impl EditorLanguage {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Markdown => "markdown",
+            Self::Css => "css",
+        }
+    }
+}
 
 /// Per-instance closures owned by the Rust side. The JS side holds
 /// references to these via the config object; we keep the owning
@@ -57,7 +82,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-/// Create a new CodeMirror editor inside `element`.
+/// Create a new CodeMirror editor inside `element` in the given `language`.
 ///
 /// `on_change` fires when the document content changes (user edits).
 /// `on_selection_change` fires when the selection changes, with the
@@ -71,6 +96,7 @@ thread_local! {
 pub fn create(
     element: &web_sys::HtmlElement,
     content: &str,
+    language: EditorLanguage,
     font_family: &str,
     font_size: &str,
     slugs: &[String],
@@ -92,6 +118,11 @@ pub fn create(
         &config,
         &"content".into(),
         &wasm_bindgen::JsValue::from_str(content),
+    );
+    let _ = js_sys::Reflect::set(
+        &config,
+        &"language".into(),
+        &wasm_bindgen::JsValue::from_str(language.as_str()),
     );
     let _ = js_sys::Reflect::set(
         &config,
@@ -191,6 +222,13 @@ pub fn set_tera_mode(handle: EditorHandle, variables: Option<&[(&str, &str)]>) {
         None => JsValue::NULL,
     };
     cm_set_tera_mode(handle.0, js_variables);
+}
+
+/// Switch the document language. Content, fonts, read-only state and
+/// search are untouched.
+#[allow(dead_code)]
+pub fn set_language(handle: EditorHandle, language: EditorLanguage) {
+    cm_set_language(handle.0, language.as_str());
 }
 
 /// Destroy the editor instance and free resources.

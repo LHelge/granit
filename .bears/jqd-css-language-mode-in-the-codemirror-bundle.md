@@ -1,10 +1,10 @@
 ---
 id: jqd
 title: CSS language mode in the CodeMirror bundle
-status: open
+status: in_progress
 priority: P2
 created: "2026-09-08T22:02:25.695806571Z"
-updated: "2026-09-08T22:02:25.695806571Z"
+updated: "2026-09-09T08:14:51.133678Z"
 tags:
   - presentation
   - frontend
