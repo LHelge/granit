@@ -53,8 +53,6 @@ pub struct EditorHandle(u32);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum EditorLanguage {
     Markdown,
-    // Selected by the editor for presentation templates.
-    #[allow(dead_code)]
     Css,
 }
 
@@ -226,7 +224,6 @@ pub fn set_tera_mode(handle: EditorHandle, variables: Option<&[(&str, &str)]>) {
 
 /// Switch the document language. Content, fonts, read-only state and
 /// search are untouched.
-#[allow(dead_code)]
 pub fn set_language(handle: EditorHandle, language: EditorLanguage) {
     cm_set_language(handle.0, language.as_str());
 }

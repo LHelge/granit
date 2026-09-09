@@ -1,10 +1,10 @@
 ---
 id: r2b
 title: "Explorer and editor UI: split Templates tab, CSS document kind, template dropdown, Present button"
-status: open
+status: in_progress
 priority: P2
 created: "2026-09-08T22:03:04.991561433Z"
-updated: "2026-09-09T08:14:38.599700Z"
+updated: "2026-09-09T08:27:03.031032Z"
 tags:
   - presentation
   - frontend

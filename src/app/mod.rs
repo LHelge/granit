@@ -153,6 +153,7 @@ pub fn App() -> impl IntoView {
             ctx.refresh_notes().await;
             ctx.refresh_folders().await;
             ctx.refresh_templates().await;
+            ctx.refresh_presentations().await;
         }
     });
 

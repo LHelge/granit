@@ -1,10 +1,10 @@
 ---
 id: bh6
 title: "Presentation window: start command, page route, navigation, reload and close rules"
-status: in_progress
+status: done
 priority: P2
 created: "2026-09-08T22:02:44.217136182Z"
-updated: "2026-09-09T08:18:55.006017Z"
+updated: "2026-09-09T08:27:00.723952Z"
 tags:
   - presentation
   - backend
