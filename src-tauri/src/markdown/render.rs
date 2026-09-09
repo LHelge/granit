@@ -281,7 +281,7 @@ fn rewrite_wiki_span(span: &str, new_slug: &str) -> Option<String> {
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 /// Base pulldown-cmark options shared by all render paths.
-fn base_options() -> Options {
+pub(super) fn base_options() -> Options {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -427,7 +427,7 @@ fn render_core(
 /// `None`. A leading `/` resolves from the cave root; anything else from
 /// `base`. `.` and `..` segments are folded lexically; a path that would
 /// climb above the cave root yields `None` (it could never be served).
-fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
+pub(super) fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
     if src.is_empty() || src.starts_with('#') || src.starts_with("//") || has_url_scheme(src) {
         return None;
     }
@@ -472,7 +472,7 @@ fn has_url_scheme(src: &str) -> bool {
 
 /// Convert raw HTML into escaped code block events so untrusted content
 /// cannot inject scripts or arbitrary markup.
-fn sanitize_html_event_vec(raw: pulldown_cmark::CowStr) -> Vec<Event> {
+pub(super) fn sanitize_html_event_vec(raw: pulldown_cmark::CowStr) -> Vec<Event> {
     vec![
         Event::Start(Tag::CodeBlock(pulldown_cmark::CodeBlockKind::Indented)),
         Event::Text(raw),

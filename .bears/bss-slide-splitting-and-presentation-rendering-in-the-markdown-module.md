@@ -1,10 +1,10 @@
 ---
 id: bss
 title: Slide splitting and presentation rendering in the markdown module
-status: open
+status: in_progress
 priority: P2
 created: "2026-09-08T22:02:11.244147030Z"
-updated: "2026-09-08T22:10:50.181782850Z"
+updated: "2026-09-09T08:04:36.939465Z"
 tags:
   - presentation
   - backend
