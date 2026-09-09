@@ -35,6 +35,7 @@ The template is rendered with the following context:
 | `icons` | The note icon IDs the agent may assign |
 | `skills` | The cave's [[skills-and-tasks|skills]], each with `name` and `description` |
 | `rag` | `true` when note context is injected automatically (Ask mode with embeddings enabled) |
+| `presentations` | The slugs of the cave's [[presentations|presentation templates]], for the note tools' `presentation` argument |
 | `today` | Today's date as `YYYY-MM-DD` |
 | `year`, `month`, `day` | Today's date components |
 | `weekday`, `weekday_short` | Weekday name, full and abbreviated |

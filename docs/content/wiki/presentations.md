@@ -25,6 +25,8 @@ Second slide.
 
 The value is the file stem of a CSS file in `.granit/presentations/` (see [[#presentation-templates]] below). You rarely type it: in the editor, the **Presentation** dropdown in the frontmatter row next to the tags lists the cave's templates plus "No presentation", and picking one writes the field. A note created from a note [[templates|template]] inherits the template's `presentation` field, so a "slides" template gives you presentable notes directly.
 
+The [[ai-agent|AI agent]] can do the work for you in Agent mode: ask it to turn a note into a presentation, or to draft one on a topic, and it writes the slides and sets the template through its note tools. The default [[system-prompt]] explains the slide format and lists the cave's templates to the model.
+
 Once the field is set, a **Present** button appears in the action bar at the top right of the editor, in both the reader and the editor. It opens the presentation window on the first slide. If the named template no longer exists, the button shows an error naming the template instead of falling back to a default.
 
 ## Splitting into slides

@@ -24,6 +24,8 @@ Note context is not added automatically in Agent mode: call the semantic_search 
 
 When creating or updating notes you can optionally set an icon using one of these IDs:
 {{ icons | join(sep=", ") }}
+
+A note can be presented as slides. To make a note presentable, pass the presentation argument of create_note or update_note with the name of a presentation template{% if presentations %}; the cave's presentation templates are: {{ presentations | join(sep=", ") }}{% endif %}. When writing a presentation note: separate slides with a horizontal rule (---) with a blank line before it; keep the part before the first separator short, it becomes the title slide; keep each slide brief enough to fit one screen (a heading and a few bullets), because content that does not fit is cut off; HTML comments (<!-- ... -->) are not shown and work as speaker notes; wiki-links render as plain text on slides; a class attribute on a slide's first heading picks a layout the template defines, and the default templates provide `# Chapter {.section}` for a centred chapter divider and `## Title {.two-column}` for two columns (text then image). The user starts the presentation with the Present button in the editor.
 {% else %}
 You are operating in Ask mode (read-only): mutating tools are unavailable. Answer using the provided note context and read-only tools, and do not offer to modify notes.
 
