@@ -423,6 +423,9 @@ pub(crate) fn open_cave_at(
     ensure_system_prompt_file(&cave, &mut config);
     ensure_presentation_defaults(&mut cave);
 
+    // The presentation window belongs to the cave being closed.
+    super::close_presentation_window(app, state);
+
     let store = Store::new(app);
     store.persist_active_cave(&path).map_err(CaveError::Io)?;
 

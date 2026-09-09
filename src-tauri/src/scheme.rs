@@ -5,7 +5,9 @@
 //! template CSS and its assets. Routes are the first path segment:
 //!
 //! - `cave/<path>` — any file under the cave root.
-//! - `presentation/<path>` — files under `.granit/presentations/`.
+//! - `presentation/<path>` — files under `.granit/presentations/`; when no
+//!   such file exists, `presentation/<slug>` is the rendered presentation
+//!   page of the note `slug`.
 //!
 //! Requests are matched by path, not host, because platforms spell custom
 //! schemes differently: macOS and Linux use `granit://localhost/cave/a.png`,
@@ -21,7 +23,8 @@ use std::path::{Component, Path, PathBuf};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use tauri::http::{header, Request, Response, StatusCode};
 
-use crate::cave::PRESENTATIONS_DIR;
+use crate::cave::{CaveError, PRESENTATIONS_DIR};
+use crate::commands::{render_presentation_page, AppState};
 
 /// Scheme name registered with Tauri.
 pub const SCHEME: &str = "granit";
@@ -43,6 +46,18 @@ pub fn base_url() -> &'static str {
 /// URL serving the file at `relative` (forward-slash path under the cave root).
 pub fn cave_file_url(relative: &str) -> String {
     route_url(ROUTE_CAVE, relative)
+}
+
+/// URL serving the file at `relative` (forward-slash path under
+/// `.granit/presentations/`).
+pub fn presentation_url(relative: &str) -> String {
+    route_url(ROUTE_PRESENTATION, relative)
+}
+
+/// URL of the presentation page for the note `slug`.
+pub fn presentation_page_url(slug: &str) -> Result<tauri::Url, CaveError> {
+    tauri::Url::parse(&route_url(ROUTE_PRESENTATION, slug))
+        .map_err(|e| CaveError::Window(format!("invalid presentation URL: {e}")))
 }
 
 /// Characters percent-encoded inside a path segment: everything except the
@@ -125,13 +140,13 @@ pub(crate) fn content_type(path: &Path) -> &'static str {
     }
 }
 
-/// Serve one request against the given cave root (`None` when no cave is
-/// open). Never panics: every failure becomes a 404.
+/// Serve one request against the app state. Never panics: every failure,
+/// including no open cave, becomes a 404.
 pub(crate) fn respond(
-    cave_root: Option<&Path>,
+    state: &AppState,
     request: &Request<Vec<u8>>,
 ) -> Response<Cow<'static, [u8]>> {
-    match serve(cave_root, request.uri().path()) {
+    match serve(state, request.uri().path()) {
         Some((body, content_type)) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, content_type)
@@ -146,18 +161,36 @@ pub(crate) fn respond(
     .expect("static response headers are valid")
 }
 
-/// Route a request path to a file and read it. `None` means 404.
-fn serve(cave_root: Option<&Path>, path: &str) -> Option<(Vec<u8>, &'static str)> {
-    let cave_root = cave_root?;
+/// Route a request path to its content. `None` means 404.
+fn serve(state: &AppState, path: &str) -> Option<(Vec<u8>, &'static str)> {
+    let cave_root = state.active_cave_path()?;
     let (route, relative) = split_route(path)?;
-    let root = match route {
-        ROUTE_CAVE => cave_root.to_path_buf(),
-        ROUTE_PRESENTATION => cave_root.join(PRESENTATIONS_DIR),
-        _ => return None,
-    };
-    let file = resolve_scoped_path(&root, &relative)?;
+    match route {
+        ROUTE_CAVE => serve_file(&cave_root, &relative),
+        // A template file wins over a note of the same name; the page is
+        // only served for a bare slug (one segment).
+        ROUTE_PRESENTATION => serve_file(&cave_root.join(PRESENTATIONS_DIR), &relative)
+            .or_else(|| serve_page(state, &relative)),
+        _ => None,
+    }
+}
+
+fn serve_file(root: &Path, relative: &Path) -> Option<(Vec<u8>, &'static str)> {
+    let file = resolve_scoped_path(root, relative)?;
     let body = std::fs::read(&file).ok()?;
     Some((body, content_type(&file)))
+}
+
+fn serve_page(state: &AppState, relative: &Path) -> Option<(Vec<u8>, &'static str)> {
+    let mut components = relative.components();
+    let Some(Component::Normal(slug)) = components.next() else {
+        return None;
+    };
+    if components.next().is_some() {
+        return None;
+    }
+    let page = render_presentation_page(state, slug.to_str()?).ok()?;
+    Some((page.into_bytes(), "text/html; charset=utf-8"))
 }
 
 #[cfg(test)]
@@ -182,7 +215,31 @@ mod tests {
             b"body{}",
         )
         .unwrap();
+        std::fs::write(
+            dir.path().join("talk.md"),
+            "---\npresentation: default-dark\n---\n# One\n\n---\n\n# Two\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("plain.md"), "# Not presentable\n").unwrap();
+        std::fs::write(
+            dir.path().join("orphan.md"),
+            "---\npresentation: corporate\n---\n# Missing template\n",
+        )
+        .unwrap();
         dir
+    }
+
+    /// App state with the cave at `dir` open.
+    fn state_for(dir: &tempfile::TempDir) -> AppState {
+        let state = AppState::new(granit_types::AppConfig::default());
+        state.set_cave(Some(
+            crate::cave::Cave::open(dir.path().to_path_buf()).unwrap(),
+        ));
+        state
+    }
+
+    fn respond_in(dir: &tempfile::TempDir, path: &str) -> Response<Cow<'static, [u8]>> {
+        respond(&state_for(dir), &request(path))
     }
 
     // ── URL building ────────────────────────────────────────────────
@@ -274,7 +331,7 @@ mod tests {
     #[test]
     fn test_respond_serves_cave_file_with_decoded_path() {
         let dir = cave_with_files();
-        let response = respond(Some(dir.path()), &request("/cave/sub/pic%20ture.jpg"));
+        let response = respond_in(&dir, "/cave/sub/pic%20ture.jpg");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "image/jpeg");
         assert_eq!(response.body().as_ref(), b"jpg-bytes");
@@ -283,7 +340,7 @@ mod tests {
     #[test]
     fn test_respond_serves_presentation_file_from_presentations_dir() {
         let dir = cave_with_files();
-        let response = respond(Some(dir.path()), &request("/presentation/default-dark.css"));
+        let response = respond_in(&dir, "/presentation/default-dark.css");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
@@ -295,9 +352,9 @@ mod tests {
     #[test]
     fn test_respond_presentation_route_cannot_reach_cave_root() {
         let dir = cave_with_files();
-        let response = respond(Some(dir.path()), &request("/presentation/../../logo.png"));
+        let response = respond_in(&dir, "/presentation/../../logo.png");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        let response = respond(Some(dir.path()), &request("/presentation/logo.png"));
+        let response = respond_in(&dir, "/presentation/logo.png");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
@@ -305,19 +362,20 @@ mod tests {
     fn test_respond_404_for_missing_file_unknown_route_and_no_cave() {
         let dir = cave_with_files();
         assert_eq!(
-            respond(Some(dir.path()), &request("/cave/missing.png")).status(),
+            respond_in(&dir, "/cave/missing.png").status(),
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            respond(Some(dir.path()), &request("/other/logo.png")).status(),
+            respond_in(&dir, "/other/logo.png").status(),
             StatusCode::NOT_FOUND
         );
+        assert_eq!(respond_in(&dir, "/").status(), StatusCode::NOT_FOUND);
         assert_eq!(
-            respond(Some(dir.path()), &request("/")).status(),
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            respond(None, &request("/cave/logo.png")).status(),
+            respond(
+                &AppState::new(granit_types::AppConfig::default()),
+                &request("/cave/logo.png")
+            )
+            .status(),
             StatusCode::NOT_FOUND
         );
     }
@@ -333,11 +391,68 @@ mod tests {
             "/cave/sub%2F..%2F..%2Foutside2.txt",
         ] {
             assert_eq!(
-                respond(Some(dir.path()), &request(path)).status(),
+                respond_in(&dir, path).status(),
                 StatusCode::NOT_FOUND,
                 "{path}"
             );
         }
         let _ = std::fs::remove_file(outside);
+    }
+
+    // ── Presentation page route ─────────────────────────────────────
+
+    #[test]
+    fn test_presentation_page_is_served_for_a_presentable_note() {
+        let dir = cave_with_files();
+        let response = respond_in(&dir, "/presentation/talk");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
+        let page = String::from_utf8(response.body().to_vec()).unwrap();
+        assert!(
+            page.contains("<section class=\"slide active\""),
+            "got: {page}"
+        );
+        assert!(
+            page.contains(&presentation_url("default-dark.css")),
+            "got: {page}"
+        );
+        // Case-insensitive like every note lookup.
+        assert_eq!(
+            respond_in(&dir, "/presentation/TALK").status(),
+            StatusCode::OK
+        );
+    }
+
+    #[test]
+    fn test_presentation_page_error_paths_are_404() {
+        let dir = cave_with_files();
+        for path in [
+            "/presentation/missing-note",
+            "/presentation/plain",
+            "/presentation/orphan",
+            "/presentation/talk/extra",
+            "/presentation/",
+        ] {
+            assert_eq!(
+                respond_in(&dir, path).status(),
+                StatusCode::NOT_FOUND,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_presentation_page_url_round_trips_through_the_route() {
+        let url = presentation_page_url("my talk").unwrap();
+        assert_eq!(
+            url.as_str(),
+            format!("{}presentation/my%20talk", base_url())
+        );
+        let (route, relative) = split_route(url.path()).unwrap();
+        assert_eq!(route, ROUTE_PRESENTATION);
+        assert_eq!(relative, Path::new("my talk"));
     }
 }

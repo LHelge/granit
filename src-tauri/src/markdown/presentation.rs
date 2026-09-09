@@ -55,7 +55,7 @@ pub const SLIDE_HEIGHT: u32 = 720;
 
 /// Built-in mechanics stylesheet, placed before the template CSS.
 const BASE_CSS: &str = include_str!("presentation.css");
-/// Page script: canvas scaling, cursor hiding and navigation.
+/// Page script: canvas scaling, cursor hiding, navigation and window control.
 const PAGE_SCRIPT: &str = include_str!("presentation.js");
 
 /// One rendered slide plus the metadata exposed to templates.
@@ -72,8 +72,6 @@ pub struct Slide {
     pub classes: Vec<String>,
 }
 
-// Consumed by the presentation window's page route.
-#[allow(dead_code)]
 impl Markdown<'_> {
     /// Split the body into slides and render each to HTML.
     ///

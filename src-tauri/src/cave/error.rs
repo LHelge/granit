@@ -34,6 +34,12 @@ pub enum CaveError {
     #[error("Presentation template already exists: {0}")]
     PresentationAlreadyExists(String),
 
+    #[error("Note {0} has no presentation template set")]
+    NoPresentation(String),
+
+    #[error("Window error: {0}")]
+    Window(String),
+
     #[error("Task not found: {0}")]
     TaskNotFound(String),
 
@@ -83,6 +89,12 @@ impl From<std::io::Error> for CaveError {
 impl From<serde_yml::Error> for CaveError {
     fn from(e: serde_yml::Error) -> Self {
         CaveError::Yaml(e.to_string())
+    }
+}
+
+impl From<tauri::Error> for CaveError {
+    fn from(e: tauri::Error) -> Self {
+        CaveError::Window(e.to_string())
     }
 }
 

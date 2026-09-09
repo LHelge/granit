@@ -52,6 +52,7 @@ pub(crate) async fn send_message(
                 }
                 agent::AgentStreamItem::ToolResult => {
                     let _ = app_handle.emit("cave:notes-changed", ());
+                    super::sync_after_agent(&app_handle, &state, false);
                 }
                 _ => {}
             },
@@ -75,6 +76,7 @@ pub(crate) async fn send_message(
 
     let _ = app.emit("agent:stream-done", ());
     let _ = app.emit("cave:notes-changed", ());
+    super::sync_after_agent(&app, &state, true);
     Ok(())
 }
 
