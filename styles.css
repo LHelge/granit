@@ -409,6 +409,21 @@
   --alert-color: var(--color-error);
 }
 
+/* Mermaid diagrams: the backend emits <div class="mermaid"> holding the
+   diagram source and build/mermaid.js swaps it for an inline SVG. A block
+   mermaid cannot parse shows its source as a code block with a red edge
+   (the parser message is in the container's title). */
+.prose .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1em 0;
+}
+
+.prose .mermaid.mermaid-error > pre {
+  flex: 1;
+  border-left: 4px solid var(--color-error);
+}
+
 /* Remove backtick decorations from inline code */
 .prose :where(code):not(:where(.not-prose, .not-prose *))::before,
 .prose :where(code):not(:where(.not-prose, .not-prose *))::after {

@@ -54,6 +54,15 @@
       slide.classList.toggle("active", i === current);
     });
     history.replaceState(null, "", "#" + current);
+    renderDiagrams(slides[current]);
+  }
+
+  // ── Diagrams ────────────────────────────────────────────────────
+  // The mermaid bundle is only loaded for a deck with a diagram; a slide's
+  // blocks are rendered when the slide is shown (see js/mermaid.ts).
+
+  function renderDiagrams(slide) {
+    if (window.GranitMermaid && slide) window.GranitMermaid.run(slide);
   }
 
   function indexFromHash() {

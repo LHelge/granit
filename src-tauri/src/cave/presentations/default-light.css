@@ -205,6 +205,20 @@ body {
   font-size: inherit;
 }
 
+/* Mermaid diagrams (```mermaid blocks) render into an inline SVG inside
+ * <div class="mermaid">; Granit picks mermaid's dark or light theme from
+ * the slide background. A block mermaid cannot parse shows its source as
+ * a code block, with the mermaid-error class on the container. */
+.slide .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 0.6em;
+}
+
+.slide .mermaid svg {
+  max-height: calc(var(--slide-height) - 260px);
+}
+
 /* ── Tables, images, checkboxes ───────────────────────────────── */
 
 .slide table {

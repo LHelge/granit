@@ -123,7 +123,7 @@ The frontend build uses the npm-installed Tailwind CLI and esbuild. Generated as
 ### Build, Test, and Run
 
 ```sh
-npm run build                        # Build CSS + CodeMirror bundle into build/
+npm run build                        # Build CSS + CodeMirror/Mermaid bundles into build/
 cd src-tauri && cargo tauri dev     # Full app (launches Trunk + Tauri)
 trunk serve                         # Frontend only (port 1420)
 cargo test -p granit                # Backend tests

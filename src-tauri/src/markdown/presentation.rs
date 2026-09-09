@@ -39,11 +39,16 @@
 //! name except the reserved `slide` and `active`), relative image sources
 //! point at
 //! the cave file route, HTML comments are dropped (so they can hold speaker
-//! notes) and any other raw HTML is escaped.
+//! notes) and any other raw HTML is escaped. Fenced `mermaid` blocks become
+//! `<div class="mermaid">` containers; when the deck has one, the page loads
+//! the bundled mermaid script from the `granit://` asset route and the page
+//! script renders a slide's diagrams when the slide is shown.
 
 use pulldown_cmark::{html, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd};
 
-use super::render::{base_options, rewrite_image_src, sanitize_html_event_vec};
+use super::render::{
+    base_options, escape_html, mermaid_blocks, rewrite_image_src, sanitize_html_event_vec,
+};
 use super::Markdown;
 
 /// Logical slide width in CSS pixels.
@@ -57,6 +62,8 @@ pub const SLIDE_HEIGHT: u32 = 720;
 const BASE_CSS: &str = include_str!("presentation.css");
 /// Page script: canvas scaling, cursor hiding, navigation and window control.
 const PAGE_SCRIPT: &str = include_str!("presentation.js");
+/// Substring of a slide's HTML that means it holds a mermaid diagram.
+const MERMAID_MARKER: &str = r#"<div class="mermaid">"#;
 
 /// One rendered slide plus the metadata exposed to templates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +156,16 @@ impl Markdown<'_> {
                 index + 1,
                 escape_html(&style),
                 slide.html
+            ));
+        }
+        // The mermaid bundle is only worth loading for a deck with a diagram.
+        if slides
+            .iter()
+            .any(|slide| slide.html.contains(MERMAID_MARKER))
+        {
+            page.push_str(&format!(
+                "<script src=\"{}\"></script>\n",
+                escape_html(&crate::scheme::asset_url(crate::scheme::MERMAID_ASSET))
             ));
         }
         page.push_str(&format!(
@@ -318,6 +335,7 @@ fn render_slide(events: Vec<Event>, image_base: Option<&str>) -> String {
         }
         other => vec![other],
     });
+    let events = mermaid_blocks(events, true);
 
     let mut html = String::new();
     html::push_html(&mut html, events);
@@ -337,21 +355,6 @@ fn is_html_comment(raw: &str) -> bool {
         }
     }
     rest.is_empty()
-}
-
-/// Escape text for use in HTML content or a double-quoted attribute.
-fn escape_html(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -521,6 +524,33 @@ mod tests {
             "got: {}",
             slides[0].html
         );
+    }
+
+    #[test]
+    fn test_mermaid_block_becomes_diagram_container_and_loads_script() {
+        let md = "# One\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n---\n\n# Two\n";
+        let doc = Markdown::new(md);
+        let slides = doc.render_slides();
+        assert!(
+            slides[0]
+                .html
+                .contains("<div class=\"mermaid\">graph TD\n  A --&gt; B\n</div>"),
+            "got: {}",
+            slides[0].html
+        );
+        let page = doc.render_presentation("talk", "t.css");
+        let script = format!(
+            "<script src=\"{}\"></script>",
+            crate::scheme::asset_url(crate::scheme::MERMAID_ASSET)
+        );
+        assert!(page.contains(&script), "got: {page}");
+        // The bundle must be loaded before the page script uses it.
+        assert!(page.find(&script) < page.find("<script>\n"), "got: {page}");
+
+        let plain = Markdown::new("# One\n\n```rust\nfn main() {}\n```")
+            .render_presentation("talk", "t.css");
+        assert!(!plain.contains(&script), "got: {plain}");
+        assert!(!plain.contains(MERMAID_MARKER), "got: {plain}");
     }
 
     #[test]

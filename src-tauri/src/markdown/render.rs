@@ -1,6 +1,8 @@
 use chrono::{Local, Utc};
 use granit_types::RenderedDocument;
-use pulldown_cmark::{html, BlockQuoteKind, Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    html, BlockQuoteKind, CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd,
+};
 use std::ops::Range;
 
 use super::Markdown;
@@ -108,6 +110,7 @@ impl<'a> Markdown<'a> {
             Some(&resolve),
             true,
             self.image_base.as_deref(),
+            true,
         );
         let fmt = |d: chrono::DateTime<Utc>| {
             d.with_timezone(&Local)
@@ -132,7 +135,7 @@ impl<'a> Markdown<'a> {
 
     /// Render markdown to standalone HTML (no wiki-link resolution).
     pub fn render_html(&self) -> String {
-        render_core(self.body(), None, false, self.image_base.as_deref()).0
+        render_core(self.body(), None, false, self.image_base.as_deref(), false).0
     }
 
     /// Render markdown to HTML with wiki-link resolution.
@@ -145,6 +148,7 @@ impl<'a> Markdown<'a> {
             Some(&resolve),
             false,
             self.image_base.as_deref(),
+            false,
         )
         .0
     }
@@ -305,6 +309,9 @@ type Lookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 /// - `interactive_checkboxes`: if `true`, emits checkboxes without `disabled`.
 /// - `image_base`: when `Some`, relative image sources are resolved against
 ///   this cave-relative directory and rewritten to the `granit://` cave route.
+/// - `mermaid`: if `true`, fenced `mermaid` blocks become diagram containers
+///   (see [`mermaid_blocks`]); only the note reader runs the mermaid script,
+///   so agent chat keeps them as plain code blocks.
 ///
 /// Returns `(html, outgoing_links)`.
 fn render_core(
@@ -312,6 +319,7 @@ fn render_core(
     lookup: Option<Lookup>,
     interactive_checkboxes: bool,
     image_base: Option<&str>,
+    mermaid: bool,
 ) -> (String, Vec<String>) {
     let mut options = base_options();
     if lookup.is_some() {
@@ -413,10 +421,64 @@ fn render_core(
         Event::Html(raw) | Event::InlineHtml(raw) => sanitize_html_event_vec(raw),
         other => vec![other],
     });
+    // After sanitizing: the diagram container is trusted HTML of our own.
+    let events = mermaid_blocks(events, mermaid);
 
     let mut html_output = String::new();
     html::push_html(&mut html_output, events);
     (html_output, outgoing_links)
+}
+
+/// Turn fenced ```mermaid blocks into `<div class="mermaid">` elements
+/// holding the escaped diagram source, which the bundled mermaid script
+/// renders into an inline SVG in the webview. A `<div>`, not a `<pre>`, so
+/// no code-block styling (reader typography, presentation templates) paints
+/// a background behind the diagram. Any other word after the language
+/// (```mermaid title) is ignored. With `enabled` false the events pass
+/// through unchanged and the block stays a regular code block.
+///
+/// Must run after raw-HTML sanitizing: the emitted event is HTML.
+pub(super) fn mermaid_blocks<'a>(
+    events: impl Iterator<Item = Event<'a>>,
+    enabled: bool,
+) -> impl Iterator<Item = Event<'a>> {
+    let mut source: Option<String> = None;
+    events.flat_map(move |event| match event {
+        Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info)))
+            if enabled && info.split_whitespace().next() == Some("mermaid") =>
+        {
+            source = Some(String::new());
+            vec![]
+        }
+        Event::Text(text) if source.is_some() => {
+            if let Some(source) = source.as_mut() {
+                source.push_str(&text);
+            }
+            vec![]
+        }
+        Event::End(TagEnd::CodeBlock) if source.is_some() => {
+            let source = source.take().unwrap_or_default();
+            vec![Event::Html(
+                format!("<div class=\"mermaid\">{}</div>\n", escape_html(&source)).into(),
+            )]
+        }
+        other => vec![other],
+    })
+}
+
+/// Escape text for use in HTML content or a double-quoted attribute.
+pub(super) fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Rewrite a relative image source to its `granit://` cave URL.
@@ -602,6 +664,52 @@ mod tests {
     fn test_inline_code() {
         let html = Markdown::new("use `foo` here").render_html();
         assert!(html.contains("<code>foo</code>"));
+    }
+
+    #[test]
+    fn test_mermaid_block_renders_diagram_container_in_reader() {
+        let md = "Before\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nAfter";
+        let html = Markdown::new(md).render("note", |_| None).html;
+        assert!(
+            html.contains("<div class=\"mermaid\">graph TD\n  A --&gt; B\n</div>"),
+            "got: {html}"
+        );
+        assert!(!html.contains("language-mermaid"), "got: {html}");
+        assert!(html.contains("<p>Before</p>") && html.contains("<p>After</p>"));
+    }
+
+    #[test]
+    fn test_mermaid_info_string_extra_words_and_escaping() {
+        let md = "```mermaid title=\"x\"\nflowchart LR\n  a[\"<b>&\"] --> b\n```";
+        let html = Markdown::new(md).render("note", |_| None).html;
+        assert!(
+            html.contains("<div class=\"mermaid\">flowchart LR\n  a[&quot;&lt;b&gt;&amp;&quot;] --&gt; b\n</div>"),
+            "got: {html}"
+        );
+    }
+
+    #[test]
+    fn test_mermaid_block_stays_code_outside_reader() {
+        let md = "```mermaid\ngraph TD\n  A --> B\n```";
+        for html in [
+            Markdown::new(md).render_html(),
+            Markdown::new(md).render_with_links(|_| None),
+            Markdown::new(md).render_for_export(),
+        ] {
+            assert!(
+                html.contains(r#"<pre><code class="language-mermaid">"#),
+                "got: {html}"
+            );
+            assert!(!html.contains(r#"class="mermaid""#), "got: {html}");
+        }
+        // Other languages are untouched in the reader too.
+        let html = Markdown::new("```mermaidish\nx\n```")
+            .render("note", |_| None)
+            .html;
+        assert!(
+            html.contains(r#"<code class="language-mermaidish">"#),
+            "got: {html}"
+        );
     }
 
     #[test]
