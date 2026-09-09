@@ -23,7 +23,7 @@ fn request_animation_frame(f: impl FnOnce() + 'static) {
 /// `src-tauri/src/cave/agent_docs.rs`.
 fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'static str)>> {
     match kind? {
-        DocumentKind::Note | DocumentKind::Skill => None,
+        DocumentKind::Note | DocumentKind::Skill | DocumentKind::Presentation => None,
         DocumentKind::Template => Some(vec![
             ("slug", "the new note's slug"),
             ("date", "daily notes only"),
@@ -60,6 +60,15 @@ fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'sta
             ("weekday", ""),
             ("weekday_short", ""),
         ]),
+    }
+}
+
+/// Editor language per document kind: presentation templates are CSS,
+/// everything else is markdown.
+fn editor_language(kind: Option<DocumentKind>) -> codemirror::EditorLanguage {
+    match kind {
+        Some(DocumentKind::Presentation) => codemirror::EditorLanguage::Css,
+        _ => codemirror::EditorLanguage::Markdown,
     }
 }
 
@@ -176,7 +185,7 @@ pub(super) fn Writer() -> impl IntoView {
         let h = codemirror::create(
             html_el,
             &content,
-            codemirror::EditorLanguage::Markdown,
+            editor_language(ctx.current_kind_untracked()),
             &config.markdown_font.font_family,
             &config.markdown_font.font_size.to_string(),
             &slugs,
@@ -248,6 +257,17 @@ pub(super) fn Writer() -> impl IntoView {
         });
     });
 
+    // Switch the editor language when the document kind changes while the
+    // editor stays mounted (e.g. a note to a presentation template).
+    Effect::new(move || {
+        let language = editor_language(ctx.current_kind());
+        editor_handle.with_value(|cell| {
+            if let Some(h) = cell.get() {
+                codemirror::set_language(h, language);
+            }
+        });
+    });
+
     // Keep the completion slug lists up to date when notes (or their heading
     // anchors) change. Subscribing to `ctx.notes` re-runs this on every cave
     // refresh — including saves, which is when a note's `{#id}` anchors and
@@ -291,8 +311,10 @@ pub(super) fn Writer() -> impl IntoView {
             Some(DocumentKind::Skill) | Some(DocumentKind::Task)
         )
     };
+    // Presentation templates are CSS files: name and content only.
+    let is_presentation = move || ctx.current_kind() == Some(DocumentKind::Presentation);
     // Kinds without note-style frontmatter UI (icon picker, tags).
-    let hides_note_frontmatter = move || is_system_prompt() || is_agent_doc();
+    let hides_note_frontmatter = move || is_system_prompt() || is_agent_doc() || is_presentation();
 
     view! {
         <div class="not-prose flex items-center gap-2 mb-2">

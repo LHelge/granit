@@ -179,6 +179,48 @@ pub async fn fetch_templates() -> Result<Vec<DocumentMeta>, String> {
     invoke_no_args("list_templates").await
 }
 
+// ── Presentation templates ─────────────────────────────────────────
+
+pub async fn fetch_presentations() -> Result<Vec<DocumentMeta>, String> {
+    invoke_no_args("list_presentations").await
+}
+
+pub async fn read_presentation(name: &str) -> Result<Document, String> {
+    invoke_cmd("read_presentation", &HashMap::from([("name", name)])).await
+}
+
+pub async fn create_presentation(name: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd("create_presentation", &HashMap::from([("name", name)])).await
+}
+
+pub async fn save_presentation(name: &str, content: &str) -> Result<DocumentMeta, String> {
+    invoke_cmd(
+        "save_presentation",
+        &HashMap::from([("name", name), ("content", content)]),
+    )
+    .await
+}
+
+pub async fn rename_presentation(old_name: &str, new_name: &str) -> Result<DocumentMeta, String> {
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Args<'a> {
+        old_name: &'a str,
+        new_name: &'a str,
+    }
+    invoke_cmd("rename_presentation", &Args { old_name, new_name }).await
+}
+
+pub async fn delete_presentation(slug: &str) -> Result<(), String> {
+    invoke_unit("delete_presentation", &HashMap::from([("name", slug)])).await
+}
+
+/// Open (or refocus) the presentation window for a note. Errors name the
+/// missing field or template.
+pub async fn start_presentation(name: &str) -> Result<(), String> {
+    invoke_unit("start_presentation", &HashMap::from([("name", name)])).await
+}
+
 // ── Notes ──────────────────────────────────────────────────────────
 
 pub async fn create_note(
@@ -246,6 +288,7 @@ pub async fn update_note(
     tags: Option<Vec<String>>,
     icon: Option<String>,
     favorite: Option<bool>,
+    presentation: Option<String>,
 ) -> Result<DocumentMeta, String> {
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -256,6 +299,8 @@ pub async fn update_note(
         tags: Option<Vec<String>>,
         icon: Option<String>,
         favorite: Option<bool>,
+        /// `Some("")` clears the field, `None` preserves it.
+        presentation: Option<String>,
     }
     invoke_cmd(
         "update_note",
@@ -266,6 +311,7 @@ pub async fn update_note(
             tags,
             icon,
             favorite,
+            presentation,
         },
     )
     .await

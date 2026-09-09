@@ -1,4 +1,5 @@
 use super::use_editor_ctx;
+use crate::app::components::icons::Icon;
 use leptos::prelude::*;
 
 fn normalize_tag(raw: &str) -> Option<String> {
@@ -23,13 +24,42 @@ fn remove_tag(tags: &mut Vec<String>, tag: &str) {
     tags.retain(|existing| existing != tag);
 }
 
+/// Value of the `<option>` that unbinds a note from any presentation
+/// template.
+const NO_PRESENTATION: &str = "";
+
 /// Inline frontmatter editor shown between the title and content textarea.
 ///
-/// Shows a tag editor (removable pills + add input). The icon picker is
-/// rendered separately in [`Writer`], beside the title.
+/// Shows a tag editor (removable pills + add input) and, for notes, the
+/// presentation template dropdown. The icon picker is rendered separately
+/// in [`Writer`], beside the title.
 #[component]
 pub(super) fn FrontmatterEditor() -> impl IntoView {
     let ctx = use_editor_ctx();
+
+    // ── Presentation template ────────────────────────────────────────────────
+
+    let is_note = move || ctx.active_note.get().is_some();
+
+    // A note may name a template that no longer exists (renamed or deleted):
+    // keep showing it as a broken entry instead of silently clearing it.
+    let missing_presentation = move || {
+        let current = ctx.presentation.get()?;
+        let known = ctx
+            .app
+            .presentations
+            .get()
+            .iter()
+            .any(|p| p.slug == current);
+        (!known).then_some(current)
+    };
+
+    let select_presentation = move |ev: leptos::ev::Event| {
+        let value = event_target_value(&ev);
+        ctx.presentation
+            .set((value != NO_PRESENTATION).then_some(value));
+        ctx.schedule_autosave();
+    };
 
     // ── Tag state ────────────────────────────────────────────────────────────
 
@@ -98,6 +128,29 @@ pub(super) fn FrontmatterEditor() -> impl IntoView {
                     }
                 }
             />
+            // ── Presentation template ─────────────────────────────────────────
+            <Show when=is_note>
+                <span class="ml-auto inline-flex items-center gap-1.5 text-xs text-base-content/50">
+                    <span class="inline-flex w-3.5 h-3.5">
+                        <Icon icon=icondata_lu::LuPresentation width="100%" height="100%"/>
+                    </span>
+                    <select
+                        class="select select-ghost select-xs w-auto min-w-0 text-xs"
+                        aria-label="Presentation template"
+                        on:change=select_presentation
+                        prop:value=move || ctx.presentation.get().unwrap_or_default()
+                    >
+                        <option value=NO_PRESENTATION>"No presentation"</option>
+                        {move || missing_presentation().map(|slug| view! {
+                            <option value=slug.clone()>{format!("{slug} (missing)")}</option>
+                        })}
+                        {move || ctx.app.presentations.get().into_iter().map(|p| {
+                            let label = p.slug.clone();
+                            view! { <option value=p.slug>{label}</option> }
+                        }).collect_view()}
+                    </select>
+                </span>
+            </Show>
         </div>
     }
 }

@@ -24,6 +24,7 @@ enum PersistedMeta {
     SystemPrompt(DocumentMeta),
     Skill(DocumentMeta),
     Task(DocumentMeta),
+    Presentation(DocumentMeta),
 }
 
 // ── Shared context: open next note in edit mode ────────────────────
@@ -79,6 +80,9 @@ pub(super) struct EditorCtx {
     pub icon: RwSignal<Option<String>>,
     /// Frontmatter favorite flag for the current note.
     pub favorite: RwSignal<Option<bool>>,
+    /// Frontmatter presentation template of the current note (`None` when
+    /// the note is not presentable); always `None` for other kinds.
+    pub presentation: RwSignal<Option<String>>,
     /// Frontmatter description for agent documents (skills/tasks); `None`
     /// for every other document kind.
     pub description: RwSignal<Option<String>>,
@@ -98,6 +102,17 @@ impl EditorCtx {
         if let Some((kind, _)) = self.active_aux.get() {
             Some(kind)
         } else if self.active_note.get().is_some() {
+            Some(DocumentKind::Note)
+        } else {
+            None
+        }
+    }
+
+    /// The kind of the currently open document, read without tracking.
+    fn current_kind_untracked(self) -> Option<DocumentKind> {
+        if let Some((kind, _)) = self.active_aux.get_untracked() {
+            Some(kind)
+        } else if self.active_note.get_untracked().is_some() {
             Some(DocumentKind::Note)
         } else {
             None
@@ -125,6 +140,7 @@ impl EditorCtx {
                     snapshot.tags.clone(),
                     snapshot.icon.clone(),
                     snapshot.favorite,
+                    snapshot.presentation.clone(),
                 )
                 .await?;
                 if let Ok(notes) = ipc::fetch_notes().await {
@@ -180,6 +196,20 @@ impl EditorCtx {
                 }
                 Ok(PersistedMeta::Task(meta))
             }
+            // Presentation templates are raw CSS: the title input renames
+            // the file, then the content is written under the final name.
+            DocumentKind::Presentation => {
+                let slug = if snapshot.name != snapshot.slug {
+                    ipc::rename_presentation(&snapshot.slug, &snapshot.name)
+                        .await?
+                        .slug
+                } else {
+                    snapshot.slug.clone()
+                };
+                let meta = ipc::save_presentation(&slug, &snapshot.content).await?;
+                self.app.refresh_presentations().await;
+                Ok(PersistedMeta::Presentation(meta))
+            }
         }
     }
 
@@ -221,6 +251,7 @@ impl EditorCtx {
             && snapshot.tags.as_ref() == Some(&self.tags.get_untracked())
             && snapshot.icon == self.icon.get_untracked()
             && snapshot.favorite == self.favorite.get_untracked()
+            && snapshot.presentation == Some(self.presentation.get_untracked().unwrap_or_default())
             && snapshot.description == self.description.get_untracked()
     }
 
@@ -309,6 +340,20 @@ impl EditorCtx {
                     self.dirty.set(false);
                 }
             }
+            // Edit-only kind: an explicit save keeps the editor open.
+            Ok(PersistedMeta::Presentation(meta)) => {
+                if snapshot.explicit {
+                    self.dirty.set(false);
+                    self.prev_doc_key
+                        .set(Some(DocumentKind::Presentation.doc_key(&meta.slug)));
+                    self.app.set_active_presentation_document(Document {
+                        meta,
+                        content: snapshot.content.clone(),
+                    });
+                } else if self.snapshot_matches_current(snapshot) {
+                    self.dirty.set(false);
+                }
+            }
             Err(e) => {
                 let msg = if snapshot.explicit {
                     e
@@ -331,6 +376,12 @@ impl EditorCtx {
     /// Render a note by slug and update the rendered note only if this is
     /// still the latest request for the currently active note.
     fn request_render(self, kind: DocumentKind, slug: String) {
+        // CSS has no rendered form; the reader is never shown for it.
+        if kind == DocumentKind::Presentation {
+            self.invalidate_renders();
+            self.rendered_note.set(None);
+            return;
+        }
         let request_id = self.render_request_id.get_untracked().wrapping_add(1);
         self.render_request_id.set(request_id);
         let expected_key = kind.doc_key(&slug);
@@ -342,6 +393,7 @@ impl EditorCtx {
                 DocumentKind::SystemPrompt => ipc::render_system_prompt().await,
                 DocumentKind::Skill => ipc::render_skill(&slug).await,
                 DocumentKind::Task => ipc::render_task(&slug).await,
+                DocumentKind::Presentation => return,
             };
             let still_latest = self.render_request_id.get_untracked() == request_id;
             let still_active =
@@ -378,6 +430,8 @@ impl EditorCtx {
             tags: Some(self.tags.get_untracked()),
             icon: self.icon.get_untracked(),
             favorite: self.favorite.get_untracked(),
+            // Always sent for notes: an empty string clears the field.
+            presentation: Some(self.presentation.get_untracked().unwrap_or_default()),
             description: self.description.get_untracked(),
             explicit,
         })
@@ -477,6 +531,10 @@ impl EditorCtx {
                 return;
             }
         }
+        // Presentation templates are edit-only: there is no reader to show.
+        if self.current_kind_untracked() == Some(DocumentKind::Presentation) {
+            return;
+        }
         self.editing.update(|v| *v = !*v);
         // Re-render when switching back to preview (content may have been edited)
         if was_editing {
@@ -546,6 +604,7 @@ pub fn Editor() -> impl IntoView {
         tags: RwSignal::new(Vec::new()),
         icon: RwSignal::new(None),
         favorite: RwSignal::new(None),
+        presentation: RwSignal::new(None),
         description: RwSignal::new(None),
         render_request_id: RwSignal::new(0),
         save_queue: StoredValue::new_local(Rc::new(RefCell::new(SaveQueue::new()))),
@@ -587,9 +646,11 @@ pub fn Editor() -> impl IntoView {
                 }
             }
             // Open new note in preview or edit mode depending on flag
+            // Presentation templates have no reader and always open in edit.
             let mode = ctx.open_in_edit.get_untracked();
             ctx.open_in_edit.set(EditOpen::Preview);
-            let editing = mode != EditOpen::Preview;
+            let edit_only = matches!(new_aux.as_ref(), Some((DocumentKind::Presentation, _)));
+            let editing = mode != EditOpen::Preview || edit_only;
             ctx.editing.set(editing);
             match mode {
                 EditOpen::EditFocusTitle => ctx.focus_title.set(true),
@@ -615,6 +676,7 @@ pub fn Editor() -> impl IntoView {
             ctx.content.set(doc.content.clone());
             ctx.title_input.set(doc.meta.slug.clone());
             ctx.favorite.set(None);
+            ctx.presentation.set(None);
             ctx.description.set(doc.meta.description.clone());
         } else if let Some(note) = new_note {
             ctx.prev_doc_key
@@ -630,6 +692,7 @@ pub fn Editor() -> impl IntoView {
             ctx.tags.set(Vec::new());
             ctx.icon.set(None);
             ctx.favorite.set(None);
+            ctx.presentation.set(None);
             ctx.description.set(None);
             ctx.app.selected_note_text.set(None);
         }
@@ -641,15 +704,35 @@ pub fn Editor() -> impl IntoView {
         let fm = ctx.rendered_note.get().and_then(|r| r.frontmatter);
         let tags = fm.as_ref().map(|f| f.tags.clone()).unwrap_or_default();
         let icon = fm.as_ref().and_then(|f| f.icon.clone());
-        let favorite = if ctx.active_note.get().is_some() {
-            fm.and_then(|f| f.favorite)
+        let (favorite, presentation) = if ctx.active_note.get().is_some() {
+            (
+                fm.as_ref().and_then(|f| f.favorite),
+                fm.and_then(|f| f.presentation).filter(|p| !p.is_empty()),
+            )
         } else {
-            None
+            (None, None)
         };
         ctx.tags.set(tags);
         ctx.icon.set(icon);
         ctx.favorite.set(favorite);
+        ctx.presentation.set(presentation);
     });
+
+    // Presentation templates are edit-only: no copy, no reader toggle.
+    let is_edit_only = move || ctx.current_kind() == Some(DocumentKind::Presentation);
+    // The Present button shows for a note bound to a presentation template.
+    let can_present = move || ctx.active_note.get().is_some() && ctx.presentation.get().is_some();
+    let on_present = move |_| {
+        let Some(slug) = ctx.active_note.get_untracked().map(|n| n.meta.slug) else {
+            return;
+        };
+        leptos::task::spawn_local(async move {
+            if let Err(e) = ipc::start_presentation(&slug).await {
+                ctx.app
+                    .push_error("presentation", format!("Failed to start presentation: {e}"));
+            }
+        });
+    };
 
     let has_document = move || ctx.active_note.get().is_some() || ctx.active_aux.get().is_some();
 
@@ -723,6 +806,16 @@ pub fn Editor() -> impl IntoView {
                             </button>
                         </div>
                     </Show>
+                    // Present (both modes): opens the presentation window
+                    // for a note bound to a presentation template
+                    <Show when=can_present>
+                        <div class="tooltip tooltip-bottom" data-tip="Present">
+                            <button class="btn btn-ghost btn-xs btn-square" on:click=on_present>
+                                <Icon icon=icondata_lu::LuPresentation width="1rem" height="1rem"/>
+                            </button>
+                        </div>
+                    </Show>
+                    <Show when=move || !is_edit_only()>
                     // Copy rendered note (both modes): rich text for Word/
                     // Teams-style targets, markdown as plain-text fallback
                     <div
@@ -742,6 +835,7 @@ pub fn Editor() -> impl IntoView {
                             </Show>
                         </button>
                     </div>
+                    </Show>
                     <Show
                         when=move || ctx.editing.get()
                         fallback=move || view! {
@@ -766,6 +860,7 @@ pub fn Editor() -> impl IntoView {
                                 <Icon icon=icondata_lu::LuSave width="1rem" height="1rem"/>
                             </button>
                         </div>
+                        <Show when=move || !is_edit_only()>
                         <div class="tooltip tooltip-bottom" data-tip="Close editor">
                             <button
                                 class="btn btn-ghost btn-xs btn-square"
@@ -774,6 +869,7 @@ pub fn Editor() -> impl IntoView {
                                 <Icon icon=icondata_lu::LuX width="1rem" height="1rem"/>
                             </button>
                         </div>
+                        </Show>
                     </Show>
                 </div>
             </Show>

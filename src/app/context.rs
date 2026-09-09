@@ -12,6 +12,8 @@ pub enum DocumentKind {
     SystemPrompt,
     Skill,
     Task,
+    /// A presentation template: a CSS file, edited as plain text.
+    Presentation,
 }
 
 impl DocumentKind {
@@ -23,6 +25,7 @@ impl DocumentKind {
             Self::SystemPrompt => "system",
             Self::Skill => "skill",
             Self::Task => "task",
+            Self::Presentation => "presentation",
         }
     }
 
@@ -40,6 +43,7 @@ impl DocumentKind {
             "system" => Self::SystemPrompt,
             "skill" => Self::Skill,
             "task" => Self::Task,
+            "presentation" => Self::Presentation,
             _ => return None,
         };
         Some((kind, slug))
@@ -63,6 +67,8 @@ pub struct AppCtx {
     pub config: RwSignal<granit_types::AppConfig>,
     pub notes: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub templates: RwSignal<Vec<granit_types::DocumentMeta>>,
+    /// Presentation templates (CSS files in `.granit/presentations`).
+    pub presentations: RwSignal<Vec<granit_types::DocumentMeta>>,
     pub skills: RwSignal<Vec<granit_types::AgentDocInfo>>,
     pub tasks: RwSignal<Vec<granit_types::AgentDocInfo>>,
     pub folders: RwSignal<Vec<String>>,
@@ -87,6 +93,7 @@ impl AppCtx {
             config: RwSignal::new(granit_types::AppConfig::default()),
             notes: RwSignal::new(Vec::new()),
             templates: RwSignal::new(Vec::new()),
+            presentations: RwSignal::new(Vec::new()),
             skills: RwSignal::new(Vec::new()),
             tasks: RwSignal::new(Vec::new()),
             folders: RwSignal::new(Vec::new()),
@@ -171,6 +178,10 @@ impl AppCtx {
         self.set_active_aux_document(DocumentKind::Template, template);
     }
 
+    pub fn set_active_presentation_document(&self, presentation: granit_types::Document) {
+        self.set_active_aux_document(DocumentKind::Presentation, presentation);
+    }
+
     /// Reactive: the slug of the active aux document, if it is of `kind`.
     pub fn active_aux_slug(&self, kind: DocumentKind) -> Option<String> {
         self.active_aux
@@ -221,6 +232,21 @@ impl AppCtx {
         }
     }
 
+    /// Fetch the presentation template list into `self.presentations`,
+    /// surfacing failures as a toast.
+    pub async fn refresh_presentations(self) {
+        self.clear_source("presentations");
+        match ipc::fetch_presentations().await {
+            Ok(presentations) => self.presentations.set(presentations),
+            Err(e) => {
+                self.push_error(
+                    "presentations",
+                    format!("Failed to load presentation templates: {e}"),
+                );
+            }
+        }
+    }
+
     /// Fetch the skill list into `self.skills`, surfacing failures as a toast.
     pub async fn refresh_skills(self) {
         self.clear_source("skills");
@@ -263,6 +289,7 @@ impl AppCtx {
         self.refresh_notes().await;
         self.refresh_folders().await;
         self.refresh_templates().await;
+        self.refresh_presentations().await;
         self.refresh_skills().await;
         self.refresh_tasks().await;
 

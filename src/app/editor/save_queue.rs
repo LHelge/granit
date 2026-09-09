@@ -15,6 +15,8 @@ pub(super) struct PersistSnapshot {
     pub tags: Option<Vec<String>>,
     pub icon: Option<String>,
     pub favorite: Option<bool>,
+    /// Frontmatter presentation template for notes; `Some("")` clears it.
+    pub presentation: Option<String>,
     /// Frontmatter description for agent documents (skills/tasks).
     pub description: Option<String>,
     /// Whether this save was initiated explicitly (Save button / Ctrl-S).
@@ -94,6 +96,7 @@ mod tests {
             tags: None,
             icon: None,
             favorite: None,
+            presentation: None,
             description: None,
             explicit,
         }
