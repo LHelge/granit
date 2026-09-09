@@ -292,6 +292,30 @@ impl Cave {
             .to_path_buf()
     }
 
+    /// The directory `abs_dir` as a cave-relative path with forward slashes
+    /// (`""` for the cave root). Used as the base for resolving relative
+    /// image sources when rendering a file that lives in that directory.
+    pub(crate) fn relative_dir(&self, abs_dir: &Path) -> String {
+        self.relative_path(abs_dir)
+            .components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
+    /// Cave-relative directory containing the note `slug`, for image
+    /// resolution. See [`Cave::relative_dir`].
+    pub(crate) fn note_dir(&self, slug: &str) -> Result<String, CaveError> {
+        let abs = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+        Ok(self.relative_dir(abs.parent().unwrap_or(&self.path)))
+    }
+
     /// Look up a note slug by name (case-insensitive).
     ///
     /// Returns the stored slug if found, `None` otherwise. Designed to be passed
@@ -549,6 +573,27 @@ mod tests {
             matches!(err, CaveError::DuplicateSlug { ref slug, .. } if slug == "dup"),
             "expected DuplicateSlug error, got: {err:?}"
         );
+    }
+
+    #[test]
+    fn test_relative_dir_and_note_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        std::fs::write(dir.path().join("root.md"), "").unwrap();
+        std::fs::write(dir.path().join("a/b/nested.md"), "").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(cave.note_dir("root").unwrap(), "");
+        assert_eq!(cave.note_dir("nested").unwrap(), "a/b");
+        assert_eq!(
+            cave.relative_dir(&cave.templates_dir()),
+            ".granit/templates"
+        );
+        assert_eq!(cave.relative_dir(dir.path()), "");
+        assert!(matches!(
+            cave.note_dir("missing"),
+            Err(CaveError::NotFound(_))
+        ));
     }
 
     // ── resolve_slug / lookup_slug ─────────────────────────────────────────

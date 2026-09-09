@@ -62,7 +62,7 @@ impl AppState {
         self.agent.lock()
     }
 
-    pub(super) fn active_cave_path(&self) -> Option<std::path::PathBuf> {
+    pub(crate) fn active_cave_path(&self) -> Option<std::path::PathBuf> {
         self.lock_cave().as_ref().map(|c| c.path().to_path_buf())
     }
 
