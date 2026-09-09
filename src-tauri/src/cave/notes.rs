@@ -15,6 +15,7 @@ struct NoteRewrite {
     tags: Option<Vec<String>>,
     icon: Option<String>,
     favorite: Option<bool>,
+    presentation: Option<String>,
 }
 
 impl Cave {
@@ -45,6 +46,7 @@ impl Cave {
             rewrite.tags,
             rewrite.icon,
             rewrite.favorite,
+            rewrite.presentation,
         );
         write_atomic(&abs_path, updated.as_str())?;
 
@@ -92,7 +94,10 @@ impl Cave {
         let body = self.initial_body_for_new_note(&slug, effective_template_slug.as_deref())?;
         let tags = self.initial_tags_for_new_note(effective_template_slug.as_deref())?;
         let icon = self.initial_icon_for_new_note(effective_template_slug.as_deref())?;
-        let initial_content = crate::markdown::Markdown::new_note_with_body(&body, tags, icon);
+        let presentation =
+            self.initial_presentation_for_new_note(effective_template_slug.as_deref())?;
+        let initial_content =
+            crate::markdown::Markdown::new_note_with_body(&body, tags, icon, presentation);
         write_new(&final_path, &initial_content)?;
         self.notes.insert(slug, final_path.clone());
         self.rebuild_link_indexes();
@@ -316,6 +321,7 @@ impl Cave {
     /// Deliberately not built on [`rewrite_note`]: the rename-then-write here
     /// interleaves filesystem state with a rollback (rename back on write
     /// failure), which a closure-based helper would obscure.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_note(
         &mut self,
         old_slug: &str,
@@ -324,6 +330,7 @@ impl Cave {
         tags: Option<Vec<String>>,
         icon: Option<String>,
         favorite: Option<bool>,
+        presentation: Option<String>,
     ) -> Result<DocumentMeta, CaveError> {
         let new_name = normalize_note_name(new_name);
         validate_name(old_slug)?;
@@ -353,8 +360,14 @@ impl Cave {
         };
 
         let existing_raw = std::fs::read_to_string(&final_abs)?;
-        let updated =
-            crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, favorite);
+        let updated = crate::markdown::Markdown::rebuild(
+            &existing_raw,
+            content,
+            tags,
+            icon,
+            favorite,
+            presentation,
+        );
         if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
@@ -731,6 +744,32 @@ mod tests {
         );
         assert!(raw.contains("icon: Star"));
         assert!(raw.contains("created_at"));
+    }
+
+    #[test]
+    fn test_create_note_inherits_presentation_from_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+        std::fs::write(
+            dir.path().join(".granit/templates/slides.md"),
+            "---\npresentation: default-dark\n---\n# {{ slug }}\n",
+        )
+        .unwrap();
+        cave.templates = Cave::scan_templates(&dir.path().join(".granit/templates")).unwrap();
+
+        let meta = cave.create_note("talk", None, Some("slides")).unwrap();
+        let raw = cave.read_note_raw(&meta.slug).unwrap();
+        assert!(
+            raw.contains("presentation: default-dark"),
+            "should inherit presentation: {raw}"
+        );
+
+        // Without a template the field is absent.
+        let plain = cave.create_note("plain", None, None).unwrap();
+        let raw = cave.read_note_raw(&plain.slug).unwrap();
+        assert!(!raw.contains("presentation"), "got: {raw}");
     }
 
     #[test]
@@ -1262,7 +1301,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
-            .update_note("note", "note", "new content", None, None, None)
+            .update_note("note", "note", "new content", None, None, None, None)
             .unwrap();
         assert_eq!(meta.slug, "note");
 
@@ -1277,7 +1316,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
-            .update_note("old", "new-name", "updated content", None, None, None)
+            .update_note("old", "new-name", "updated content", None, None, None, None)
             .unwrap();
         assert_eq!(meta.slug, "new-name");
         assert!(!dir.path().join("old.md").exists());
@@ -1293,7 +1332,7 @@ mod tests {
         std::fs::write(dir.path().join("source.md"), "See [[old]].\n").unwrap();
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
-        cave.update_note("old", "new-name", "updated content", None, None, None)
+        cave.update_note("old", "new-name", "updated content", None, None, None, None)
             .unwrap();
 
         let source = std::fs::read_to_string(dir.path().join("source.md")).unwrap();
@@ -1306,7 +1345,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
-            .update_note("ghost", "ghost", "content", None, None, None)
+            .update_note("ghost", "ghost", "content", None, None, None, None)
             .unwrap_err();
         assert!(matches!(err, CaveError::NotFound(_)));
     }
@@ -1319,7 +1358,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let err = cave
-            .update_note("a", "b", "new content", None, None, None)
+            .update_note("a", "b", "new content", None, None, None, None)
             .unwrap_err();
         assert!(matches!(err, CaveError::AlreadyExists(_)));
         let content = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
@@ -1337,7 +1376,7 @@ mod tests {
         let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
 
         let meta = cave
-            .update_note("note", "note", "Updated", None, None, Some(true))
+            .update_note("note", "note", "Updated", None, None, Some(true), None)
             .unwrap();
         let raw = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
 
@@ -1363,6 +1402,7 @@ mod tests {
                 Some(vec!["legacy".into(), "migrated".into()]),
                 Some("Star".into()),
                 Some(true),
+                None,
             )
             .unwrap();
         let raw = std::fs::read_to_string(dir.path().join("legacy.md")).unwrap();

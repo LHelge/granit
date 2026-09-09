@@ -51,10 +51,11 @@ fn restore_cave_logic(
         return Ok(RestoreOutcome::InvalidPath);
     }
 
-    let cave = Cave::open(path)?;
+    let mut cave = Cave::open(path)?;
     cave.ensure_config()?;
     let mut config = cave.load_config()?;
     ensure_system_prompt_file(&cave, &mut config);
+    ensure_presentation_defaults(&mut cave);
     *state.lock_config() = config;
     state.set_cave(Some(cave));
 
@@ -84,6 +85,15 @@ fn ensure_system_prompt_file(cave: &Cave, config: &mut AppConfig) {
         if let Err(err) = cave.save_config(config) {
             warn!("Failed to clear migrated system prompt from config: {err}");
         }
+    }
+}
+
+/// Seed the default presentation templates into a cave that has no
+/// `.granit/presentations/` directory yet. Best-effort: a cave that cannot
+/// be written simply has no templates until the user adds some.
+fn ensure_presentation_defaults(cave: &mut Cave) {
+    if let Err(err) = cave.seed_presentation_defaults() {
+        warn!("Failed to seed presentation templates: {err}");
     }
 }
 
@@ -407,10 +417,11 @@ pub(crate) fn open_cave_at(
     app: &tauri::AppHandle,
     state: &AppState,
 ) -> Result<AppConfig, CaveError> {
-    let cave = Cave::open(path.clone())?;
+    let mut cave = Cave::open(path.clone())?;
     cave.ensure_config()?;
     let mut config = cave.load_config()?;
     ensure_system_prompt_file(&cave, &mut config);
+    ensure_presentation_defaults(&mut cave);
 
     let store = Store::new(app);
     store.persist_active_cave(&path).map_err(CaveError::Io)?;
@@ -587,6 +598,33 @@ mod tests {
         assert_eq!(outcome, RestoreOutcome::Restored);
         let seeded = std::fs::read_to_string(dir.path().join(".granit/agent/system.md")).unwrap();
         assert_eq!(seeded, granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE);
+    }
+
+    // ── ensure_presentation_defaults: seeding on open ──────────────────────
+
+    #[test]
+    fn presentation_defaults_are_seeded_on_restore_only_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = test_app_state();
+
+        assert_eq!(
+            restore_cave_or_empty(Some(dir.path().to_path_buf()), &state),
+            RestoreOutcome::Restored
+        );
+        let presentations = dir.path().join(".granit/presentations");
+        assert!(presentations.join("default-dark.css").exists());
+        assert!(presentations.join("default-light.css").exists());
+        let listed = state.with_cave(|cave| cave.list_presentations()).unwrap();
+        assert_eq!(listed.len(), 2);
+
+        // A deleted default stays deleted across reopen.
+        std::fs::remove_file(presentations.join("default-light.css")).unwrap();
+        let state = test_app_state();
+        assert_eq!(
+            restore_cave_or_empty(Some(dir.path().to_path_buf()), &state),
+            RestoreOutcome::Restored
+        );
+        assert!(!presentations.join("default-light.css").exists());
     }
 
     #[test]

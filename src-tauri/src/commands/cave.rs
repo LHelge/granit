@@ -414,6 +414,7 @@ pub(crate) fn update_note(
     tags: Option<Vec<String>>,
     icon: Option<String>,
     favorite: Option<bool>,
+    presentation: Option<String>,
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
@@ -427,7 +428,15 @@ pub(crate) fn update_note(
         } else {
             Vec::new()
         };
-        let meta = cave.update_note(&old_name, &new_name, &content, tags, icon, favorite)?;
+        let meta = cave.update_note(
+            &old_name,
+            &new_name,
+            &content,
+            tags,
+            icon,
+            favorite,
+            presentation,
+        )?;
         Ok((meta, affected))
     })?;
     // Only after the update succeeded: a failed rename-within-update must not
@@ -477,6 +486,60 @@ pub(crate) fn delete_template(
     state: tauri::State<AppState>,
 ) -> Result<(), CaveError> {
     state.with_cave(|cave| cave.delete_template(&name))
+}
+
+// ── Presentation templates ─────────────────────────────────────────
+//
+// CSS files in `.granit/presentations/`; the raw CSS is the document
+// content. No frontmatter, no rendering.
+
+#[tauri::command]
+pub(crate) fn list_presentations(
+    state: tauri::State<AppState>,
+) -> Result<Vec<DocumentMeta>, CaveError> {
+    state.with_cave(|cave| cave.list_presentations())
+}
+
+#[tauri::command]
+pub(crate) fn read_presentation(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<Document, CaveError> {
+    state.with_cave(|cave| cave.read_presentation(&name))
+}
+
+#[tauri::command]
+pub(crate) fn create_presentation(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.create_presentation(&name))
+}
+
+#[tauri::command]
+pub(crate) fn save_presentation(
+    name: String,
+    content: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.save_presentation(&name, &content))
+}
+
+#[tauri::command]
+pub(crate) fn rename_presentation(
+    old_name: String,
+    new_name: String,
+    state: tauri::State<AppState>,
+) -> Result<DocumentMeta, CaveError> {
+    state.with_cave(|cave| cave.rename_presentation(&old_name, &new_name))
+}
+
+#[tauri::command]
+pub(crate) fn delete_presentation(
+    name: String,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
+    state.with_cave(|cave| cave.delete_presentation(&name))
 }
 
 #[tauri::command]

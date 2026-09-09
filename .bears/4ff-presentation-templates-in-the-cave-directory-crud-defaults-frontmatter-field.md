@@ -1,10 +1,10 @@
 ---
 id: "4ff"
 title: "Presentation templates in the cave: directory, CRUD, defaults, frontmatter field"
-status: open
+status: in_progress
 priority: P2
 created: "2026-09-08T22:02:20.550328070Z"
-updated: "2026-09-09T07:58:36.288884Z"
+updated: "2026-09-09T08:08:34.188443Z"
 tags:
   - presentation
   - backend

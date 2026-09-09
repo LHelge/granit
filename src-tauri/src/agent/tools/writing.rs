@@ -138,7 +138,8 @@ impl PortableTool for UpdateNoteTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
-            let meta = cave.update_note(&slug, &slug, &args.content, None, args.icon, None)?;
+            let meta =
+                cave.update_note(&slug, &slug, &args.content, None, args.icon, None, None)?;
             Ok(UpdateNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,

@@ -21,6 +21,8 @@ use std::path::{Component, Path, PathBuf};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use tauri::http::{header, Request, Response, StatusCode};
 
+use crate::cave::PRESENTATIONS_DIR;
+
 /// Scheme name registered with Tauri.
 pub const SCHEME: &str = "granit";
 
@@ -28,9 +30,6 @@ pub const SCHEME: &str = "granit";
 pub const ROUTE_CAVE: &str = "cave";
 /// First path segment of the route serving files from `.granit/presentations/`.
 pub const ROUTE_PRESENTATION: &str = "presentation";
-
-/// Directory under the cave root that the presentation route serves.
-pub const PRESENTATIONS_DIR: &str = ".granit/presentations";
 
 /// Origin the webview uses for scheme URLs, with a trailing slash.
 pub fn base_url() -> &'static str {

@@ -24,6 +24,11 @@ impl<'a> Markdown<'a> {
         self.frontmatter().and_then(|fm| fm.favorite)
     }
 
+    /// Shorthand: extract the `presentation` field from frontmatter.
+    pub fn presentation(&self) -> Option<String> {
+        self.frontmatter().and_then(|fm| fm.presentation.clone())
+    }
+
     /// Shorthand: extract the `tags` field from frontmatter.
     pub fn tags(&self) -> Vec<String> {
         self.frontmatter()
@@ -211,11 +216,13 @@ mod tests {
             modified_at: None,
             icon: Some("LuFolder".to_string()),
             favorite: Some(true),
+            presentation: Some("default-dark".to_string()),
         };
         let yaml = serde_yml::to_string(&fm).unwrap();
         let parsed: Frontmatter = serde_yml::from_str(&yaml).unwrap();
         assert_eq!(parsed.icon.as_deref(), Some("LuFolder"));
         assert_eq!(parsed.favorite, Some(true));
+        assert_eq!(parsed.presentation.as_deref(), Some("default-dark"));
         assert_eq!(parsed.tags, ["test"]);
     }
 
@@ -227,6 +234,7 @@ mod tests {
             modified_at: None,
             icon: None,
             favorite: None,
+            presentation: None,
         };
         let yaml = serde_yml::to_string(&fm).unwrap();
         assert!(
@@ -237,6 +245,18 @@ mod tests {
             !yaml.contains("favorite"),
             "favorite: None should be omitted: {yaml}"
         );
+        assert!(
+            !yaml.contains("presentation"),
+            "presentation: None should be omitted: {yaml}"
+        );
+    }
+
+    #[test]
+    fn test_presentation_shorthand() {
+        let raw = "---\npresentation: corporate\n---\n# Body";
+        let md = Markdown::new(raw);
+        assert_eq!(md.presentation().as_deref(), Some("corporate"));
+        assert!(Markdown::new("# Body").presentation().is_none());
     }
 
     #[test]

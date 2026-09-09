@@ -18,6 +18,10 @@ pub struct Frontmatter {
     pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favorite: Option<bool>,
+    /// Presentation template used when presenting the note: the file stem
+    /// of a CSS file in `.granit/presentations/`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<String>,
 }
 
 /// Result of rendering a markdown document: rendered HTML plus extracted metadata.
