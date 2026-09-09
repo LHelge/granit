@@ -637,9 +637,18 @@ pub(super) fn render_system_prompt_for_state(
     state.with_cave(|cave| {
         let raw = cave.read_system_prompt_raw()?.unwrap_or_default();
         let skills = cave.list_skills().unwrap_or_default();
+        let presentations = cave
+            .list_presentations()
+            .map(|list| list.into_iter().map(|p| p.slug).collect())
+            .unwrap_or_default();
         let rendered = crate::agent::prompt::assemble_system_prompt(
             &raw,
-            &crate::agent::prompt::PromptContext::from_config(&agent_config, has_index, skills),
+            &crate::agent::prompt::PromptContext::from_config(
+                &agent_config,
+                has_index,
+                skills,
+                presentations,
+            ),
         );
         Ok(Markdown::new(&rendered)
             .with_image_base(cave.relative_dir(&cave.agent_dir()))

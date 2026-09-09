@@ -18,6 +18,9 @@ pub(crate) struct PromptContext {
     /// Whether automatic RAG context injection is active for this agent
     /// (Ask mode with the vector index available).
     pub rag: bool,
+    /// Slugs of the cave's presentation templates, so the prompt can tell
+    /// the model which values the note tools' `presentation` argument takes.
+    pub presentations: Vec<String>,
 }
 
 impl PromptContext {
@@ -28,6 +31,7 @@ impl PromptContext {
         config: &AgentConfig,
         has_vector_index: bool,
         skills: Vec<AgentDocInfo>,
+        presentations: Vec<String>,
     ) -> Self {
         Self {
             mode: config.mode,
@@ -35,13 +39,15 @@ impl PromptContext {
             skills,
             // Auto-injected note context: Ask mode with a live index.
             rag: config.mode == AgentMode::Ask && has_vector_index,
+            presentations,
         }
     }
 }
 
 /// Render the system prompt template `base` with the standard context
-/// variables: `mode`, `tools`, `icons`, `skills`, `rag`, and the date
-/// variables `today`, `year`, `month`, `day`, `weekday`, `weekday_short`.
+/// variables: `mode`, `tools`, `icons`, `skills`, `rag`, `presentations`, and
+/// the date variables `today`, `year`, `month`, `day`, `weekday`,
+/// `weekday_short`.
 ///
 /// A template error falls back to the raw text: a typo in the user's
 /// `system.md` must never prevent the agent from building.
@@ -64,6 +70,7 @@ pub(crate) fn assemble_system_prompt(base: &str, ctx: &PromptContext) -> String 
 
     context.insert("skills", &ctx.skills);
     context.insert("rag", &ctx.rag);
+    context.insert("presentations", &ctx.presentations);
 
     match tera::Tera::one_off(base, &context, false) {
         Ok(rendered) => rendered,
@@ -85,6 +92,7 @@ mod tests {
             tools: vec!["read_note".to_string(), "list_notes".to_string()],
             skills: Vec::new(),
             rag: false,
+            presentations: Vec::new(),
         }
     }
 
@@ -104,6 +112,30 @@ mod tests {
         assert!(!prompt.contains("{%"), "got: {prompt}");
         // The skills block is absent while no skills exist.
         assert!(!prompt.contains("use_skill"), "got: {prompt}");
+        // Presentation guidance is always there in Agent mode; the template
+        // list only when the cave has templates.
+        assert!(prompt.contains("slides"), "got: {prompt}");
+        assert!(
+            !prompt.contains("presentation templates are:"),
+            "got: {prompt}"
+        );
+    }
+
+    #[test]
+    fn default_template_lists_presentation_templates_in_agent_mode() {
+        let mut context = ctx(AgentMode::Agent);
+        context.presentations = vec!["default-dark".to_string(), "corporate".to_string()];
+        let prompt = assemble_system_prompt(DEFAULT_SYSTEM_PROMPT_TEMPLATE, &context);
+        assert!(
+            prompt.contains("presentation templates are: default-dark, corporate"),
+            "got: {prompt}"
+        );
+
+        // Ask mode is read-only: no presentation authoring guidance.
+        let mut context = ctx(AgentMode::Ask);
+        context.presentations = vec!["default-dark".to_string()];
+        let prompt = assemble_system_prompt(DEFAULT_SYSTEM_PROMPT_TEMPLATE, &context);
+        assert!(!prompt.contains("default-dark"), "got: {prompt}");
     }
 
     #[test]

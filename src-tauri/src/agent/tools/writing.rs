@@ -17,6 +17,9 @@ pub struct CreateNoteArgs {
     icon: Option<String>,
     /// Optional template slug to seed the note body from (see list_templates).
     template: Option<String>,
+    /// Optional presentation template slug (a CSS file stem in
+    /// `.granit/presentations/`) that makes the note presentable as slides.
+    presentation: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -58,6 +61,10 @@ impl PortableTool for CreateNoteTool {
                 "template": {
                     "type": "string",
                     "description": "Optional template slug to seed the note body from. Omit for an empty note."
+                },
+                "presentation": {
+                    "type": "string",
+                    "description": "Optional presentation template slug (one of the cave's presentation templates) that makes the note presentable as slides. Omit for a plain note."
                 }
             },
             "required": ["name"]
@@ -73,6 +80,10 @@ impl PortableTool for CreateNoteTool {
             )?;
             if let Some(icon) = args.icon {
                 cave.set_note_icon(&meta.slug, Some(icon))?;
+            }
+            if let Some(presentation) = args.presentation {
+                cave.presentation_path(&presentation)?;
+                cave.set_note_presentation(&meta.slug, Some(presentation))?;
             }
             Ok(CreateNoteOutput {
                 slug: meta.slug.clone(),
@@ -92,9 +103,12 @@ pub struct UpdateNoteArgs {
     content: String,
     /// Optional icon ID to set (e.g. "Star"). Omit to preserve the existing icon.
     icon: Option<String>,
+    /// Optional presentation template slug to set; an empty string clears it.
+    /// Omit to preserve the existing value.
+    presentation: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UpdateNoteOutput {
     slug: String,
     relative_path: String,
@@ -129,6 +143,10 @@ impl PortableTool for UpdateNoteTool {
                 "icon": {
                     "type": "string",
                     "description": "Optional icon ID to set (e.g. \"Star\", \"Book\", \"Code\"). Omit to preserve the existing icon."
+                },
+                "presentation": {
+                    "type": "string",
+                    "description": "Optional presentation template slug (one of the cave's presentation templates) to make the note presentable as slides; an empty string removes it. Omit to preserve the existing value."
                 }
             },
             "required": ["slug", "content"]
@@ -138,8 +156,18 @@ impl PortableTool for UpdateNoteTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         with_shared_cave(&self.cave, |cave| {
             let slug = cave.resolve_slug(&args.slug)?;
-            let meta =
-                cave.update_note(&slug, &slug, &args.content, None, args.icon, None, None)?;
+            if let Some(presentation) = args.presentation.as_deref().filter(|p| !p.is_empty()) {
+                cave.presentation_path(presentation)?;
+            }
+            let meta = cave.update_note(
+                &slug,
+                &slug,
+                &args.content,
+                None,
+                args.icon,
+                None,
+                args.presentation,
+            )?;
             Ok(UpdateNoteOutput {
                 slug: meta.slug,
                 relative_path: meta.relative_path,
@@ -320,6 +348,7 @@ mod tests {
                 folder: None,
                 icon: None,
                 template: Some("meeting".to_string()),
+                presentation: None,
             })
             .await
             .unwrap();
@@ -334,10 +363,84 @@ mod tests {
                 folder: None,
                 icon: None,
                 template: Some("missing".to_string()),
+                presentation: None,
             })
             .await
             .unwrap_err();
         assert!(matches!(err, CaveError::TemplateNotFound(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn note_tools_set_and_validate_the_presentation_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cave = crate::cave::Cave::open(dir.path().to_path_buf()).unwrap();
+        cave.seed_presentation_defaults().unwrap();
+        let cave = shared_cave(cave);
+
+        let create = CreateNoteTool { cave: cave.clone() };
+        let output = create
+            .call(CreateNoteArgs {
+                name: "talk".to_string(),
+                folder: None,
+                icon: None,
+                template: None,
+                presentation: Some("default-dark".to_string()),
+            })
+            .await
+            .unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("talk.md")).unwrap();
+        assert!(raw.contains("presentation: default-dark"), "got: {raw}");
+        assert_eq!(output.slug, "talk");
+
+        // An unknown template is refused up front, before anything is written.
+        let err = create
+            .call(CreateNoteArgs {
+                name: "other".to_string(),
+                folder: None,
+                icon: None,
+                template: None,
+                presentation: Some("corporate".to_string()),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CaveError::PresentationNotFound(_)), "{err:?}");
+
+        // update_note switches, validates, and clears the field.
+        let update = UpdateNoteTool { cave: cave.clone() };
+        update
+            .call(UpdateNoteArgs {
+                slug: "talk".to_string(),
+                content: "# Talk\n".to_string(),
+                icon: None,
+                presentation: Some("default-light".to_string()),
+            })
+            .await
+            .unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("talk.md")).unwrap();
+        assert!(raw.contains("presentation: default-light"), "got: {raw}");
+
+        let err = update
+            .call(UpdateNoteArgs {
+                slug: "talk".to_string(),
+                content: "# Talk\n".to_string(),
+                icon: None,
+                presentation: Some("corporate".to_string()),
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CaveError::PresentationNotFound(_)), "{err:?}");
+
+        update
+            .call(UpdateNoteArgs {
+                slug: "talk".to_string(),
+                content: "# Talk\n".to_string(),
+                icon: None,
+                presentation: Some(String::new()),
+            })
+            .await
+            .unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("talk.md")).unwrap();
+        assert!(!raw.contains("presentation:"), "got: {raw}");
     }
 
     #[tokio::test]

@@ -39,7 +39,7 @@ The agent has access to the following tools. Read-only tools are available in bo
 | `web_fetch` | Fetch a webpage and return its content as markdown |
 | `web_search` | Search the web using Brave Search |
 
-`create_note` accepts an optional template slug, so the agent can seed new notes from your [[templates]]. A few tools are registered only when their requirements are met: `web_search` needs a Brave Search API key, and `semantic_search` needs retrieval to be enabled (see below). `web_fetch` is always available and needs no API key.
+`create_note` accepts an optional template slug, so the agent can seed new notes from your [[templates]]. Both `create_note` and `update_note` accept an optional `presentation` argument naming one of the cave's presentation templates, so the agent can write a note as slides and make it presentable in one go; the default [[system-prompt]] explains the slide format to the model. See [[presentations]]. A few tools are registered only when their requirements are met: `web_search` needs a Brave Search API key, and `semantic_search` needs retrieval to be enabled (see below). `web_fetch` is always available and needs no API key.
 
 > [!WARNING]
 > In Agent mode the agent can create, edit, move, and delete notes and folders. These actions write to your files. Review what the agent proposes, and keep your cave under version control or backed up if you let the agent make changes unattended.

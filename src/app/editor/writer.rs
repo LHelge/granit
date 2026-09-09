@@ -41,6 +41,7 @@ fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'sta
             ("icons", "note icon IDs"),
             ("skills", "list of name + description"),
             ("rag", "true when note context is auto-injected"),
+            ("presentations", "presentation template slugs"),
             ("today", "YYYY-MM-DD"),
             ("year", ""),
             ("month", ""),

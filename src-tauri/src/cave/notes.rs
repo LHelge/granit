@@ -178,6 +178,23 @@ impl Cave {
         })
     }
 
+    /// Set (or, with `Some("")`, clear) a note's presentation template,
+    /// leaving the body and the other frontmatter untouched.
+    pub fn set_note_presentation(
+        &self,
+        slug: &str,
+        presentation: Option<String>,
+    ) -> Result<DocumentMeta, CaveError> {
+        self.rewrite_note(slug, |raw| {
+            let md = crate::markdown::Markdown::new(raw);
+            Ok(NoteRewrite {
+                body: md.body().to_string(),
+                presentation,
+                ..Default::default()
+            })
+        })
+    }
+
     /// Replace `old_text` with `new_text` in an existing note (looked up by slug).
     /// Fails if `old_text` is not found in the note's content.
     pub fn edit_note(

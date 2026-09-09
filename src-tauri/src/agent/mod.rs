@@ -93,9 +93,17 @@ impl Agent {
         let skills = crate::commands::with_shared_cave(&cave, |c| c.list_skills())
             .ok()
             .unwrap_or_default();
+        let presentations = crate::commands::with_shared_cave(&cave, |c| c.list_presentations())
+            .map(|list| list.into_iter().map(|p| p.slug).collect())
+            .unwrap_or_default();
         let system_prompt = prompt::assemble_system_prompt(
             &base,
-            &prompt::PromptContext::from_config(config, vector_index.is_some(), skills),
+            &prompt::PromptContext::from_config(
+                config,
+                vector_index.is_some(),
+                skills,
+                presentations,
+            ),
         );
         // The toolset gets the vector index in both modes (semantic_search
         // is read-only); the Ask-only gate below applies to the automatic
