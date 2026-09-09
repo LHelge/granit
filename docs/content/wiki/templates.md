@@ -19,7 +19,7 @@ Each template is a Markdown file. Templates use their own **flat slug namespace*
 
 When you create a new note, you can choose a template to seed its contents. Granit copies the selected template's body into the new note, and you continue editing from there as with any other note — see [[notes-and-markdown]] for the editing flow. The AI agent can do the same through its `create_note` tool — see [[agent-tools-and-rag]].
 
-A template is just Markdown, so it can include frontmatter fields, headings, task lists, and placeholder text that you fill in each time.
+A template is just Markdown, so it can include frontmatter fields, headings, task lists, and placeholder text that you fill in each time. The `tags`, `icon`, and `presentation` frontmatter fields of a template are copied to notes created from it, so a template with `presentation: default-dark` produces notes that are ready to present — see [[presentations]].
 
 # Template variables
 
@@ -38,6 +38,7 @@ The date variables are set when the new note's slug matches the daily-note date 
 # Related pages
 
 - [[daily-notes]] — seed each daily note from a template.
+- [[presentations]] — presentation templates, the CSS files that live next to note templates.
 - [[notes-and-markdown]] — edit notes created from a template.
 - [[skills-and-tasks]] — the agent's own Tera-templated files.
 - [[configuration]] — per-cave settings, including the default daily-note template.

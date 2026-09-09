@@ -45,6 +45,7 @@ Notes may begin with a YAML frontmatter block delimited by `---`. Granit parses 
 - timestamps — created and updated times for the note.
 - `icon` — an optional icon shown next to the note.
 - `favorite` — a boolean flag; favorited notes appear in the Favorites tab of the [[explorer]].
+- `presentation` — the name of a presentation template; set it to present the note as slides. See [[presentations]].
 
 A minimal example:
 
@@ -61,6 +62,10 @@ Body text starts here.
 
 > [!IMPORTANT]
 > Frontmatter does **not** set the note's title. The title always comes from the filename stem. See [[cave-rules]] for why filenames are the single source of identity.
+
+# Local images
+
+An image whose path has no scheme, such as `![diagram](img/diagram.png)`, is loaded from the cave: the path resolves relative to the note's own folder, and a path starting with `/` resolves from the cave root. Images outside the cave cannot be shown; use an `http(s)` URL for remote images.
 
 # Raw HTML is sanitized
 
@@ -95,5 +100,6 @@ This lets you keep flowcharts and other diagrams inline in your notes as plain t
 
 - [[wiki-links]] — linking notes together and to heading anchors.
 - [[templates]] — start new notes from reusable scaffolds.
+- [[presentations]] — present a note as slides.
 - [[explorer]] — browse, search, and filter your notes.
 - [[configuration]] — fonts, themes, and per-cave settings.

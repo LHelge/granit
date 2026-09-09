@@ -35,7 +35,7 @@ The Agent tab manages the AI agent's files: the [[system-prompt]] and the cave's
 
 # Other tabs
 
-The explorer also surfaces the [[todos|Todo tab]], which aggregates task checkboxes from across the cave, and a templates view for the cave's [[templates]].
+The explorer also surfaces the [[todos|Todo tab]], which aggregates task checkboxes from across the cave, and a Templates tab with two sections: the cave's note [[templates]] on top and its [[presentations|presentation templates]] below, each with its own list and new button.
 
 # Related pages
 

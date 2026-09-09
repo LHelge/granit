@@ -1,10 +1,10 @@
 ---
 id: bhq
 title: "Docs: presentation guide, template DOM contract, keyboard reference"
-status: open
+status: done
 priority: P3
 created: "2026-09-08T22:02:49.522860434Z"
-updated: "2026-09-08T22:02:49.522860434Z"
+updated: "2026-09-09T08:36:42.367829Z"
 tags:
   - presentation
   - docs

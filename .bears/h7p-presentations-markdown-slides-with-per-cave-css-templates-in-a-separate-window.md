@@ -2,10 +2,10 @@
 id: h7p
 title: "Presentations: markdown slides with per-cave CSS templates in a separate window"
 type: epic
-status: open
+status: done
 priority: P2
 created: "2026-09-08T22:01:48.564292980Z"
-updated: "2026-09-08T22:11:06.645331357Z"
+updated: "2026-09-09T08:36:53.887889Z"
 tags:
   - presentation
   - backend
