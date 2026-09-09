@@ -8,7 +8,7 @@ use crate::agent::{Agent, AgentError};
 use crate::cave::{Cave, CaveError};
 use granit_types::AppConfig;
 
-use super::ConfigError;
+use super::{ConfigError, ShownPresentation};
 
 /// Shared handle to the currently open cave, used by AppState and agent tools.
 pub type SharedCave = Arc<Mutex<Option<Cave>>>;
@@ -33,6 +33,8 @@ pub(crate) struct AppState {
     agent: Mutex<Option<Agent>>,
     agent_generation: AtomicU64,
     vector_index: Mutex<Option<CaveVectorIndex>>,
+    /// What the presentation window shows, while it is open.
+    presentation: Mutex<Option<ShownPresentation>>,
 }
 
 impl AppState {
@@ -43,6 +45,7 @@ impl AppState {
             agent: Mutex::new(None),
             agent_generation: AtomicU64::new(0),
             vector_index: Mutex::new(None),
+            presentation: Mutex::new(None),
         }
     }
 
@@ -66,7 +69,11 @@ impl AppState {
         self.lock_cave().as_ref().map(|c| c.path().to_path_buf())
     }
 
-    pub(super) fn set_cave(&self, cave: Option<Cave>) {
+    pub(super) fn lock_presentation(&self) -> MutexGuard<'_, Option<ShownPresentation>> {
+        self.presentation.lock()
+    }
+
+    pub(crate) fn set_cave(&self, cave: Option<Cave>) {
         *self.lock_cave() = cave;
     }
 

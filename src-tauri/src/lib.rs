@@ -30,8 +30,7 @@ pub fn run() {
         // Serves cave files (note images, presentation templates and their
         // assets) to every webview of the app; see `scheme.rs`.
         .register_uri_scheme_protocol(scheme::SCHEME, |ctx, request| {
-            let cave_root = ctx.app_handle().state::<AppState>().active_cave_path();
-            scheme::respond(cave_root.as_deref(), &request)
+            scheme::respond(&ctx.app_handle().state::<AppState>(), &request)
         })
         .setup(|app| {
             spawn_startup_update_check(app);
@@ -91,6 +90,7 @@ pub fn run() {
             save_presentation,
             rename_presentation,
             delete_presentation,
+            start_presentation,
             render_note,
             render_template,
             render_system_prompt,

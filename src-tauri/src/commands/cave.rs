@@ -361,6 +361,7 @@ pub(crate) fn save_note(
     let meta = state.with_cave(|cave| cave.save_note(&name, &content))?;
     spawn_index_update(state.inner(), meta.slug.clone());
     let _ = app.emit("cave:notes-changed", ());
+    super::note_saved(&app, state.inner(), &meta.slug);
     Ok(meta)
 }
 
@@ -377,6 +378,7 @@ pub(crate) fn save_template(
 pub(crate) fn rename_note(
     old_name: String,
     new_name: String,
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
     // Capture inbound-link sources before the rename: their bodies are rewritten
@@ -393,6 +395,7 @@ pub(crate) fn rename_note(
     for slug in affected {
         spawn_index_update(state.inner(), slug);
     }
+    super::note_removed(&app, state.inner(), &old_name);
     Ok(meta)
 }
 
@@ -449,6 +452,11 @@ pub(crate) fn update_note(
         spawn_index_update(state.inner(), slug);
     }
     let _ = app.emit("cave:notes-changed", ());
+    if renaming {
+        super::note_removed(&app, state.inner(), &old_name);
+    } else {
+        super::note_saved(&app, state.inner(), &meta.slug);
+    }
     Ok(meta)
 }
 
@@ -474,8 +482,13 @@ pub(crate) fn rename_folder(
 }
 
 #[tauri::command]
-pub(crate) fn delete_note(name: String, state: tauri::State<AppState>) -> Result<(), CaveError> {
+pub(crate) fn delete_note(
+    name: String,
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+) -> Result<(), CaveError> {
     state.with_cave(|cave| cave.delete_note(&name))?;
+    super::note_removed(&app, state.inner(), &name);
     spawn_index_remove(state.inner(), name);
     Ok(())
 }
@@ -520,9 +533,12 @@ pub(crate) fn create_presentation(
 pub(crate) fn save_presentation(
     name: String,
     content: String,
+    app: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<DocumentMeta, CaveError> {
-    state.with_cave(|cave| cave.save_presentation(&name, &content))
+    let meta = state.with_cave(|cave| cave.save_presentation(&name, &content))?;
+    super::template_saved(&app, state.inner(), &meta.slug);
+    Ok(meta)
 }
 
 #[tauri::command]
