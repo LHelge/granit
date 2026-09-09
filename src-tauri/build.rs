@@ -1,8 +1,32 @@
+use std::path::Path;
 use std::process::Command;
 
 fn main() {
     emit_git_metadata();
+    stage_mermaid_bundle();
     tauri_build::build();
+}
+
+/// Stage the mermaid bundle for `include_bytes!` in the scheme handler.
+///
+/// `npm run build` writes `build/mermaid.js` at the workspace root. It is
+/// copied into `OUT_DIR` so the crate still compiles (with an empty bundle,
+/// and a warning) when the JS build has not run, e.g. for `cargo test` in
+/// CI. Cargo re-runs this script while the file is missing and whenever it
+/// changes, so the embedded copy follows the JS build.
+fn stage_mermaid_bundle() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../build/mermaid.js");
+    let target = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR is set")).join("mermaid.js");
+    println!("cargo:rerun-if-changed={}", source.display());
+    if source.is_file() {
+        std::fs::copy(&source, &target).expect("copy mermaid bundle into OUT_DIR");
+    } else {
+        println!(
+            "cargo:warning=build/mermaid.js not found (run `npm run build`); \
+             presentations will not render mermaid diagrams"
+        );
+        std::fs::write(&target, b"").expect("write empty mermaid placeholder");
+    }
 }
 
 fn emit_git_metadata() {

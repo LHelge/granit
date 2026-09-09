@@ -64,6 +64,23 @@ fn current_reader_selection_text(reader: &web_sys::HtmlDivElement) -> Option<Str
     (reader_contains_node(reader, &anchor) && reader_contains_node(reader, &focus)).then_some(text)
 }
 
+/// Render the mermaid diagrams under `root` through `window.GranitMermaid`
+/// (build/mermaid.js). A no-op when the bundle is not loaded.
+fn render_mermaid_diagrams(root: &web_sys::Element) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(run) = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("GranitMermaid"))
+        .ok()
+        .filter(|bundle| bundle.is_object())
+        .and_then(|bundle| js_sys::Reflect::get(&bundle, &JsValue::from_str("run")).ok())
+        .and_then(|run| run.dyn_into::<js_sys::Function>().ok())
+    else {
+        return;
+    };
+    let _ = run.call1(&JsValue::UNDEFINED, root.as_ref());
+}
+
 fn sync_reader_selection(reader_ref: NodeRef<leptos::html::Div>, ctx: super::EditorCtx) {
     let Some(reader) = reader_ref.get() else {
         return;
@@ -130,6 +147,29 @@ pub(super) fn Reader() -> impl IntoView {
     });
 
     on_cleanup(remove_selection_listener);
+
+    // Mermaid blocks arrive from the backend as `<div class="mermaid">` with
+    // the diagram source; the bundle renders them in place. Re-run when the
+    // note or the config (theme) changes: the bundle keeps each block's
+    // source and only re-renders for a different theme. Deferred a frame so
+    // the `inner_html` update has reached the DOM first.
+    Effect::new(move |_| {
+        let has_diagram = ctx.rendered_note.with(|note| {
+            note.as_ref()
+                .is_some_and(|rendered| rendered.html.contains(r#"<div class="mermaid">"#))
+        });
+        app_ctx.config.track();
+        if !has_diagram {
+            return;
+        }
+        let Some(reader) = reader_ref.get() else {
+            return;
+        };
+        request_animation_frame(move || {
+            let reader: &web_sys::HtmlDivElement = reader.as_ref();
+            render_mermaid_diagrams(reader);
+        });
+    });
 
     // Intercept clicks on links and checkboxes in rendered markdown.
     // - Checkboxes toggle the underlying markdown via the backend.

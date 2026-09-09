@@ -94,7 +94,7 @@ graph TD
 ```
 ````
 
-This lets you keep flowcharts and other diagrams inline in your notes as plain text.
+This lets you keep flowcharts and other diagrams inline in your notes as plain text. Diagrams follow the app theme, switching to Mermaid's dark palette on dark themes, and they render on slides too — see [[presentations]]. A block Mermaid cannot parse stays as its source text with a red edge; hover it to read the parser message.
 
 # Related pages
 

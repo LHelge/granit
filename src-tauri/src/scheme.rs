@@ -33,6 +33,15 @@ pub const SCHEME: &str = "granit";
 pub const ROUTE_CAVE: &str = "cave";
 /// First path segment of the route serving files from `.granit/presentations/`.
 pub const ROUTE_PRESENTATION: &str = "presentation";
+/// First path segment of the route serving bundled app assets.
+pub const ROUTE_ASSET: &str = "asset";
+
+/// The mermaid bundle (`build/mermaid.js`, staged by the build script) that
+/// the presentation page loads to render diagrams. Empty when the JS build
+/// had not run at compile time.
+const MERMAID_JS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mermaid.js"));
+/// File name of the mermaid bundle under the asset route.
+pub const MERMAID_ASSET: &str = "mermaid.js";
 
 /// Origin the webview uses for scheme URLs, with a trailing slash.
 pub fn base_url() -> &'static str {
@@ -52,6 +61,11 @@ pub fn cave_file_url(relative: &str) -> String {
 /// `.granit/presentations/`).
 pub fn presentation_url(relative: &str) -> String {
     route_url(ROUTE_PRESENTATION, relative)
+}
+
+/// URL of a bundled app asset (`mermaid.js`).
+pub fn asset_url(name: &str) -> String {
+    route_url(ROUTE_ASSET, name)
 }
 
 /// URL of the presentation page for the note `slug`.
@@ -163,14 +177,25 @@ pub(crate) fn respond(
 
 /// Route a request path to its content. `None` means 404.
 fn serve(state: &AppState, path: &str) -> Option<(Vec<u8>, &'static str)> {
-    let cave_root = state.active_cave_path()?;
     let (route, relative) = split_route(path)?;
+    if route == ROUTE_ASSET {
+        return serve_asset(&relative);
+    }
+    let cave_root = state.active_cave_path()?;
     match route {
         ROUTE_CAVE => serve_file(&cave_root, &relative),
         // A template file wins over a note of the same name; the page is
         // only served for a bare slug (one segment).
         ROUTE_PRESENTATION => serve_file(&cave_root.join(PRESENTATIONS_DIR), &relative)
             .or_else(|| serve_page(state, &relative)),
+        _ => None,
+    }
+}
+
+/// Bundled assets need no cave: they are compiled into the binary.
+fn serve_asset(relative: &Path) -> Option<(Vec<u8>, &'static str)> {
+    match relative.to_str()? {
+        MERMAID_ASSET => Some((MERMAID_JS.to_vec(), "text/javascript; charset=utf-8")),
         _ => None,
     }
 }
@@ -438,6 +463,29 @@ mod tests {
         ] {
             assert_eq!(
                 respond_in(&dir, path).status(),
+                StatusCode::NOT_FOUND,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_mermaid_asset_is_served_without_a_cave() {
+        let state = AppState::new(granit_types::AppConfig::default());
+        let response = respond(&state, &request("/asset/mermaid.js"));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(response.body().as_ref(), MERMAID_JS);
+        assert_eq!(
+            asset_url(MERMAID_ASSET),
+            format!("{}asset/mermaid.js", base_url())
+        );
+        for path in ["/asset/other.js", "/asset/", "/asset/../mermaid.js"] {
+            assert_eq!(
+                respond(&state, &request(path)).status(),
                 StatusCode::NOT_FOUND,
                 "{path}"
             );
