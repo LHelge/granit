@@ -1,5 +1,6 @@
 mod builder;
 mod frontmatter;
+mod presentation;
 mod render;
 
 pub(crate) use frontmatter::split_frontmatter;

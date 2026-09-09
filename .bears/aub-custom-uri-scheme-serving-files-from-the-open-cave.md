@@ -1,10 +1,10 @@
 ---
 id: aub
 title: Custom URI scheme serving files from the open cave
-status: in_progress
+status: done
 priority: P2
 created: "2026-09-08T22:02:02.408190287Z"
-updated: "2026-09-09T07:58:44.004910Z"
+updated: "2026-09-09T08:04:35.191148Z"
 tags:
   - presentation
   - backend
