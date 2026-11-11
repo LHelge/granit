@@ -47,7 +47,7 @@ pub(super) fn FolderNode(
     let on_dragleave = move |_| drag_over.set(false);
 
     view! {
-        <li draggable="true" on:dragstart=on_dragstart>
+        <li>
             {move || {
                 let is_renaming = matches!(
                     ctx.renaming.get(),
@@ -82,13 +82,32 @@ pub(super) fn FolderNode(
                 } else {
                     let path_ctx = path.clone();
                     let path_drop = path.clone();
+                    // The full-width row stays a drop target, but only the
+                    // chevron + icon + name is clickable: clicks to the right
+                    // of the name fall through to the tree background.
                     view! {
-                        <button
+                        <div
                             class=move || {
-                                let base = "w-full text-left py-0.5 text-sm text-base-content/50 hover:text-base-content transition-colors flex items-center gap-1";
+                                let base = "flex py-0.5 text-sm text-base-content/50 transition-colors has-[>button:hover]:text-base-content";
                                 if drag_over.get() { format!("{base} bg-base-content/10") } else { base.to_string() }
                             }
+                            on:dragover=on_dragover
+                            on:dragleave=on_dragleave
+                            on:drop=move |e: DragEvent| {
+                                e.prevent_default();
+                                e.stop_propagation();
+                                drag_over.set(false);
+                                if let Some(payload) = ctx.drag_payload.get() {
+                                    ctx.drag_payload.set(None);
+                                    ctx.handle_drop(payload, Some(path_drop.clone()));
+                                }
+                            }
+                        >
+                        <button
+                            class="min-w-0 max-w-full text-left flex items-center gap-1"
                             style=indent_style.clone()
+                            draggable="true"
+                            on:dragstart=on_dragstart.clone()
                             on:click={
                                 let path = path.clone();
                                 move |_| {
@@ -109,17 +128,6 @@ pub(super) fn FolderNode(
                                     target: ContextTarget::Folder(path_ctx.clone()),
                                 }));
                             }
-                            on:dragover=on_dragover
-                            on:dragleave=on_dragleave
-                            on:drop=move |e: DragEvent| {
-                                e.prevent_default();
-                                e.stop_propagation();
-                                drag_over.set(false);
-                                if let Some(payload) = ctx.drag_payload.get() {
-                                    ctx.drag_payload.set(None);
-                                    ctx.handle_drop(payload, Some(path_drop.clone()));
-                                }
-                            }
                         >
                             <span class=move || if is_open.get() { "inline-flex w-3 h-3 shrink-0 transition-transform rotate-90" } else { "inline-flex w-3 h-3 shrink-0 transition-transform" }>
                                 <Icon icon=icondata_lu::LuChevronRight width="100%" height="100%"/>
@@ -127,8 +135,9 @@ pub(super) fn FolderNode(
                             <span class="inline-flex w-3.5 h-3.5 shrink-0 text-warning">
                                 <Icon icon=icondata_lu::LuFolder width="100%" height="100%"/>
                             </span>
-                            {name.clone()}
+                            <span class="truncate">{name.clone()}</span>
                         </button>
+                        </div>
                     }
                     .into_any()
                 }

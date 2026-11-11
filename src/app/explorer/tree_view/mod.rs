@@ -351,8 +351,10 @@ pub fn TreeView() -> impl IntoView {
     });
 
     view! {
+        // Bottom padding keeps some empty background below a tall tree, so
+        // there is always somewhere to right-click for root-level actions.
         <div
-            class="relative min-h-full"
+            class="relative min-h-full pb-16"
             on:contextmenu=move |e: MouseEvent| {
                 e.prevent_default();
                 ctx.context_menu.set(Some(ContextMenu {
