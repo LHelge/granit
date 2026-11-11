@@ -22,11 +22,18 @@ jobs:
     # fastembed -> ort references __isoc23_strtol* symbols absent from
     # older glibc, so linking the test binary failed on ubuntu-22.04.
     runs-on: ubuntu-latest
+    # Typically 3-8 min; headroom for a cold Rust cache. Without a limit a
+    # hung job runs to GitHub's 6 h default.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v6
 
+      # Normally under a minute. Bounded because an unreachable Ubuntu
+      # mirror makes apt wait ~20 s per package, which once stalled this
+      # job for over half an hour (Canonical DNS outage, 2026-11-11).
       - name: Install Linux system dependencies
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -72,6 +79,7 @@ jobs:
   backend:
     name: Backend (clippy, test)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:

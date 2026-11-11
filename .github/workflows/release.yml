@@ -15,6 +15,7 @@ jobs:
   # what the app shows as release notes after an automatic update.
   changelog:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       body: ${{ steps.changelog.outputs.body }}
     steps:
@@ -44,6 +45,7 @@ jobs:
     needs: check
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -96,12 +98,18 @@ jobs:
             args: ''
 
     runs-on: ${{ matrix.platform }}
+    # Typically 16-22 min (Windows slowest). macOS minutes bill at 10x on
+    # private repos, so a hung build must not run to the 6 h default.
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v6
 
+      # Bounded for the same reason as in ci.yml: an unreachable Ubuntu
+      # mirror stalls apt for a long time instead of failing.
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-latest'
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
@@ -197,6 +205,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
 
@@ -216,6 +225,7 @@ jobs:
     needs: publish
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: production
       url: https://granit.lhelge.se
@@ -300,6 +310,7 @@ jobs:
   bump-cask:
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     continue-on-error: true
 
     steps:
