@@ -1,0 +1,20 @@
+#:schema https://docs.hoster.lhelge.se/stack.schema.json
+# The documentation site, https://granit.lhelge.se, as a hoster stack. Apply it in the admin UI
+# at https://hoster.lhelge.se (Stacks -> New stack); the `docs` job of
+# .github/workflows/release.yml deploys every release to it.
+version = 1
+name = "granit"
+
+[services.docs]
+image = "ghcr.io/lhelge/granit-docs"   # pushed by release.yml, no tag
+track = "latest"                       # poller fallback if the release's webhook never arrives
+
+[[services.docs.routes]]
+host = "granit.lhelge.se"
+port = 8080                            # nginx-unprivileged; docs/default.conf answers /healthz
+
+# Only this repository's release tags, from jobs in the `production` environment, may deploy.
+[deploy]
+repository_id = 1192777163             # gh api repos/LHelge/granit --jq .id
+refs = ["refs/tags/v*"]
+environment = "production"
