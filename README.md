@@ -91,7 +91,7 @@ aphid serve                    # live-reload preview on :3000
 aphid build                    # build + validate wiki-links
 ```
 
-Scaffold new pages with `aphid wiki new "Title"` or `aphid page new "Title"`. The [Docs workflow](.github/workflows/docs.yml) deploys automatically on pushes to `main` that touch `docs/**`.
+Scaffold new pages with `aphid wiki new "Title"` or `aphid page new "Title"`. The `docs` job of the [Release workflow](.github/workflows/release.yml) builds the site into an nginx image and deploys it to hoster ([docs/docs.stack.toml](docs/docs.stack.toml)) on every release tag.
 
 ## Development
 

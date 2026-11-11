@@ -207,6 +207,92 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh release edit "${{ github.ref_name }}" --draft=false
 
+  # Build the docs site into an nginx image and deploy it to hoster
+  # (stack file: docs/docs.stack.toml). The docs follow the released app, so
+  # they go out only once the GitHub release is published. Authenticated
+  # with the job's OIDC token, no secret: the stack's [deploy] rule allows
+  # this repository's v* tags from the `production` environment.
+  docs:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://granit.lhelge.se
+    permissions:
+      contents: read
+      packages: write   # push to ghcr with GITHUB_TOKEN
+      id-token: write   # request an OIDC token for hoster
+    env:
+      DOCS_IMAGE: ghcr.io/lhelge/granit-docs
+      DOCS_STACK: granit
+      DOCS_SERVICE: docs
+      DEPLOY_URL: https://hoster.lhelge.se/hooks/deploy
+      DEPLOY_AUDIENCE: https://hoster.lhelge.se
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build docs with aphid
+        uses: LHelge/aphid@v0.3.0
+        with:
+          config: docs/aphid.toml
+          output: docs/dist
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` is what the stack tracks, so hoster's poller deploys the
+      # docs even if the webhook below never arrives.
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCS_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: docs
+          push: true
+          platforms: linux/amd64   # the VPS's architecture
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+
+      # A fresh, single-use OIDC token for hoster's audience, then the digest
+      # to the deploy webhook. 202: deployment accepted; 200: already running
+      # this digest. Anything else fails the job with hoster's reason.
+      - name: Deploy to hoster
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          audience=$(jq -rn --arg a "$DEPLOY_AUDIENCE" '$a|@uri')
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value)
+          echo "::add-mask::$token"
+
+          body=$(jq -nc --arg s "$DOCS_STACK" --arg svc "$DOCS_SERVICE" --arg d "$DIGEST" \
+            --arg t "$GITHUB_REF_NAME" '{stack:$s, images:{($svc):$d}, tag:$t}')
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST "$DEPLOY_URL" \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $token" \
+            --data "$body")
+          echo "response ($status): $(cat response.json)"
+          case "$status" in
+            200|202) ;;
+            *) echo "::error::hoster refused the deploy ($status): $(cat response.json)"; exit 1 ;;
+          esac
+
   # Update the Homebrew tap (LHelge/homebrew-tap) cask to point at the
   # release just published: download the macOS dmg, compute its sha256,
   # regenerate Casks/granit.rb, and commit/push to the tap. A tap failure
