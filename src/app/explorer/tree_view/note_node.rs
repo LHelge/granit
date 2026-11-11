@@ -26,7 +26,7 @@ pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoVie
     };
 
     view! {
-        <li draggable="true" on:dragstart=on_dragstart>
+        <li>
             {move || {
                 let is_renaming = matches!(
                     ctx.renaming.get(),
@@ -68,20 +68,27 @@ pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoVie
                     let slug = slug.clone();
                     let slug_click = slug.clone();
                     let slug_ctx = slug.clone();
+                    let slug_row = slug.clone();
+                    // The row spans the full width for highlighting, but only
+                    // the icon + name is interactive: clicks to the right of
+                    // the name fall through to the tree background.
                     view! {
-                        <button
-                            class=move || {
-                                let base = "w-full text-left py-0.5 text-sm truncate transition-colors flex items-center gap-1";
-                                let is_active = ctx.active_note.get().map(|n| n.meta.slug == slug).unwrap_or(false);
-                                if is_active {
-                                    format!("{base} bg-base-content/10 text-base-content")
-                                } else if ctx.selected.get().contains(&slug) {
-                                    format!("{base} bg-primary/20 text-base-content")
-                                } else {
-                                    format!("{base} text-base-content/60 hover:bg-base-content/5 hover:text-base-content")
-                                }
+                        <div class=move || {
+                            let base = "flex py-0.5 text-sm transition-colors";
+                            let is_active = ctx.active_note.get().map(|n| n.meta.slug == slug_row).unwrap_or(false);
+                            if is_active {
+                                format!("{base} bg-base-content/10 text-base-content")
+                            } else if ctx.selected.get().contains(&slug_row) {
+                                format!("{base} bg-primary/20 text-base-content")
+                            } else {
+                                format!("{base} text-base-content/60 has-[>button:hover]:bg-base-content/5 has-[>button:hover]:text-base-content")
                             }
+                        }>
+                        <button
+                            class="min-w-0 max-w-full text-left flex items-center gap-1"
                             style=indent_style.clone()
+                            draggable="true"
+                            on:dragstart=on_dragstart.clone()
                             on:click=move |e: MouseEvent| {
                                 let ctrl = e.ctrl_key() || e.meta_key();
                                 let shift = e.shift_key();
@@ -116,8 +123,9 @@ pub(super) fn NoteNode(meta: DocumentMeta, indent_style: String) -> impl IntoVie
                                     <Icon icon=icondata_lu::LuStar width="100%" height="100%"/>
                                 </span>
                             </Show>
-                            {slug_click.clone()}
+                            <span class="truncate">{slug.clone()}</span>
                         </button>
+                        </div>
                     }
                     .into_any()
                 }
