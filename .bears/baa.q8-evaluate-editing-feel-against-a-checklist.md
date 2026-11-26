@@ -1,10 +1,10 @@
 ---
 id: baa.q8
 title: Evaluate editing feel against a checklist
-status: open
+status: done
 priority: P2
 created: "2026-11-26T12:15:35.642615Z"
-updated: "2026-11-26T12:15:35.642615Z"
+updated: "2026-11-26T21:06:19.035284Z"
 tags:
   - spike
   - gpui
@@ -44,3 +44,14 @@ Each item is marked pass, gap (acceptable for now), or blocker:
 ## Testing
 
 - Manual; this task is the test
+
+## Owner verdict (2026-11-26)
+
+Overall: editing "feels great". The owner tried the spike for real writing but did not mark the checklist item by item, so the per-item table is not filled in.
+
+| Item | Verdict |
+|---|---|
+| Fenced code blocks (```` ``` ````) | gap: a fence turns into a rendered code card as soon as it is typed; the owner would prefer to keep editing it as markdown, but can get used to it |
+| Everything else on the checklist | no gap reported; not checked item by item |
+
+G4 passes: no blockers.

@@ -1,10 +1,10 @@
 ---
 id: baa.jq
 title: "Fallback: assess alternative live-preview editor routes"
-status: open
+status: cancelled
 priority: P3
 created: "2026-11-26T12:16:03.418389Z"
-updated: "2026-11-26T12:16:03.418389Z"
+updated: "2026-11-26T21:06:31.287933Z"
 tags:
   - spike
   - gpui
@@ -37,3 +37,8 @@ Only needed if `zorite-editor` fails gate G2, G3 or G4 with a blocker. Cancel th
 ## Testing
 
 - None; the verdict table is the deliverable
+
+## Cancelled (2026-11-26)
+
+Not needed. G3 and G4 pass by the owner's verdict. G2 fails as written, but not because of an editor blocker: most of it is the backend's existing frontmatter rewrite on save (the Tauri app does the same), and the editor's own two failures (a `$$` fence sharing a line with words is split; Enter in a CRLF note writes LF) are fixable bugs, not reasons to change editor. The owner called a go.
+

@@ -1,15 +1,16 @@
 ---
 id: baa.85
 title: Open a cave and show the note tree in the sidebar
-status: open
+status: done
 priority: P1
 created: "2026-11-26T12:14:53.041330Z"
-updated: "2026-11-26T12:14:53.041330Z"
+updated: "2026-11-26T13:06:24.299483Z"
 tags:
   - spike
   - gpui
 depends_on:
   - baa.7f
+attempts: 1
 ---
 
 ## Summary

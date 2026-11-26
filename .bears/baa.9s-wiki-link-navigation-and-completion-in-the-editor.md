@@ -1,16 +1,17 @@
 ---
 id: baa.9s
 title: Wiki-link navigation and [[ completion in the editor
-status: open
+status: done
 priority: P1
 created: "2026-11-26T12:15:24.743266Z"
-updated: "2026-11-26T12:15:24.743266Z"
+updated: "2026-11-26T21:06:19.005614Z"
 tags:
   - spike
   - gpui
   - editor
 depends_on:
   - baa.cs
+attempts: 1
 ---
 
 ## Summary
@@ -41,3 +42,15 @@ Gate G3. Wiki-links are Granit's core navigation, and the current CodeMirror edi
 ## Testing
 
 - Manual on the cave copy; record a short list of what works and what does not for the write-up
+## Results (2026-11-26, zorite-editor 0.11.7)
+
+- Verdict on `[[` completion: (b) buildable in host code, built in the spike without patching the editor. The crate has no completion API; the Zorite app's completion lives in the GPL app (`src/slash.rs`, `src/ui/slash_menu.rs`), not the crate. The host uses `cursor()`, `text()`, `Changed`/`SelectionChanged`, window-space `bounds_for_offset` for anchoring, `capture_action` on an ancestor div for the editor's public `Up`/`Down`/`Newline`/`Indent`/`Dismiss` actions, and `replace_range` for the insert (which emits no `Changed`, so the host records the edit).
+- Navigation: `OpenWikiLink` is shared by `[[links]]`, `#tags`, property pills and block refs, so the host maps the last mouse press to a text offset (`character_index_for_point`) and navigates only when it is inside a real `[[...]]` outside code; the target is resolved through `Cave::resolve_link`. Anchor targets open the note and scroll the host scroll view to the `{#id}` heading. `OpenLink` goes to `cx.open_url` for http(s) and mailto only.
+- Broken links: `SyntaxStyle` has one link colour, so they cannot be coloured differently; the host marks them with the editor's diagnostics (red wavy underline). Side effect: right-clicking one opens the spell menu.
+- Differences from the CodeMirror editor: a plain click follows a link (no Cmd needed); the popup opens only on typing; typing `|` closes it; ranking is exact > prefix > word start > substring > subsequence.
+- Gaps: code detection ignores indented code blocks and multi-line inline code; clicking a broken link does nothing (no create-note action); link scanning runs over the whole text on every change (not measured on large notes).
+- Headless evidence: simulated clicks open plain, labelled and non-ASCII targets; an anchor click lands the heading within 100 px of the viewport top; `[[` + typing filters, Up/Down/Enter/Tab/Escape work. Rendering, popup position and the underline are not verified by eye.
+
+## Owner verdict (2026-11-26)
+
+"Wiki-links works fine now." Closed; G3 passes.
