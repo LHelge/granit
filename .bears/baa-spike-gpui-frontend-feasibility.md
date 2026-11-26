@@ -69,6 +69,7 @@ Branch `spike/gpui`, one commit per task. Resolved stack: gpui-kit **0.10.0** (0
 | baa.q8 owner evaluation | done; feels great, one gap (fenced code turns into a card at once) |
 | baa.jq fallback | cancelled, not needed |
 | baa.ng write-up | done; **go** (owner, 2026-11-26); results and draft port items in the task |
+| baa.s9 Linux | open; the owner wants to try the spike on their Linux machine before the port starts (`zem`) |
 
 Running it:
 
