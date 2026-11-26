@@ -52,3 +52,28 @@ A failed G2 or G3 triggers the fallback task before a no-go is called.
 ## Out of scope
 
 Agent chat wiring, settings UI, templates, todos, calendar, tags, search, backup UI, updater, bundling/signing, Windows and Linux builds, extracting a Tauri-free core crate. These belong to the port epic, which is only planned if the spike says go.
+## Handover status (2026-11-26, end of first session)
+
+Branch `spike/gpui`, one commit per task. Resolved stack: gpui-kit **0.10.0** (0.11 pins gpui-pre 0.3.14, which does not compile with zorite-editor 0.11.7 / gpui-bidi 0.1.2), zorite-editor 0.11.7, a single gpui-pre 0.3.12.
+
+| Task | State |
+|---|---|
+| baa.7f scaffold | done; G1 passes with gpui-kit 0.10 instead of 0.11 |
+| baa.85 cave tree | done |
+| baa.cs editor + save | done; owner tried it |
+| baa.6x round-trip | done; G2 fails as written (see the task's Results) |
+| baa.9s wiki-links | code committed, owner said it worked; in progress until closed explicitly |
+| baa.pb streaming | code committed; in progress, owner's verdict on the look is still missing |
+| baa.ac upstream panic | open; host-side workaround was in progress at handover |
+| baa.sp measurements | not started, blocked on a decision: the Tauri app has no cave-path override and reopens the last-open (live) cave, so the owner must switch it to the test cave first, or only the GPUI side is measured |
+| baa.q8 owner evaluation, baa.ng write-up | not started |
+
+Running it:
+
+- `cargo run --release -p granit-gpui -- <test-cave>`; use release for judging feel (the 6,900-line note loads in ~1 s in release, ~36 s in debug). `GRANIT_OPEN=<slug>` opens a note at startup.
+- `cargo run -p granit-gpui --bin stream_smoke` for the streaming test (G6).
+- `granit-gpui --roundtrip <cave> [--save body|editor]` for the G2 check.
+
+Test cave: never the live cave. The fixtures are not in git as a cave; rebuild them in a copy of a small cave with `python3 granit-gpui/fixtures/gen_cave.py <cave>` and copy `granit-gpui/fixtures/extra/*.md` into `<cave>/Spike/Extra/`, then `git init && git add -A && git commit` inside the cave so diffs are easy to read.
+
+Findings not yet in a task body: opening a note with several code blocks froze the app until the host reused one tree-sitter highlighter per language (creating one recompiles the language's queries); fixed in the editor commit.
