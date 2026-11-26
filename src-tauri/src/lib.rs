@@ -1,8 +1,8 @@
 mod agent;
 mod backup;
-mod cave;
+pub mod cave;
 mod commands;
-mod markdown;
+pub mod markdown;
 mod scheme;
 
 use commands::*;

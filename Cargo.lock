@@ -4766,7 +4766,9 @@ version = "0.10.1"
 dependencies = [
  "gpui-kit",
  "gpui-pre",
+ "granit",
  "serde_json",
+ "thiserror 2.0.20",
  "zorite-editor",
 ]
 
