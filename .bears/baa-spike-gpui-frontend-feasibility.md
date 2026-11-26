@@ -65,7 +65,7 @@ Branch `spike/gpui`, one commit per task. Resolved stack: gpui-kit **0.10.0** (0
 | baa.9s wiki-links | code committed, owner said it worked; in progress until closed explicitly |
 | baa.pb streaming | code committed; in progress, owner's verdict on the look is still missing |
 | baa.ac upstream panic | open; fixed in the owner's fork and sent upstream (issue #4, PR #5 on packetThrower/zorite-editor); the workspace is pinned to the fork branch until a release carries it |
-| baa.sp measurements | not started, blocked on a decision: the Tauri app has no cave-path override and reopens the last-open (live) cave, so the owner must switch it to the test cave first, or only the GPUI side is measured |
+| baa.sp measurements | done for the GPUI side (warm start 291 ms, idle footprint 103 MB, release binary 30 MB; table in the task); Tauri side skipped by the owner, who judged the spike obviously snappier |
 | baa.q8 owner evaluation, baa.ng write-up | not started |
 
 Running it:

@@ -219,6 +219,7 @@ impl Workspace {
         if let Ok(slug) = std::env::var("GRANIT_OPEN") {
             self.open_note(&slug, window, cx);
             self.select_in_tree(&slug, cx);
+            log_first_note_frame(window);
         }
         cx.notify();
     }
@@ -589,6 +590,29 @@ impl Render for Workspace {
             .child(self.render_sidebar(cx))
             .child(self.render_main(cx))
     }
+}
+
+/// Startup measurement (Bears baa.sp): with `GRANIT_T0_NS` set to the Unix
+/// time in nanoseconds at which the launcher spawned the process, print the
+/// time from spawn to the frame after the one that drew the startup note.
+/// Next-frame callbacks run before their frame is drawn, so the second one
+/// runs once the note's frame is done.
+fn log_first_note_frame(window: &mut Window) {
+    let Some(t0) = std::env::var("GRANIT_T0_NS")
+        .ok()
+        .and_then(|value| value.parse::<u128>().ok())
+    else {
+        return;
+    };
+    window.on_next_frame(move |window, _| {
+        window.on_next_frame(move |_, _| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos());
+            let ms = now.saturating_sub(t0) as f64 / 1e6;
+            eprintln!("granit-gpui: first-note-frame ms={ms:.1}");
+        });
+    });
 }
 
 fn main() {
