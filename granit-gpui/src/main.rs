@@ -2,20 +2,22 @@
 //! note tree in the sidebar and the selected note in a live-preview editor
 //! that saves back through the cave.
 
+mod link_nav;
 mod note_editor;
 mod roundtrip;
 mod save;
 mod sidebar;
 mod theme;
 mod tree_model;
+mod wiki_links;
 
 use std::path::PathBuf;
 
 use gpui::{
     div, px, size, App, AppContext, Bounds, Context, Entity, Focusable, InteractiveElement,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Task, TitlebarOptions, Window, WindowBounds,
-    WindowOptions,
+    IntoElement, KeyBinding, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
+    TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_kit::component::{
     tree::{tree, TreeState},
@@ -24,8 +26,10 @@ use gpui_kit::component::{
 use granit_lib::cave::{Cave, CaveError};
 use zorite_editor::{EditorEvent, EditorState};
 
+use link_nav::LinkCompletion;
 use save::{FlushOutcome, NoteSession, SaveStatus, AUTOSAVE_DELAY};
 use tree_model::{build_tree, item_kind, note_item_id, to_tree_items, ItemKind, TreeNode};
+use wiki_links::LinkIndex;
 
 gpui_kit::actions!(granit, [Quit, Save]);
 
@@ -37,12 +41,19 @@ enum OpenError {
     Cave(#[from] CaveError),
 }
 
-/// Open and scan the cave, then build its display tree. Blocking file I/O;
-/// runs on the background executor.
-fn load_cave(path: PathBuf) -> Result<(Cave, Vec<TreeNode>), OpenError> {
+/// What loading a cave produces: the cave, its display tree and its link
+/// targets.
+type LoadedCave = (Cave, Vec<TreeNode>, LinkIndex);
+
+/// Open and scan the cave, then build its display tree and link index.
+/// Blocking file I/O; runs on the background executor.
+fn load_cave(path: PathBuf) -> Result<LoadedCave, OpenError> {
     let cave = Cave::open(path)?;
-    let tree = build_tree(cave.list_notes()?, cave.list_folders()?);
-    Ok((cave, tree))
+    let notes = cave.list_notes()?;
+    let slugs = notes.iter().map(|meta| meta.slug.clone()).collect();
+    let tree = build_tree(notes, cave.list_folders()?);
+    let links = LinkIndex::from_cave(&cave, slugs);
+    Ok((cave, tree, links))
 }
 
 enum CaveStatus {
@@ -51,6 +62,9 @@ enum CaveStatus {
     Open {
         cave: Box<Cave>,
         tree: Entity<TreeState>,
+        /// Link targets for completion and broken-link marking; rebuilt
+        /// after saves, which can change anchors and broken targets.
+        links: LinkIndex,
         _selection: Subscription,
     },
 }
@@ -73,6 +87,16 @@ struct Workspace {
     scroll: ScrollHandle,
     /// Pending debounced save; replacing or dropping it cancels the timer.
     autosave: Option<Task<()>>,
+    /// The open `[[` completion popup, if any.
+    completion: Option<LinkCompletion>,
+    /// Start offset of a `[[` whose popup was dismissed with Escape; it
+    /// stays closed until the caret leaves that link.
+    dismissed_link: Option<usize>,
+    /// Window position of the last mouse press in the editor area, used to
+    /// tell which construct a link click came from.
+    last_press: Option<Point<Pixels>>,
+    /// Heading offset to scroll to once the editor has painted it.
+    pending_anchor: Option<usize>,
     _editor_events: Subscription,
     _appearance: Subscription,
     _quit: Subscription,
@@ -121,6 +145,10 @@ impl Workspace {
             editor,
             scroll: ScrollHandle::new(),
             autosave: None,
+            completion: None,
+            dismissed_link: None,
+            last_press: None,
+            pending_anchor: None,
             _editor_events: editor_events,
             _appearance: appearance,
             _quit: quit,
@@ -138,24 +166,26 @@ impl Workspace {
         });
     }
 
-    fn finish_loading(
-        &mut self,
-        result: Result<(Cave, Vec<TreeNode>), OpenError>,
-        cx: &mut Context<Self>,
-    ) {
+    fn finish_loading(&mut self, result: Result<LoadedCave, OpenError>, cx: &mut Context<Self>) {
         self.status = match result {
-            Ok((cave, nodes)) => {
+            Ok((cave, nodes, links)) => {
                 let items = to_tree_items(&nodes);
                 let tree = cx.new(|cx| TreeState::new(cx).items(items));
                 let selection = cx.observe(&tree, Self::sync_selection);
                 CaveStatus::Open {
                     cave: Box::new(cave),
                     tree,
+                    links,
                     _selection: selection,
                 }
             }
             Err(err) => CaveStatus::Failed(format!("Could not open cave: {err}").into()),
         };
+        // `GRANIT_OPEN=<slug>` opens a note at startup, for measurements.
+        if let Ok(slug) = std::env::var("GRANIT_OPEN") {
+            self.open_note(&slug, cx);
+            self.select_in_tree(&slug, cx);
+        }
         cx.notify();
     }
 
@@ -192,6 +222,9 @@ impl Workspace {
             return;
         }
         self.autosave = None;
+        self.completion = None;
+        self.dismissed_link = None;
+        self.pending_anchor = None;
 
         let CaveStatus::Open { cave, .. } = &self.status else {
             return;
@@ -208,19 +241,28 @@ impl Workspace {
                 message: format!("Could not open {slug}: {err}").into(),
             },
         };
+        // Loading keeps the previous note's diagnostics; replace them.
+        self.mark_broken_links(cx);
         cx.notify();
     }
 
     /// Point the tree selection back at the open note.
     fn reselect_open_note(&mut self, cx: &mut Context<Self>) {
-        let CaveStatus::Open { tree, .. } = &self.status else {
+        let Some(slug) = self.open_slug().map(str::to_string) else {
             return;
         };
-        let Some(slug) = self.open_slug() else {
+        self.select_in_tree(&slug, cx);
+    }
+
+    /// Select `slug` in the sidebar tree, expanding its folders and
+    /// scrolling it into view.
+    fn select_in_tree(&mut self, slug: &str, cx: &mut Context<Self>) {
+        let CaveStatus::Open { tree, .. } = &self.status else {
             return;
         };
         let id = SharedString::from(note_item_id(slug));
         tree.update(cx, |tree, cx| {
+            tree.reveal_item(&id, gpui::ScrollStrategy::Center, cx);
             if let Some(ix) = tree.index_of(&id) {
                 tree.set_selected_index(Some(ix), cx);
             }
@@ -233,13 +275,21 @@ impl Workspace {
         let OpenNote::Loaded(session) = &mut self.note else {
             return FlushOutcome::Unchanged;
         };
-        let CaveStatus::Open { cave, .. } = &mut self.status else {
+        let CaveStatus::Open { cave, links, .. } = &mut self.status else {
             return FlushOutcome::Unchanged;
         };
         let text = self.editor.read(cx).text();
         let outcome = session.flush(text, |slug, text| cave.save_note(slug, text).map(|_| ()));
-        if let FlushOutcome::Failed(err) = &outcome {
-            eprintln!("granit-gpui: could not save {}: {err}", session.slug());
+        match &outcome {
+            FlushOutcome::Failed(err) => {
+                eprintln!("granit-gpui: could not save {}: {err}", session.slug());
+            }
+            // The save may have added or removed anchors or link targets.
+            FlushOutcome::Saved => *links = LinkIndex::from_cave(cave, links.slugs().to_vec()),
+            FlushOutcome::Unchanged => {}
+        }
+        if outcome == FlushOutcome::Saved {
+            self.mark_broken_links(cx);
         }
         cx.notify();
         outcome
@@ -259,30 +309,43 @@ impl Workspace {
     ) {
         match event {
             EditorEvent::Changed => {
-                let OpenNote::Loaded(session) = &mut self.note else {
-                    return;
-                };
-                let generation = session.mark_edited();
-                self.autosave = Some(cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(AUTOSAVE_DELAY).await;
-                    this.update(cx, |this, cx| {
-                        let latest = matches!(
-                            &this.note,
-                            OpenNote::Loaded(session) if session.is_latest_edit(generation)
-                        );
-                        if latest {
-                            this.autosave = None;
-                            this.flush(cx);
-                        }
-                    })
-                    .ok();
-                }));
-                cx.notify();
+                self.note_edited(window, cx);
+                self.mark_broken_links(cx);
+                self.update_completion(true, window, cx);
+            }
+            EditorEvent::SelectionChanged => {
+                self.update_completion(false, window, cx);
                 self.follow_caret(window, cx);
             }
-            EditorEvent::SelectionChanged => self.follow_caret(window, cx),
+            EditorEvent::OpenWikiLink(target) => self.follow_wiki_link(target, window, cx),
+            EditorEvent::OpenLink(url) => self.open_external_link(url, cx),
             _ => {}
         }
+    }
+
+    /// Record a user edit of the open note: start the debounced save and
+    /// keep the caret in view.
+    fn note_edited(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let OpenNote::Loaded(session) = &mut self.note else {
+            return;
+        };
+        let generation = session.mark_edited();
+        self.autosave = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(AUTOSAVE_DELAY).await;
+            this.update(cx, |this, cx| {
+                let latest = matches!(
+                    &this.note,
+                    OpenNote::Loaded(session) if session.is_latest_edit(generation)
+                );
+                if latest {
+                    this.autosave = None;
+                    this.flush(cx);
+                }
+            })
+            .ok();
+        }));
+        cx.notify();
+        self.follow_caret(window, cx);
     }
 
     /// After the next paint (when the editor's layout reflects the change),
@@ -416,6 +479,32 @@ impl Workspace {
         let font_size = theme.font_size;
         let foreground = theme.foreground;
         let editor = self.editor.clone();
+        // The editor takes its font and text color from the ambient text
+        // style.
+        let editor_area = div()
+            .min_h_full()
+            .px_8()
+            .py_6()
+            .font_family(font_family)
+            .text_size(font_size)
+            .text_color(foreground)
+            // Runs before the editor's own press handling, so a link click
+            // can be traced back to the text under the pointer.
+            .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, _, _| {
+                this.last_press = Some(event.position);
+            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    let handle = this.editor.read(cx).focus_handle(cx);
+                    if !handle.is_focused(window) {
+                        window.focus(&handle, cx);
+                    }
+                }),
+            )
+            .child(div().max_w(px(820.)).child(editor));
+        let editor_area = self.intercept_completion_keys(editor_area, cx);
+        let completion = self.render_completion(cx);
         div()
             .flex_1()
             .min_w_0()
@@ -430,28 +519,9 @@ impl Workspace {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .child(
-                        // The editor takes its font and text color from the
-                        // ambient text style.
-                        div()
-                            .min_h_full()
-                            .px_8()
-                            .py_6()
-                            .font_family(font_family)
-                            .text_size(font_size)
-                            .text_color(foreground)
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _, window, cx| {
-                                    let handle = this.editor.read(cx).focus_handle(cx);
-                                    if !handle.is_focused(window) {
-                                        window.focus(&handle, cx);
-                                    }
-                                }),
-                            )
-                            .child(div().max_w(px(820.)).child(editor)),
-                    ),
+                    .child(editor_area),
             )
+            .children(completion)
             .into_any_element()
     }
 }
@@ -531,7 +601,7 @@ mod tests {
                           modified_at: \"2026-01-01T00:00:00Z\"\n---\n# A\n\nAlpha\n";
     const NOTE_B: &str = "# B\n";
 
-    fn fixture_cave() -> tempfile::TempDir {
+    pub(crate) fn fixture_cave() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".granit")).unwrap();
         std::fs::write(dir.path().join("a.md"), NOTE_A).unwrap();
@@ -540,7 +610,7 @@ mod tests {
         dir
     }
 
-    fn open_workspace(path: &Path, cx: &mut TestAppContext) -> WindowHandle<Workspace> {
+    pub(crate) fn open_workspace(path: &Path, cx: &mut TestAppContext) -> WindowHandle<Workspace> {
         let path = path.to_path_buf();
         let window = cx.update(|cx| {
             gpui_kit::init(cx);
@@ -554,7 +624,7 @@ mod tests {
         window
     }
 
-    fn open(window: WindowHandle<Workspace>, slug: &str, cx: &mut TestAppContext) {
+    pub(crate) fn open(window: WindowHandle<Workspace>, slug: &str, cx: &mut TestAppContext) {
         window
             .update(cx, |this, _, cx| this.open_note(slug, cx))
             .unwrap();
@@ -575,7 +645,7 @@ mod tests {
         cx.run_until_parked();
     }
 
-    fn editor_text(window: WindowHandle<Workspace>, cx: &mut TestAppContext) -> String {
+    pub(crate) fn editor_text(window: WindowHandle<Workspace>, cx: &mut TestAppContext) -> String {
         window
             .update(cx, |this, _, cx| this.editor.read(cx).text().to_string())
             .unwrap()

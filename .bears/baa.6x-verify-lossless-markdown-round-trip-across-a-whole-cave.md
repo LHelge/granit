@@ -1,10 +1,10 @@
 ---
 id: baa.6x
 title: Verify lossless markdown round-trip across a whole cave
-status: in_progress
+status: done
 priority: P1
 created: "2026-11-26T12:15:13.636400Z"
-updated: "2026-11-26T13:32:40.131955Z"
+updated: "2026-11-26T13:55:36.157147Z"
 tags:
   - spike
   - gpui
