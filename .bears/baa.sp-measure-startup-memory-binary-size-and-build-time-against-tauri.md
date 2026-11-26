@@ -42,3 +42,12 @@ A table with both apps for each row:
 ## Testing
 
 - The table is the deliverable; keep the raw numbers
+## Recorded from the scaffold task (baa.7f, 2026-11-26)
+
+Spike build times, debug profile, Apple M4 (10 cores), crates already downloaded, measured by the implementing subagent with `/usr/bin/time -p` into a fresh `CARGO_TARGET_DIR`:
+
+- Clean build of `granit-gpui`: 53.0 s wall (user 249 s, sys 29 s)
+- Incremental (touch `granit-gpui/src/main.rs`, rebuild): 0.9-1.7 s over three runs
+- Debug binary 106 MB; clean target directory 3.2 GB
+
+Measured before `granit_lib` was added as a dependency (baa.85), with gpui-kit 0.10.0, zorite-editor 0.11.7, gpui-pre 0.3.12. Re-measure once the dependency set is final.

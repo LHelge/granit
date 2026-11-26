@@ -1,13 +1,14 @@
 ---
 id: baa.7f
 title: Scaffold granit-gpui crate with a themed GPUI Kit window
-status: open
+status: done
 priority: P1
 created: "2026-11-26T12:14:43.000271Z"
-updated: "2026-11-26T12:14:43.000271Z"
+updated: "2026-11-26T12:50:58.730652Z"
 tags:
   - spike
   - gpui
+attempts: 1
 ---
 
 ## Summary
