@@ -1,10 +1,10 @@
 ---
 id: baa.ng
 title: Write up spike results and make the go/no-go call
-status: open
+status: done
 priority: P1
 created: "2026-11-26T12:16:13.865441Z"
-updated: "2026-11-26T12:16:13.865441Z"
+updated: "2026-11-26T21:07:12.110256Z"
 tags:
   - spike
   - gpui
@@ -93,7 +93,7 @@ The spike only had to make `cave` and `markdown` public in `src-tauri/src/lib.rs
 
 ### Draft port work items
 
-Not created yet; becomes a new Bears epic once the owner agrees.
+Created on 2026-11-26 as Bears epic `zem` ("Port the frontend to GPUI"), 16 tasks.
 
 1. Extract a Tauri-free core crate from `src-tauri/` (cave, markdown, agent, backup, config); replace the two Tauri touchpoints above.
 2. Fix the backend's frontmatter rewrite on save (G2): keep unknown keys, comments, flow-style tags and line endings; never delete a body-level `---` block.
