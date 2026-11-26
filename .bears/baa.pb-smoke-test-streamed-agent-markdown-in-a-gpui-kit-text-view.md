@@ -1,10 +1,10 @@
 ---
 id: baa.pb
 title: Smoke-test streamed agent markdown in a GPUI Kit text view
-status: in_progress
+status: done
 priority: P2
 created: "2026-11-26T12:16:03.395914Z"
-updated: "2026-11-26T12:51:19.116135Z"
+updated: "2026-11-26T21:06:19.021248Z"
 tags:
   - spike
   - gpui
@@ -47,3 +47,7 @@ Smoke test: `cargo run -p granit-gpui --bin stream_smoke` (`GRANIT_SMOKE_NO_FADE
 - Task lists: rendered as checkboxes, interactive only when `on_task_toggle` is set.
 - Raw HTML: on by default through the Kit's limited HTML parser, nothing executes; `markdown_raw_html(false)` shows it literally.
 - Heading anchors `{#id}`: no native support.
+
+## Owner verdict (2026-11-26)
+
+The streaming "looks awesome": markdown formatting is applied while the response streams, unlike the current Tauri app, where it appears only once the response is done. Closed; G6 passes. The gaps above (naive wiki-link rewriting in code spans, no broken-link styling, no `{#id}` anchors) are port work, not blockers.

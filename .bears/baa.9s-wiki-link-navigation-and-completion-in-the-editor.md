@@ -1,10 +1,10 @@
 ---
 id: baa.9s
 title: Wiki-link navigation and [[ completion in the editor
-status: in_progress
+status: done
 priority: P1
 created: "2026-11-26T12:15:24.743266Z"
-updated: "2026-11-26T13:55:36.180387Z"
+updated: "2026-11-26T21:06:19.005614Z"
 tags:
   - spike
   - gpui
@@ -50,3 +50,7 @@ Gate G3. Wiki-links are Granit's core navigation, and the current CodeMirror edi
 - Differences from the CodeMirror editor: a plain click follows a link (no Cmd needed); the popup opens only on typing; typing `|` closes it; ranking is exact > prefix > word start > substring > subsequence.
 - Gaps: code detection ignores indented code blocks and multi-line inline code; clicking a broken link does nothing (no create-note action); link scanning runs over the whole text on every change (not measured on large notes).
 - Headless evidence: simulated clicks open plain, labelled and non-ASCII targets; an anchor click lands the heading within 100 px of the viewport top; `[[` + typing filters, Up/Down/Enter/Tab/Escape work. Rendering, popup position and the underline are not verified by eye.
+
+## Owner verdict (2026-11-26)
+
+"Wiki-links works fine now." Closed; G3 passes.

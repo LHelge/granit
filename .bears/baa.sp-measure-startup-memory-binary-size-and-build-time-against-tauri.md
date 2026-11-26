@@ -1,10 +1,10 @@
 ---
 id: baa.sp
 title: Measure startup, memory, binary size and build time against Tauri
-status: in_progress
+status: done
 priority: P1
 created: "2026-11-26T12:15:47.292409Z"
-updated: "2026-11-26T18:59:32.528366Z"
+updated: "2026-11-26T21:01:23.230477Z"
 tags:
   - spike
   - gpui
