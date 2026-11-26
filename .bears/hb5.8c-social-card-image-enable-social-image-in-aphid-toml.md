@@ -1,0 +1,29 @@
+---
+id: hb5.8c
+title: Social card image + enable social_image in aphid.toml
+status: done
+priority: P2
+created: "2026-06-12T11:38:43.577277996Z"
+updated: "2026-06-12T12:22:41.040425688Z"
+tags:
+  - docs
+  - polish
+  - assets
+depends_on:
+  - f9w.2h
+---
+
+## Summary
+
+A 1200x630 OpenGraph/Twitter card: pebble logo + "Granit" wordmark + tagline on the Mocha `--base-200` background.
+
+## Acceptance Criteria
+
+- [ ] `docs/static/social.png`, 1200x630px, on-brand (Mocha background #181825, Inter, pebble logo)
+- [ ] `social_image = "static/social.png"` enabled in `docs/aphid.toml`
+- [ ] Page source shows `og:image` / Twitter card meta pointing at `https://granit.lhelge.se/static/social.png`
+
+## Implementation Notes
+
+- Generate with ImageMagick from `src-tauri/icons/512x512.png` + text, or hand it off — keep it simple.
+- Verify with a local build + view-source; optionally an OG preview tool after launch.

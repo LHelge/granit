@@ -3,13 +3,13 @@ id: zh9
 title: Define 4 Catppuccin flavors as custom DaisyUI themes
 status: done
 priority: P1
-created: 2026-04-04T20:23:33.126299881Z
-updated: 2026-04-04T20:30:59.992686813Z
+created: "2026-04-04T20:23:33.126299881Z"
+updated: "2026-04-04T20:30:59.992686813Z"
 tags:
-- css
-- theme
+  - css
+  - theme
 depends_on:
-- een
+  - uqp.zs
 ---
 
 ## Objective

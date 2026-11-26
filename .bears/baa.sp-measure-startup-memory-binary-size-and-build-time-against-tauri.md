@@ -1,0 +1,44 @@
+---
+id: baa.sp
+title: Measure startup, memory, binary size and build time against Tauri
+status: open
+priority: P1
+created: "2026-11-26T12:15:47.292409Z"
+updated: "2026-11-26T12:15:47.292409Z"
+tags:
+  - spike
+  - gpui
+depends_on:
+  - baa.cs
+---
+
+## Summary
+
+Gate G5. Put numbers on the goals behind the port: compare the spike against the current Tauri release build, on the same machine and the same cave, with a method that can be repeated.
+
+## Acceptance Criteria
+
+A table with both apps for each row:
+
+- [ ] Cold start to a visible note (app not run since login) and warm start, median of 5 runs each
+- [ ] Idle memory with one note open, after 30 s: for Tauri, the app process plus its WebKit WebContent, GPU and Networking helper processes; for GPUI, the single process. Report physical footprint, not only RSS
+- [ ] Idle CPU with a blinking caret, and CPU while scrolling a long note
+- [ ] Release binary / app bundle size
+- [ ] Clean build time and incremental build time (one-line change in the UI crate), plus the number of toolchains and steps needed (cargo only vs cargo + npm + trunk + wasm target)
+
+## Implementation Notes
+
+- Build both in release mode. Current app: `cd src-tauri && cargo tauri build`. Spike: `cargo build --release -p granit-gpui`.
+- Fairness: the Tauri app builds the RAG vector index and loads the embedding model in the background when a cave opens; the spike does not. Measure the Tauri app with RAG disabled in the cave's `.granit/config.yml`, and say so in the table. Optionally add a second Tauri row with RAG enabled to show how much of today's footprint is toolkit-independent.
+- The spike binary links `granit_lib` (Tauri, fastembed and the rest) even though it does not use most of it, so its binary size overstates a real port. Report it with that caveat.
+- Tools on macOS: `footprint <pid>` or `vmmap --summary <pid>` for memory; `ps -o rss` as a cross-check; helper processes are children named `com.apple.WebKit.*`. For startup, timestamp at process spawn and log a line from the first frame that paints a note (both apps), or screen-record at 60 fps and count frames if instrumenting the Tauri app is awkward.
+- The clean and incremental build times of the spike were already noted in the scaffold task; re-measure only if dependencies changed.
+
+## Edge Cases
+
+- Disk cache and Spotlight noise: discard the first run after a build
+- Thermal state: run the two apps interleaved, not all of one then all of the other
+
+## Testing
+
+- The table is the deliverable; keep the raw numbers
