@@ -15265,8 +15265,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[package]]
 name = "zorite-editor"
 version = "0.11.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9c5e09e34c327325cd092ba40b354587fe3fa049e30358e91237eec484cf76d"
+source = "git+https://github.com/LHelge/zorite-editor?branch=fix%2Fstale-layout-input#0a37b2ce15810a614daeeb18565ea8d4f6cc198a"
 dependencies = [
  "gpui-bidi",
  "gpui-pre",

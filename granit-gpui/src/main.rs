@@ -701,6 +701,12 @@ mod tests {
             .unwrap()
     }
 
+    fn editor_cursor(window: WindowHandle<Workspace>, cx: &mut TestAppContext) -> usize {
+        window
+            .update(cx, |this, _, cx| this.editor.read(cx).cursor())
+            .unwrap()
+    }
+
     fn body_of(raw: &str) -> &str {
         raw.rsplit_once("---\n").map_or(raw, |(_, body)| body)
     }
@@ -962,13 +968,12 @@ mod tests {
         assert!(focused, "the new editor has focus");
     }
 
-    /// Recorded editor behaviour (zorite-editor 0.11.7), not ours: within
-    /// one editor, an edit that removes lines leaves the painted layout
-    /// behind until the next paint, and a press over a removed row in that
-    /// window indexes past the line table. Fails once the crate fixes it.
+    /// Within one editor, an edit that removes lines leaves the painted
+    /// layout behind until the next paint. zorite-editor 0.11.7 indexed past
+    /// the line table on a press over a removed row in that window; the
+    /// patched editor (see `[patch.crates-io]`) ignores the press.
     #[gpui::test]
-    #[should_panic(expected = "index out of bounds")]
-    fn press_after_a_typed_edit_before_paint_panics_in_the_editor(cx: &mut TestAppContext) {
+    fn press_after_a_typed_edit_before_paint_is_ignored(cx: &mut TestAppContext) {
         let (dir, long) = long_cave();
         let window = open_workspace(dir.path(), cx);
         open(window, "long", cx);
@@ -987,13 +992,14 @@ mod tests {
             },
             cx,
         );
+        assert_eq!(editor_text(window, cx), "x");
+        assert_eq!(editor_cursor(window, cx), 1, "the caret stays after the x");
     }
 
     /// The same for a host edit through `replace_range`, which is how an
     /// accepted `[[` completion is applied.
     #[gpui::test]
-    #[should_panic(expected = "index out of bounds")]
-    fn press_after_replace_range_before_paint_panics_in_the_editor(cx: &mut TestAppContext) {
+    fn press_after_replace_range_before_paint_is_ignored(cx: &mut TestAppContext) {
         let (dir, long) = long_cave();
         let window = open_workspace(dir.path(), cx);
         open(window, "long", cx);
@@ -1011,15 +1017,20 @@ mod tests {
             },
             cx,
         );
+        assert_eq!(editor_text(window, cx), "[[b]]");
+        assert_eq!(
+            editor_cursor(window, cx),
+            5,
+            "the caret stays after the link"
+        );
     }
 
-    /// Recorded editor behaviour: when the edit keeps the line count but
-    /// shortens the lines, the stale press does not panic itself. It parks
-    /// the caret past the end of the text, and the next keystroke panics
-    /// slicing the document.
+    /// When the edit keeps the line count but shortens the lines, 0.11.7 did
+    /// not panic on the stale press itself: it parked the caret past the end
+    /// of the text and the next keystroke panicked slicing the document. The
+    /// patched editor leaves the caret where the edit put it.
     #[gpui::test]
-    #[should_panic(expected = "out of bounds for string")]
-    fn press_after_shortening_lines_parks_the_caret_out_of_range(cx: &mut TestAppContext) {
+    fn press_after_shortening_lines_keeps_the_caret_in_the_text(cx: &mut TestAppContext) {
         let dir = fixture_cave();
         let long: String = (0..30)
             .map(|i| format!("Line {i} with a long tail of words\n"))
@@ -1041,13 +1052,7 @@ mod tests {
             },
             cx,
         );
-        let (cursor, len) = window
-            .update(cx, |this, _, cx| {
-                let editor = this.editor.read(cx);
-                (editor.cursor(), editor.text().len())
-            })
-            .unwrap();
-        assert!(cursor > len, "caret {cursor} past the end ({len})");
+        assert_eq!(editor_cursor(window, cx), 60, "the caret stays at the end");
         window
             .update(cx, |this, window, cx| {
                 this.editor.update(cx, |editor, cx| {
@@ -1055,6 +1060,7 @@ mod tests {
                 })
             })
             .unwrap();
+        assert_eq!(editor_text(window, cx), "x\n".repeat(30) + "z");
     }
 
     #[gpui::test]

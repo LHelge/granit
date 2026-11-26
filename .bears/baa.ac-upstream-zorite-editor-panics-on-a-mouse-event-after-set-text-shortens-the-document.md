@@ -51,9 +51,9 @@ Line numbers are for the 0.11.7 crate source as published.
 
 ## Acceptance Criteria
 
-- [ ] Minimal reproduction outside Granit (a `gpui::test` or the crate's `examples/demo.rs`): paint a long document, `set_text` a short one, deliver a mouse move over a lower row without painting, observe the panic
-- [ ] Upstream issue filed with the reproduction
-- [ ] Fix prepared against the current upstream `main` (check first whether a newer release already fixes it) and sent as a PR
+- [x] Minimal reproduction outside Granit (a `gpui::test` or the crate's `examples/demo.rs`): paint a long document, `set_text` a short one, deliver a mouse move over a lower row without painting, observe the panic
+- [x] Upstream issue filed with the reproduction
+- [x] Fix prepared against the current upstream `main` (check first whether a newer release already fixes it) and sent as a PR
 - [ ] Spike host-side workaround removed or kept deliberately once a fixed version is used
 
 ## Notes
@@ -76,3 +76,14 @@ The diagnosis above is confirmed by headless tests in `granit-gpui/src/main.rs` 
 Host-side workaround in the spike: every opened note gets a fresh `EditorState` (test `press_before_the_switched_note_is_painted_does_not_panic`). This covers note switching only, not edits within a note. A further host mitigation (swallow mouse-down while `row_layout().len()` differs from the text's line count) was not built and would not cover the shortened-lines case.
 
 A fix upstream therefore needs to cover edits as well as `set_text`: clamp `row` against `line_starts().len()` and the resulting offset against `content.len()`, or invalidate the per-paint layout on every content change.
+
+## Upstream fix (2026-11-26)
+
+- Checked first: upstream `main` equalled the published 0.11.7 and the repo had no issues, so the bug was neither fixed nor reported.
+- Issue: packetThrower/zorite-editor#4. PR: packetThrower/zorite-editor#5, from branch `fix/stale-layout-input` of the owner's fork `LHelge/zorite-editor` (commit `0a37b2c`). Both open.
+- The fix: `EditorState::layout_is_stale()` (`content_gen != last_paint_gen`). While it holds, left/right press, mouse move and the gutter grip press return early, Up/Down fall back to logical-line movement, and `character_index_for_point` returns `None`. A press is dropped for the stale frame rather than clamped, so it cannot act on the wrong line.
+- Also found and covered: Up/Down right after an edit that removed the rows below the caret panicked the same way (`move_vertical`).
+- Not covered, no reproduction: other keyboard paths that read the painted layout (bidi horizontal steps, Tab between table cells).
+- The spike is pinned to the fork branch through `[patch.crates-io]` in the workspace `Cargo.toml`. The three `should_panic` tests are now `press_after_*_is_ignored` / `..._keeps_the_caret_in_the_text` and pass.
+
+Left for the last criterion: when a release carries the fix, drop the `[patch.crates-io]` entry and decide whether the fresh-editor-per-note workaround stays.
