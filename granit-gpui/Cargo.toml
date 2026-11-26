@@ -8,8 +8,12 @@ default-run = "granit-gpui"
 
 [dependencies]
 gpui = { package = "gpui-pre", version = "0.3" }
-gpui-kit = "0.10"
+gpui-kit = { version = "0.10", features = ["tree-sitter-rust", "tree-sitter-bash", "tree-sitter-python", "tree-sitter-javascript", "tree-sitter-typescript", "tree-sitter-toml", "tree-sitter-yaml"] }
 zorite-editor = "0.11"
 serde_json = "1"
 thiserror = "2.0.20"
 granit_lib = { path = "../src-tauri", package = "granit" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+gpui = { package = "gpui-pre", version = "0.3", features = ["test-support"] }

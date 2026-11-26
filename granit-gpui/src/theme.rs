@@ -4,7 +4,8 @@
 //! the web frontend's `styles.css`, mapped onto GPUI Kit's theme keys:
 //! `base-100` is the window background, `base-200` the sidebar and secondary
 //! surfaces, `base-300` the accent (hover) surface, `neutral` the borders and
-//! `neutral-content` the muted text.
+//! `neutral-content` the muted text. Code-block token colors follow the
+//! Catppuccin syntax palette of each flavour (`highlight` in `themes.json`).
 
 use std::rc::Rc;
 
@@ -59,5 +60,14 @@ mod tests {
         assert_eq!(dark.name.as_ref(), "Catppuccin Frappé");
         assert_eq!(light.colors.background.as_deref(), Some("#eff1f5"));
         assert_eq!(dark.colors.background.as_deref(), Some("#303446"));
+
+        for (config, mauve) in [(&light, 0x8839ef), (&dark, 0xca9ee6)] {
+            let keyword = config
+                .highlight
+                .as_ref()
+                .and_then(|style| style.syntax.style("keyword"))
+                .and_then(|style| style.color);
+            assert_eq!(keyword, Some(gpui::rgb(mauve).into()), "{}", config.name);
+        }
     }
 }

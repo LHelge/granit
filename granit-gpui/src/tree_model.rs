@@ -118,6 +118,11 @@ pub fn item_kind(id: &str) -> Option<ItemKind<'_>> {
     }
 }
 
+/// The tree item id of the note `slug`.
+pub fn note_item_id(slug: &str) -> String {
+    format!("{NOTE_ID_PREFIX}{slug}")
+}
+
 /// Convert the display tree into Kit tree items, all folders collapsed.
 pub fn to_tree_items(nodes: &[TreeNode]) -> Vec<TreeItem> {
     nodes.iter().map(to_tree_item).collect()
@@ -125,9 +130,7 @@ pub fn to_tree_items(nodes: &[TreeNode]) -> Vec<TreeItem> {
 
 fn to_tree_item(node: &TreeNode) -> TreeItem {
     match node {
-        TreeNode::Note(meta) => {
-            TreeItem::new(format!("{NOTE_ID_PREFIX}{}", meta.slug), meta.slug.clone())
-        }
+        TreeNode::Note(meta) => TreeItem::new(note_item_id(&meta.slug), meta.slug.clone()),
         TreeNode::Folder {
             name,
             path,

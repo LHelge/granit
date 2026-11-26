@@ -1,6 +1,9 @@
 //! GPUI frontend spike: opens the cave given on the command line, shows its
-//! note tree in the sidebar and the selected note's slug in the main area.
+//! note tree in the sidebar and the selected note in a live-preview editor
+//! that saves back through the cave.
 
+mod note_editor;
+mod save;
 mod sidebar;
 mod theme;
 mod tree_model;
@@ -8,19 +11,22 @@ mod tree_model;
 use std::path::PathBuf;
 
 use gpui::{
-    div, px, size, App, AppContext, Bounds, Context, Entity, IntoElement, KeyBinding,
-    ParentElement, Render, SharedString, Styled, Subscription, TitlebarOptions, Window,
-    WindowBounds, WindowOptions,
+    div, px, size, App, AppContext, Bounds, Context, Entity, Focusable, InteractiveElement,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Subscription, Task, TitlebarOptions, Window, WindowBounds,
+    WindowOptions,
 };
 use gpui_kit::component::{
     tree::{tree, TreeState},
     ActiveTheme,
 };
 use granit_lib::cave::{Cave, CaveError};
+use zorite_editor::{EditorEvent, EditorState};
 
-use tree_model::{build_tree, item_kind, to_tree_items, ItemKind, TreeNode};
+use save::{FlushOutcome, NoteSession, SaveStatus, AUTOSAVE_DELAY};
+use tree_model::{build_tree, item_kind, note_item_id, to_tree_items, ItemKind, TreeNode};
 
-gpui_kit::actions!(granit, [Quit]);
+gpui_kit::actions!(granit, [Quit, Save]);
 
 #[derive(Debug, thiserror::Error)]
 enum OpenError {
@@ -48,18 +54,54 @@ enum CaveStatus {
     },
 }
 
+/// The note shown in the main area.
+enum OpenNote {
+    None,
+    Loaded(NoteSession),
+    Failed {
+        slug: SharedString,
+        message: SharedString,
+    },
+}
+
 struct Workspace {
     status: CaveStatus,
-    /// Slug of the note selected in the tree; the main area shows this note.
-    selected_slug: Option<SharedString>,
+    note: OpenNote,
+    editor: Entity<EditorState>,
+    /// Scroll container around the editor, which grows to its content height.
+    scroll: ScrollHandle,
+    /// Pending debounced save; replacing or dropping it cancels the timer.
+    autosave: Option<Task<()>>,
+    _editor_events: Subscription,
     _appearance: Subscription,
+    _quit: Subscription,
 }
 
 impl Workspace {
     fn new(cave_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let appearance = cx.observe_window_appearance(window, |_, window, cx| {
+        let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder("Empty note"));
+        Self::apply_theme(&editor, cx);
+        let editor_events = cx.subscribe_in(&editor, window, Self::on_editor_event);
+
+        let appearance = cx.observe_window_appearance(window, |this, window, cx| {
             theme::sync(window, cx);
+            Self::apply_theme(&this.editor, cx);
         });
+
+        // Write pending edits before the window closes; a failed save keeps
+        // the window open so the error stays visible.
+        let this = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            this.update(cx, |this, cx| {
+                !matches!(this.flush(cx), FlushOutcome::Failed(_))
+            })
+            .unwrap_or(true)
+        });
+        let quit = cx.on_app_quit(|this, cx| {
+            this.flush(cx);
+            async {}
+        });
+
         let status = match cave_path {
             Some(path) => {
                 cx.spawn(async move |this, cx| {
@@ -74,9 +116,25 @@ impl Workspace {
         };
         Self {
             status,
-            selected_slug: None,
+            note: OpenNote::None,
+            editor,
+            scroll: ScrollHandle::new(),
+            autosave: None,
+            _editor_events: editor_events,
             _appearance: appearance,
+            _quit: quit,
         }
+    }
+
+    /// Style the editor from the active theme: live-preview colors and fonts
+    /// plus code-block token colors.
+    fn apply_theme(editor: &Entity<EditorState>, cx: &mut App) {
+        let style = note_editor::markdown_style(cx.theme());
+        let highlight_theme = cx.theme().highlight_theme.clone();
+        editor.update(cx, |editor, cx| {
+            editor.set_code_highlighter(note_editor::code_highlighter(highlight_theme));
+            editor.set_markdown_style(style, cx);
+        });
     }
 
     fn finish_loading(
@@ -109,10 +167,134 @@ impl Workspace {
         let Some(ItemKind::Note(slug)) = item_kind(&item.id) else {
             return;
         };
-        if self.selected_slug.as_deref() != Some(slug) {
-            self.selected_slug = Some(SharedString::from(slug.to_string()));
-            cx.notify();
+        let slug = slug.to_string();
+        self.open_note(&slug, cx);
+    }
+
+    fn open_slug(&self) -> Option<&str> {
+        match &self.note {
+            OpenNote::None => None,
+            OpenNote::Loaded(session) => Some(session.slug()),
+            OpenNote::Failed { slug, .. } => Some(slug),
         }
+    }
+
+    /// Show `slug` in the editor, writing the current note's pending edits
+    /// first. If that write fails, the current note stays open and the tree
+    /// selection is moved back to it.
+    fn open_note(&mut self, slug: &str, cx: &mut Context<Self>) {
+        if self.open_slug() == Some(slug) {
+            return;
+        }
+        if let FlushOutcome::Failed(_) = self.flush(cx) {
+            self.reselect_open_note(cx);
+            return;
+        }
+        self.autosave = None;
+
+        let CaveStatus::Open { cave, .. } = &self.status else {
+            return;
+        };
+        self.note = match cave.read_note(slug) {
+            Ok(doc) => {
+                self.editor
+                    .update(cx, |editor, cx| editor.set_text(doc.content.clone(), cx));
+                self.scroll.set_offset(gpui::point(px(0.), px(0.)));
+                OpenNote::Loaded(NoteSession::new(slug, doc.content))
+            }
+            Err(err) => OpenNote::Failed {
+                slug: slug.to_string().into(),
+                message: format!("Could not open {slug}: {err}").into(),
+            },
+        };
+        cx.notify();
+    }
+
+    /// Point the tree selection back at the open note.
+    fn reselect_open_note(&mut self, cx: &mut Context<Self>) {
+        let CaveStatus::Open { tree, .. } = &self.status else {
+            return;
+        };
+        let Some(slug) = self.open_slug() else {
+            return;
+        };
+        let id = SharedString::from(note_item_id(slug));
+        tree.update(cx, |tree, cx| {
+            if let Some(ix) = tree.index_of(&id) {
+                tree.set_selected_index(Some(ix), cx);
+            }
+        });
+        cx.notify();
+    }
+
+    /// Write the open note if it has unsaved edits.
+    fn flush(&mut self, cx: &mut Context<Self>) -> FlushOutcome {
+        let OpenNote::Loaded(session) = &mut self.note else {
+            return FlushOutcome::Unchanged;
+        };
+        let CaveStatus::Open { cave, .. } = &mut self.status else {
+            return FlushOutcome::Unchanged;
+        };
+        let text = self.editor.read(cx).text();
+        let outcome = session.flush(text, |slug, text| cave.save_note(slug, text).map(|_| ()));
+        if let FlushOutcome::Failed(err) = &outcome {
+            eprintln!("granit-gpui: could not save {}: {err}", session.slug());
+        }
+        cx.notify();
+        outcome
+    }
+
+    fn save(&mut self, _: &Save, _: &mut Window, cx: &mut Context<Self>) {
+        self.autosave = None;
+        self.flush(cx);
+    }
+
+    fn on_editor_event(
+        &mut self,
+        _: &Entity<EditorState>,
+        event: &EditorEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            EditorEvent::Changed => {
+                let OpenNote::Loaded(session) = &mut self.note else {
+                    return;
+                };
+                let generation = session.mark_edited();
+                self.autosave = Some(cx.spawn(async move |this, cx| {
+                    cx.background_executor().timer(AUTOSAVE_DELAY).await;
+                    this.update(cx, |this, cx| {
+                        let latest = matches!(
+                            &this.note,
+                            OpenNote::Loaded(session) if session.is_latest_edit(generation)
+                        );
+                        if latest {
+                            this.autosave = None;
+                            this.flush(cx);
+                        }
+                    })
+                    .ok();
+                }));
+                cx.notify();
+                self.follow_caret(window, cx);
+            }
+            EditorEvent::SelectionChanged => self.follow_caret(window, cx),
+            _ => {}
+        }
+    }
+
+    /// After the next paint (when the editor's layout reflects the change),
+    /// scroll the caret into view.
+    fn follow_caret(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.on_next_frame(window, |this, _, cx| {
+            let Some(caret) = this.editor.read(cx).caret_screen_bounds() else {
+                return;
+            };
+            if note_editor::scroll_caret_into_view(&this.scroll, caret.top(), caret.bottom()) {
+                cx.notify();
+            }
+        });
     }
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -161,18 +343,8 @@ impl Workspace {
             .child(content)
     }
 
-    fn render_main(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let message = match (&self.status, &self.selected_slug) {
-            (CaveStatus::Failed(err), _) => div().text_color(theme.danger).child(err.clone()),
-            (CaveStatus::Loading, _) => div()
-                .text_color(theme.muted_foreground)
-                .child("Opening cave…"),
-            (CaveStatus::Open { .. }, Some(slug)) => div().child(slug.clone()),
-            (CaveStatus::Open { .. }, None) => div()
-                .text_color(theme.muted_foreground)
-                .child("No note open"),
-        };
+    /// A centered message in the main area.
+    fn render_message(message: SharedString, color: gpui::Hsla) -> gpui::AnyElement {
         div()
             .flex_1()
             .h_full()
@@ -180,7 +352,106 @@ impl Workspace {
             .items_center()
             .justify_center()
             .p_6()
+            .text_color(color)
             .child(message)
+            .into_any_element()
+    }
+
+    /// Title bar above the editor: the note's slug and its save state.
+    fn render_note_header(
+        &self,
+        session: &NoteSession,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = cx.theme();
+        let (label, color): (SharedString, _) = match session.status() {
+            SaveStatus::Clean => ("".into(), theme.muted_foreground),
+            SaveStatus::Edited => ("Edited".into(), theme.muted_foreground),
+            SaveStatus::Failed(err) => (format!("Save failed: {err}").into(), theme.danger),
+        };
+        div()
+            .flex_none()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .px_6()
+            .py_2()
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(SharedString::from(session.slug().to_string())),
+            )
+            .child(div().flex_none().text_sm().text_color(color).child(label))
+    }
+
+    fn render_main(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let session = match (&self.status, &self.note) {
+            (CaveStatus::Failed(err), _) => {
+                return Self::render_message(err.clone(), theme.danger);
+            }
+            (CaveStatus::Loading, _) => {
+                let color = theme.muted_foreground;
+                return Self::render_message("Opening cave…".into(), color);
+            }
+            (CaveStatus::Open { .. }, OpenNote::None) => {
+                let color = theme.muted_foreground;
+                return Self::render_message("No note open".into(), color);
+            }
+            (CaveStatus::Open { .. }, OpenNote::Failed { message, .. }) => {
+                let color = theme.danger;
+                return Self::render_message(message.clone(), color);
+            }
+            (CaveStatus::Open { .. }, OpenNote::Loaded(session)) => session,
+        };
+
+        let font_family = theme.font_family.clone();
+        let font_size = theme.font_size;
+        let foreground = theme.foreground;
+        let editor = self.editor.clone();
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .flex_col()
+            .child(self.render_note_header(session, cx))
+            .child(
+                div()
+                    .id("note-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .child(
+                        // The editor takes its font and text color from the
+                        // ambient text style.
+                        div()
+                            .min_h_full()
+                            .px_8()
+                            .py_6()
+                            .font_family(font_family)
+                            .text_size(font_size)
+                            .text_color(foreground)
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    let handle = this.editor.read(cx).focus_handle(cx);
+                                    if !handle.is_focused(window) {
+                                        window.focus(&handle, cx);
+                                    }
+                                }),
+                            )
+                            .child(div().max_w(px(820.)).child(editor)),
+                    ),
+            )
+            .into_any_element()
     }
 }
 
@@ -193,6 +464,7 @@ impl Render for Workspace {
             .flex_row()
             .bg(theme.background)
             .text_color(theme.foreground)
+            .on_action(cx.listener(Self::save))
             .child(self.render_sidebar(cx))
             .child(self.render_main(cx))
     }
@@ -207,7 +479,10 @@ fn main() {
             gpui_kit::init(cx);
             zorite_editor::bind_keys(cx);
 
-            cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+            cx.bind_keys([
+                KeyBinding::new("cmd-q", Quit, None),
+                KeyBinding::new("cmd-s", Save, None),
+            ]);
             cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
@@ -235,4 +510,224 @@ fn main() {
             .expect("failed to open window");
             cx.activate(true);
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use gpui::{AppContext, EntityInputHandler, TestAppContext, WindowHandle};
+
+    use super::*;
+
+    const NOTE_A: &str = "---\ntags:\n  - tag\ncreated_at: \"2026-01-01T00:00:00Z\"\n\
+                          modified_at: \"2026-01-01T00:00:00Z\"\n---\n# A\n\nAlpha\n";
+    const NOTE_B: &str = "# B\n";
+
+    fn fixture_cave() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".granit")).unwrap();
+        std::fs::write(dir.path().join("a.md"), NOTE_A).unwrap();
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/b.md"), NOTE_B).unwrap();
+        dir
+    }
+
+    fn open_workspace(path: &Path, cx: &mut TestAppContext) -> WindowHandle<Workspace> {
+        let path = path.to_path_buf();
+        let window = cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.open_window(Default::default(), |window, cx| {
+                theme::install(window, cx);
+                cx.new(|cx| Workspace::new(Some(path), window, cx))
+            })
+            .unwrap()
+        });
+        cx.run_until_parked();
+        window
+    }
+
+    fn open(window: WindowHandle<Workspace>, slug: &str, cx: &mut TestAppContext) {
+        window
+            .update(cx, |this, _, cx| this.open_note(slug, cx))
+            .unwrap();
+        cx.run_until_parked();
+    }
+
+    /// Append `text` at the end of the document as typed input.
+    fn type_at_end(window: WindowHandle<Workspace>, text: &str, cx: &mut TestAppContext) {
+        window
+            .update(cx, |this, window, cx| {
+                this.editor.update(cx, |editor, cx| {
+                    let end = editor.text().len();
+                    editor.set_cursor(end, cx);
+                    editor.replace_text_in_range(None, text, window, cx);
+                });
+            })
+            .unwrap();
+        cx.run_until_parked();
+    }
+
+    fn editor_text(window: WindowHandle<Workspace>, cx: &mut TestAppContext) -> String {
+        window
+            .update(cx, |this, _, cx| this.editor.read(cx).text().to_string())
+            .unwrap()
+    }
+
+    fn body_of(raw: &str) -> &str {
+        raw.rsplit_once("---\n").map_or(raw, |(_, body)| body)
+    }
+
+    #[gpui::test]
+    fn opening_and_switching_without_edits_writes_nothing(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let window = open_workspace(dir.path(), cx);
+        cx.update(|cx| {
+            let name = &cx.theme().highlight_theme.name;
+            assert!(name.starts_with("Catppuccin"), "{name}");
+        });
+        open(window, "a", cx);
+        assert_eq!(editor_text(window, cx), "# A\n\nAlpha\n");
+        open(window, "b", cx);
+        assert_eq!(editor_text(window, cx), NOTE_B);
+        open(window, "a", cx);
+        cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+        cx.run_until_parked();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+            NOTE_A
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sub/b.md")).unwrap(),
+            NOTE_B
+        );
+    }
+
+    #[gpui::test]
+    fn save_action_writes_the_body_and_keeps_frontmatter(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "a", cx);
+        type_at_end(window, "!", cx);
+        window
+            .update(cx, |this, window, cx| this.save(&Save, window, cx))
+            .unwrap();
+
+        let raw = std::fs::read_to_string(dir.path().join("a.md")).unwrap();
+        assert_eq!(body_of(&raw), "# A\n\nAlpha\n!");
+        assert!(raw.starts_with("---\ntags:\n  - tag\ncreated_at: \"2026-01-01T00:00:00Z\"\n"));
+    }
+
+    #[gpui::test]
+    fn edits_are_saved_after_the_debounce(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "b", cx);
+        type_at_end(window, "x", cx);
+        cx.executor().advance_clock(AUTOSAVE_DELAY / 2);
+        cx.run_until_parked();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sub/b.md")).unwrap(),
+            NOTE_B
+        );
+
+        // A further edit restarts the quiet period.
+        type_at_end(window, "y", cx);
+        cx.executor().advance_clock(AUTOSAVE_DELAY * 3 / 4);
+        cx.run_until_parked();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sub/b.md")).unwrap(),
+            NOTE_B
+        );
+
+        cx.executor().advance_clock(AUTOSAVE_DELAY);
+        cx.run_until_parked();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sub/b.md")).unwrap(),
+            "# B\nxy"
+        );
+    }
+
+    #[gpui::test]
+    fn switching_notes_flushes_pending_edits(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "b", cx);
+        type_at_end(window, "z", cx);
+        open(window, "a", cx);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("sub/b.md")).unwrap(),
+            "# B\nz"
+        );
+        assert_eq!(editor_text(window, cx), "# A\n\nAlpha\n");
+        // The cancelled debounce does not write the new note.
+        cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+        cx.run_until_parked();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.md")).unwrap(),
+            NOTE_A
+        );
+    }
+
+    #[gpui::test]
+    fn failed_save_is_shown_and_keeps_the_note_open(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "b", cx);
+        type_at_end(window, "z", cx);
+        // Make the write fail: the note's folder is replaced by a file.
+        std::fs::remove_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub"), "").unwrap();
+
+        open(window, "a", cx);
+        window
+            .update(cx, |this, _, _| {
+                let OpenNote::Loaded(session) = &this.note else {
+                    panic!("note b should stay open");
+                };
+                assert_eq!(session.slug(), "b");
+                assert!(matches!(session.status(), SaveStatus::Failed(_)));
+            })
+            .unwrap();
+        assert_eq!(editor_text(window, cx), "# B\nz");
+    }
+
+    #[gpui::test]
+    fn rich_note_paints_headlessly(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let body = "# Title {#title}\n\n**bold** [[a]] [[a|label]] #tag\n\n\
+                    - [ ] open\n- [x] done\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n\
+                    ```rust\nfn main() {}\n```\n\n> [!NOTE]\n> alert\n";
+        std::fs::write(dir.path().join("rich.md"), body).unwrap();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "rich", cx);
+        cx.update_window(window.into(), |_, window, cx| {
+            let _ = window.draw(cx);
+        })
+        .unwrap();
+        let caret = window
+            .update(cx, |this, _, cx| this.editor.read(cx).caret_screen_bounds())
+            .unwrap();
+        assert!(caret.is_some(), "the editor laid out its text");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("rich.md")).unwrap(),
+            body
+        );
+    }
+
+    #[gpui::test]
+    fn empty_note_opens_and_saves(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        std::fs::write(dir.path().join("empty.md"), "").unwrap();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "empty", cx);
+        assert_eq!(editor_text(window, cx), "");
+        type_at_end(window, "hi", cx);
+        open(window, "a", cx);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("empty.md")).unwrap(),
+            "hi"
+        );
+    }
 }
