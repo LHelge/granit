@@ -1,6 +1,6 @@
 //! Theme mapping and host-side helpers for the zorite live-preview editor.
 
-use std::{cell::RefCell, collections::HashMap, ops::Range, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{font, point, px, HighlightStyle, Hsla, Pixels, ScrollHandle};
 use gpui_kit::component::{
@@ -59,36 +59,65 @@ pub fn markdown_style(theme: &Theme) -> SyntaxStyle {
 }
 
 /// Token colors for fenced code blocks, from the Kit's tree-sitter
-/// highlighter and the theme's syntax colors. The editor calls this while
-/// shaping text, so results are cached by language and block text.
+/// highlighter and the theme's syntax colors.
 ///
-/// One highlighter is kept per language and re-used for every block:
-/// creating one compiles the language's tree-sitter queries, which is far
-/// too slow to repeat for each block or keystroke.
-pub fn code_highlighter(theme: Arc<HighlightTheme>) -> impl Fn(&str, &str) -> Highlights + 'static {
-    let cache: RefCell<HashMap<(String, String), Highlights>> = RefCell::default();
-    let highlighters: RefCell<HashMap<String, SyntaxHighlighter>> = RefCell::default();
-    move |language, code| {
+/// One instance is shared by every editor the workspace creates. It keeps
+/// one highlighter per language, re-used for every block, because creating
+/// one compiles the language's tree-sitter queries, which is far too slow to
+/// repeat per block, keystroke or opened note. Results are cached by
+/// language and block text, since the editor calls this while shaping.
+pub struct CodeHighlighter {
+    theme: RefCell<Arc<HighlightTheme>>,
+    highlighters: RefCell<HashMap<String, SyntaxHighlighter>>,
+    cache: RefCell<HashMap<(String, String), Highlights>>,
+}
+
+impl CodeHighlighter {
+    pub fn new(theme: Arc<HighlightTheme>) -> Rc<Self> {
+        Rc::new(Self {
+            theme: RefCell::new(theme),
+            highlighters: RefCell::default(),
+            cache: RefCell::default(),
+        })
+    }
+
+    /// Switch to `theme`'s colors. The parsed highlighters are kept; only
+    /// the resolved styles are dropped.
+    pub fn set_theme(&self, theme: Arc<HighlightTheme>) {
+        if *self.theme.borrow() != theme {
+            *self.theme.borrow_mut() = theme;
+            self.cache.borrow_mut().clear();
+        }
+    }
+
+    pub fn highlight(&self, language: &str, code: &str) -> Highlights {
         let key = (language.to_lowercase(), code.to_string());
-        if let Some(hit) = cache.borrow().get(&key) {
+        if let Some(hit) = self.cache.borrow().get(&key) {
             return hit.clone();
         }
-        let mut highlighters = highlighters.borrow_mut();
+        let mut highlighters = self.highlighters.borrow_mut();
         let highlighter = highlighters
             .entry(key.0.clone())
             .or_insert_with(|| SyntaxHighlighter::new(&key.0));
         highlighter.update(None, &Rope::from_str(code), None);
+        let theme = self.theme.borrow();
         let styles: Highlights = highlighter
-            .styles(&(0..code.len()), &*theme)
+            .styles(&(0..code.len()), &**theme)
             .into_iter()
             .filter(|(range, style)| !range.is_empty() && *style != HighlightStyle::default())
             .collect();
-        let mut cache = cache.borrow_mut();
+        let mut cache = self.cache.borrow_mut();
         if cache.len() >= HIGHLIGHT_CACHE_LIMIT {
             cache.clear();
         }
         cache.insert(key, styles.clone());
         styles
+    }
+
+    /// The hook for `EditorState::set_code_highlighter`.
+    pub fn hook(self: &Rc<Self>) -> impl Fn(&str, &str) -> Highlights + 'static {
+        let this = self.clone();
+        move |language, code| this.highlight(language, code)
     }
 }
 
@@ -126,7 +155,7 @@ mod tests {
     use gpui_kit::component::{highlighter::HighlightTheme, Theme};
     use zorite_editor::{EditorEvent, EditorState};
 
-    use super::{code_highlighter, markdown_style};
+    use super::{markdown_style, CodeHighlighter};
     use crate::save::{FlushOutcome, NoteSession};
 
     /// Bodies covering the constructs the live preview restyles.
@@ -156,7 +185,8 @@ mod tests {
 
     #[test]
     fn code_blocks_get_token_colors() {
-        let highlight = code_highlighter(HighlightTheme::default_light());
+        let shared = CodeHighlighter::new(HighlightTheme::default_light());
+        let highlight = shared.hook();
         let code = "fn main() {\n    let x = \"s\";\n}";
         let styles = highlight("rust", code);
         assert!(
@@ -176,7 +206,7 @@ mod tests {
         assert!(other_styles
             .iter()
             .all(|(range, _)| range.end <= other.len()));
-        let fresh = code_highlighter(HighlightTheme::default_light());
+        let fresh = CodeHighlighter::new(HighlightTheme::default_light()).hook();
         assert_eq!(fresh("rust", code), styles);
         assert_eq!(fresh("rust", other), other_styles);
         assert_eq!(
@@ -184,6 +214,22 @@ mod tests {
             highlight("rust", &format!("{code}\n"))
         );
         assert!(highlight("nosuchlang", code).is_empty());
+
+        // A theme switch recolors without re-creating highlighters.
+        let parsed = shared.highlighters.borrow().len();
+        shared.set_theme(HighlightTheme::default_dark());
+        assert_eq!(shared.highlighters.borrow().len(), parsed);
+        let dark = shared.highlight("rust", code);
+        assert_eq!(
+            dark.iter()
+                .map(|(range, _)| range.clone())
+                .collect::<Vec<_>>(),
+            styles
+                .iter()
+                .map(|(range, _)| range.clone())
+                .collect::<Vec<_>>()
+        );
+        assert_ne!(dark, styles);
     }
 
     #[gpui::test]

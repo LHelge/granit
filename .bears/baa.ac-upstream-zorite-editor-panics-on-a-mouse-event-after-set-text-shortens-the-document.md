@@ -61,3 +61,18 @@ Line numbers are for the 0.11.7 crate source as published.
 - Host-side workaround being added in the spike: a fresh `EditorState` per opened note, whose empty layout takes the early-return path.
 - Not a spike gate by itself, but it belongs in the write-up (`baa.ng`) under editor robustness for G4.
 - Licence: only the MIT `zorite-editor` crate is involved; do not copy from the GPL-3.0 Zorite app.
+## Confirmed in the spike (2026-11-26)
+
+The diagnosis above is confirmed by headless tests in `granit-gpui/src/main.rs` (deliver a mouse-down/up through `window.dispatch_event` inside one `update_window`, before anything repaints; `simulate_click` does not reproduce it because the test window repaints first).
+
+- Layout is only written in paint (`element.rs` ~2420-2448). The owner's crash at `lib.rs:5147` is the inline-image (widget) row branch of `index_for_mouse_position`; the normal branch is at ~5157. `checkbox_at` on mouse-down also indexes `line_starts()[row]` from the stale layout.
+- Mouse-move reaches the function only during a drag-select (~3913); plain hover does not.
+- The hazard is not limited to `set_text`. The editor does not refresh layout on its own edits either. Recorded as `should_panic` tests that will start failing once the crate is fixed:
+  - `press_after_a_typed_edit_before_paint_panics_in_the_editor`: select all + type, then a press over a removed row -> index out of bounds at ~5157.
+  - `press_after_replace_range_before_paint_panics_in_the_editor`: the same through `replace_range`.
+  - `press_after_shortening_lines_parks_the_caret_out_of_range`: an edit that keeps the line count but shortens lines does not panic on the press; it parks the caret past the end of the text (caret 116, length 90) and the next keystroke panics at ~5405 ("end byte index 116 is out of bounds for string of length 90"). A delayed crash.
+- So any line-removing or line-shortening edit (delete or cut of a multi-line selection, paste over a selection, undo, an accepted completion) followed by a press, right-click or drag-select before the next paint is exposed. Rare at normal frame times; likely when frames are slow (very large note, debug build). Read from the source, not tested: on a stale row a checkbox click may toggle the wrong line.
+
+Host-side workaround in the spike: every opened note gets a fresh `EditorState` (test `press_before_the_switched_note_is_painted_does_not_panic`). This covers note switching only, not edits within a note. A further host mitigation (swallow mouse-down while `row_layout().len()` differs from the text's line count) was not built and would not cover the shortened-lines case.
+
+A fix upstream therefore needs to cover edits as well as `set_text`: clamp `row` against `line_starts().len()` and the resulting offset against `content.len()`, or invalidate the per-paint layout on every content change.

@@ -11,7 +11,7 @@ mod theme;
 mod tree_model;
 mod wiki_links;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use gpui::{
     div, px, size, App, AppContext, Bounds, Context, Entity, Focusable, InteractiveElement,
@@ -27,6 +27,7 @@ use granit_lib::cave::{Cave, CaveError};
 use zorite_editor::{EditorEvent, EditorState};
 
 use link_nav::LinkCompletion;
+use note_editor::CodeHighlighter;
 use save::{FlushOutcome, NoteSession, SaveStatus, AUTOSAVE_DELAY};
 use tree_model::{build_tree, item_kind, note_item_id, to_tree_items, ItemKind, TreeNode};
 use wiki_links::LinkIndex;
@@ -82,7 +83,15 @@ enum OpenNote {
 struct Workspace {
     status: CaveStatus,
     note: OpenNote,
+    /// The open note's editor. Every opened note gets a fresh one: the
+    /// editor maps mouse positions through the layout of its last paint,
+    /// and `set_text` leaves that layout in place, so re-using one editor
+    /// for a shorter note panics on input that arrives before the next
+    /// paint.
     editor: Entity<EditorState>,
+    /// Code-block highlighting shared by every editor this workspace
+    /// creates.
+    highlighter: Rc<CodeHighlighter>,
     /// Scroll container around the editor, which grows to its content height.
     scroll: ScrollHandle,
     /// Pending debounced save; replacing or dropping it cancels the timer.
@@ -97,20 +106,19 @@ struct Workspace {
     last_press: Option<Point<Pixels>>,
     /// Heading offset to scroll to once the editor has painted it.
     pending_anchor: Option<usize>,
-    _editor_events: Subscription,
+    editor_events: Subscription,
     _appearance: Subscription,
     _quit: Subscription,
 }
 
 impl Workspace {
     fn new(cave_path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder("Empty note"));
-        Self::apply_theme(&editor, cx);
-        let editor_events = cx.subscribe_in(&editor, window, Self::on_editor_event);
+        let highlighter = CodeHighlighter::new(cx.theme().highlight_theme.clone());
+        let (editor, editor_events) = Self::new_editor(&highlighter, window, cx);
 
         let appearance = cx.observe_window_appearance(window, |this, window, cx| {
             theme::sync(window, cx);
-            Self::apply_theme(&this.editor, cx);
+            Self::apply_theme(&this.editor, &this.highlighter, cx);
         });
 
         // Write pending edits before the window closes; a failed save keeps
@@ -129,10 +137,12 @@ impl Workspace {
 
         let status = match cave_path {
             Some(path) => {
-                cx.spawn(async move |this, cx| {
+                cx.spawn_in(window, async move |this, cx| {
                     let result = cx.background_spawn(async move { load_cave(path) }).await;
-                    this.update(cx, |this, cx| this.finish_loading(result, cx))
-                        .ok();
+                    this.update_in(cx, |this, window, cx| {
+                        this.finish_loading(result, window, cx)
+                    })
+                    .ok();
                 })
                 .detach();
                 CaveStatus::Loading
@@ -143,35 +153,59 @@ impl Workspace {
             status,
             note: OpenNote::None,
             editor,
+            highlighter,
             scroll: ScrollHandle::new(),
             autosave: None,
             completion: None,
             dismissed_link: None,
             last_press: None,
             pending_anchor: None,
-            _editor_events: editor_events,
+            editor_events,
             _appearance: appearance,
             _quit: quit,
         }
     }
 
+    /// A styled, empty editor and the subscription that routes its events
+    /// to the workspace.
+    fn new_editor(
+        highlighter: &Rc<CodeHighlighter>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Entity<EditorState>, Subscription) {
+        let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder("Empty note"));
+        Self::apply_theme(&editor, highlighter, cx);
+        let events = cx.subscribe_in(&editor, window, Self::on_editor_event);
+        (editor, events)
+    }
+
     /// Style the editor from the active theme: live-preview colors and fonts
     /// plus code-block token colors.
-    fn apply_theme(editor: &Entity<EditorState>, cx: &mut App) {
+    pub(crate) fn apply_theme(
+        editor: &Entity<EditorState>,
+        highlighter: &Rc<CodeHighlighter>,
+        cx: &mut App,
+    ) {
         let style = note_editor::markdown_style(cx.theme());
-        let highlight_theme = cx.theme().highlight_theme.clone();
+        highlighter.set_theme(cx.theme().highlight_theme.clone());
+        let hook = highlighter.hook();
         editor.update(cx, |editor, cx| {
-            editor.set_code_highlighter(note_editor::code_highlighter(highlight_theme));
+            editor.set_code_highlighter(hook);
             editor.set_markdown_style(style, cx);
         });
     }
 
-    fn finish_loading(&mut self, result: Result<LoadedCave, OpenError>, cx: &mut Context<Self>) {
+    fn finish_loading(
+        &mut self,
+        result: Result<LoadedCave, OpenError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.status = match result {
             Ok((cave, nodes, links)) => {
                 let items = to_tree_items(&nodes);
                 let tree = cx.new(|cx| TreeState::new(cx).items(items));
-                let selection = cx.observe(&tree, Self::sync_selection);
+                let selection = cx.observe_in(&tree, window, Self::sync_selection);
                 CaveStatus::Open {
                     cave: Box::new(cave),
                     tree,
@@ -183,7 +217,7 @@ impl Workspace {
         };
         // `GRANIT_OPEN=<slug>` opens a note at startup, for measurements.
         if let Ok(slug) = std::env::var("GRANIT_OPEN") {
-            self.open_note(&slug, cx);
+            self.open_note(&slug, window, cx);
             self.select_in_tree(&slug, cx);
         }
         cx.notify();
@@ -191,7 +225,12 @@ impl Workspace {
 
     /// Follow the tree selection when it lands on a note. Selecting a folder
     /// keeps the current note open.
-    fn sync_selection(&mut self, tree: Entity<TreeState>, cx: &mut Context<Self>) {
+    fn sync_selection(
+        &mut self,
+        tree: Entity<TreeState>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(item) = tree.read(cx).selected_item() else {
             return;
         };
@@ -199,7 +238,7 @@ impl Workspace {
             return;
         };
         let slug = slug.to_string();
-        self.open_note(&slug, cx);
+        self.open_note(&slug, window, cx);
     }
 
     fn open_slug(&self) -> Option<&str> {
@@ -210,10 +249,11 @@ impl Workspace {
         }
     }
 
-    /// Show `slug` in the editor, writing the current note's pending edits
-    /// first. If that write fails, the current note stays open and the tree
-    /// selection is moved back to it.
-    fn open_note(&mut self, slug: &str, cx: &mut Context<Self>) {
+    /// Show `slug` in a fresh editor, writing the current note's pending
+    /// edits first. If that write fails, the current note stays open and the
+    /// tree selection is moved back to it. The new editor takes focus when
+    /// the old one had it.
+    fn open_note(&mut self, slug: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.open_slug() == Some(slug) {
             return;
         }
@@ -231,8 +271,14 @@ impl Workspace {
         };
         self.note = match cave.read_note(slug) {
             Ok(doc) => {
-                self.editor
-                    .update(cx, |editor, cx| editor.set_text(doc.content.clone(), cx));
+                let had_focus = self.editor.read(cx).focus_handle(cx).is_focused(window);
+                let (editor, events) = Self::new_editor(&self.highlighter, window, cx);
+                editor.update(cx, |editor, cx| editor.set_text(doc.content.clone(), cx));
+                if had_focus {
+                    editor.update(cx, |editor, cx| editor.focus(window, cx));
+                }
+                self.editor = editor;
+                self.editor_events = events;
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
                 OpenNote::Loaded(NoteSession::new(slug, doc.content))
             }
@@ -302,11 +348,15 @@ impl Workspace {
 
     fn on_editor_event(
         &mut self,
-        _: &Entity<EditorState>,
+        emitter: &Entity<EditorState>,
         event: &EditorEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Only the open note's editor speaks for the workspace.
+        if *emitter != self.editor {
+            return;
+        }
         match event {
             EditorEvent::Changed => {
                 self.note_edited(window, cx);
@@ -593,7 +643,7 @@ fn main() {
 mod tests {
     use std::path::Path;
 
-    use gpui::{AppContext, EntityInputHandler, TestAppContext, WindowHandle};
+    use gpui::{AppContext, EntityInputHandler, Modifiers, TestAppContext, WindowHandle};
 
     use super::*;
 
@@ -626,7 +676,7 @@ mod tests {
 
     pub(crate) fn open(window: WindowHandle<Workspace>, slug: &str, cx: &mut TestAppContext) {
         window
-            .update(cx, |this, _, cx| this.open_note(slug, cx))
+            .update(cx, |this, window, cx| this.open_note(slug, window, cx))
             .unwrap();
         cx.run_until_parked();
     }
@@ -791,6 +841,220 @@ mod tests {
             std::fs::read_to_string(dir.path().join("rich.md")).unwrap(),
             body
         );
+    }
+
+    fn draw(window: WindowHandle<Workspace>, cx: &mut TestAppContext) {
+        cx.update_window(window.into(), |_, window, cx| {
+            let _ = window.draw(cx);
+        })
+        .unwrap();
+    }
+
+    /// Window position of the painted text at byte `offset` of the open note.
+    fn painted_position(
+        window: WindowHandle<Workspace>,
+        offset: usize,
+        cx: &mut TestAppContext,
+    ) -> Point<Pixels> {
+        let caret = window
+            .update(cx, |this, _, cx| {
+                this.editor.read(cx).bounds_for_offset(offset)
+            })
+            .unwrap()
+            .expect("the offset was painted");
+        gpui::point(caret.left() + px(2.), caret.top() + caret.size.height / 2.)
+    }
+
+    /// A cave with a note of many short lines next to the two-line `b`.
+    fn long_cave() -> (tempfile::TempDir, String) {
+        let dir = fixture_cave();
+        let long: String = (0..60).map(|i| format!("Line {i}\n")).collect();
+        std::fs::write(dir.path().join("long.md"), &long).unwrap();
+        (dir, long)
+    }
+
+    /// Run `act` on the workspace, then deliver a left press at `position`
+    /// before anything paints again: on macOS, input queued behind a slow
+    /// frame reaches the views in that state.
+    fn press_before_paint(
+        window: WindowHandle<Workspace>,
+        position: Point<Pixels>,
+        act: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>),
+        cx: &mut TestAppContext,
+    ) {
+        let workspace = window.root(cx).unwrap();
+        cx.update_window(window.into(), |_, window, cx| {
+            workspace.update(cx, |this, cx| act(this, window, cx));
+            let _ = window.dispatch_event(
+                gpui::PlatformInput::MouseDown(MouseDownEvent {
+                    button: MouseButton::Left,
+                    position,
+                    modifiers: Modifiers::none(),
+                    click_count: 1,
+                    first_mouse: false,
+                }),
+                cx,
+            );
+            let _ = window.dispatch_event(
+                gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
+                    button: MouseButton::Left,
+                    position,
+                    modifiers: Modifiers::none(),
+                    click_count: 1,
+                }),
+                cx,
+            );
+        })
+        .unwrap();
+        cx.run_until_parked();
+    }
+
+    /// A press over the previous note's lower rows, arriving after a switch
+    /// to a shorter note and before the next paint.
+    #[gpui::test]
+    fn press_before_the_switched_note_is_painted_does_not_panic(cx: &mut TestAppContext) {
+        let (dir, long) = long_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "long", cx);
+        draw(window, cx);
+        let position = painted_position(window, long.find("Line 20").unwrap(), cx);
+
+        press_before_paint(
+            window,
+            position,
+            |this, window, cx| this.open_note("b", window, cx),
+            cx,
+        );
+        assert_eq!(editor_text(window, cx), NOTE_B);
+        draw(window, cx);
+    }
+
+    /// The same after following a wiki-link, which switches notes from
+    /// inside the editor's own press handling. The new editor keeps focus.
+    #[gpui::test]
+    fn press_after_following_a_link_does_not_panic_and_keeps_focus(cx: &mut TestAppContext) {
+        let (dir, long) = long_cave();
+        std::fs::write(dir.path().join("long.md"), format!("{long}[[b]]\n")).unwrap();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "long", cx);
+        window
+            .update(cx, |this, window, cx| {
+                this.editor
+                    .update(cx, |editor, cx| editor.focus(window, cx))
+            })
+            .unwrap();
+        draw(window, cx);
+        let position = painted_position(window, long.find("Line 40").unwrap(), cx);
+
+        press_before_paint(
+            window,
+            position,
+            |this, window, cx| this.navigate_to_link("b", window, cx),
+            cx,
+        );
+        assert_eq!(editor_text(window, cx), NOTE_B);
+        draw(window, cx);
+        let focused = window
+            .update(cx, |this, window, cx| {
+                this.editor.read(cx).focus_handle(cx).is_focused(window)
+            })
+            .unwrap();
+        assert!(focused, "the new editor has focus");
+    }
+
+    /// Recorded editor behaviour (zorite-editor 0.11.7), not ours: within
+    /// one editor, an edit that removes lines leaves the painted layout
+    /// behind until the next paint, and a press over a removed row in that
+    /// window indexes past the line table. Fails once the crate fixes it.
+    #[gpui::test]
+    #[should_panic(expected = "index out of bounds")]
+    fn press_after_a_typed_edit_before_paint_panics_in_the_editor(cx: &mut TestAppContext) {
+        let (dir, long) = long_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "long", cx);
+        draw(window, cx);
+        let position = painted_position(window, long.find("Line 20").unwrap(), cx);
+
+        // Select all and type over it, as the user would.
+        press_before_paint(
+            window,
+            position,
+            |this, window, cx| {
+                this.editor.update(cx, |editor, cx| {
+                    let utf16_len = editor.text().encode_utf16().count();
+                    editor.replace_text_in_range(Some(0..utf16_len), "x", window, cx);
+                })
+            },
+            cx,
+        );
+    }
+
+    /// The same for a host edit through `replace_range`, which is how an
+    /// accepted `[[` completion is applied.
+    #[gpui::test]
+    #[should_panic(expected = "index out of bounds")]
+    fn press_after_replace_range_before_paint_panics_in_the_editor(cx: &mut TestAppContext) {
+        let (dir, long) = long_cave();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "long", cx);
+        draw(window, cx);
+        let position = painted_position(window, long.find("Line 20").unwrap(), cx);
+
+        press_before_paint(
+            window,
+            position,
+            |this, _, cx| {
+                this.editor.update(cx, |editor, cx| {
+                    let len = editor.text().len();
+                    editor.replace_range(0..len, "[[b]]", cx);
+                })
+            },
+            cx,
+        );
+    }
+
+    /// Recorded editor behaviour: when the edit keeps the line count but
+    /// shortens the lines, the stale press does not panic itself. It parks
+    /// the caret past the end of the text, and the next keystroke panics
+    /// slicing the document.
+    #[gpui::test]
+    #[should_panic(expected = "out of bounds for string")]
+    fn press_after_shortening_lines_parks_the_caret_out_of_range(cx: &mut TestAppContext) {
+        let dir = fixture_cave();
+        let long: String = (0..30)
+            .map(|i| format!("Line {i} with a long tail of words\n"))
+            .collect();
+        std::fs::write(dir.path().join("long.md"), &long).unwrap();
+        let window = open_workspace(dir.path(), cx);
+        open(window, "long", cx);
+        draw(window, cx);
+        let position = painted_position(window, long.rfind("words").unwrap(), cx);
+
+        press_before_paint(
+            window,
+            position,
+            |this, _, cx| {
+                this.editor.update(cx, |editor, cx| {
+                    let len = editor.text().len();
+                    editor.replace_range(0..len, &"x\n".repeat(30), cx);
+                })
+            },
+            cx,
+        );
+        let (cursor, len) = window
+            .update(cx, |this, _, cx| {
+                let editor = this.editor.read(cx);
+                (editor.cursor(), editor.text().len())
+            })
+            .unwrap();
+        assert!(cursor > len, "caret {cursor} past the end ({len})");
+        window
+            .update(cx, |this, window, cx| {
+                this.editor.update(cx, |editor, cx| {
+                    editor.replace_text_in_range(None, "z", window, cx)
+                })
+            })
+            .unwrap();
     }
 
     #[gpui::test]

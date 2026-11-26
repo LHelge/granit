@@ -398,7 +398,12 @@ pub fn open_probe_window(
     cx.open_window(options, |window, cx| {
         crate::theme::install(window, cx);
         let editor = cx.new(|cx| EditorState::new(window, cx));
-        crate::Workspace::apply_theme(&editor, cx);
+        let highlighter = crate::note_editor::CodeHighlighter::new(
+            gpui_kit::component::ActiveTheme::theme(cx)
+                .highlight_theme
+                .clone(),
+        );
+        crate::Workspace::apply_theme(&editor, &highlighter, cx);
         editor
     })
     .map_err(|err| err.to_string())

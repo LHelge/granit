@@ -249,7 +249,7 @@ impl Workspace {
                 None => (href, None),
             },
         };
-        self.open_note(&slug, cx);
+        self.open_note(&slug, window, cx);
         if self.open_slug() != Some(slug.as_str()) {
             // The current note could not be saved, so it stays open.
             return;
