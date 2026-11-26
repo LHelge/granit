@@ -1,16 +1,17 @@
 ---
 id: baa.6x
 title: Verify lossless markdown round-trip across a whole cave
-status: open
+status: in_progress
 priority: P1
 created: "2026-11-26T12:15:13.636400Z"
-updated: "2026-11-26T12:15:13.636400Z"
+updated: "2026-11-26T13:32:40.131955Z"
 tags:
   - spike
   - gpui
   - editor
 depends_on:
   - baa.cs
+attempts: 1
 ---
 
 ## Summary

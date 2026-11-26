@@ -1,16 +1,17 @@
 ---
 id: baa.cs
 title: Embed zorite-editor as live-preview note editor with save
-status: open
+status: done
 priority: P1
 created: "2026-11-26T12:15:03.841943Z"
-updated: "2026-11-26T12:15:03.841943Z"
+updated: "2026-11-26T13:32:40.096008Z"
 tags:
   - spike
   - gpui
   - editor
 depends_on:
   - baa.85
+attempts: 1
 ---
 
 ## Summary
