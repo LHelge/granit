@@ -1,0 +1,35 @@
+{
+  "worktree": {
+    "baseRef": "head"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cargo fmt:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo update:*)",
+      "Bash(SQLX_OFFLINE=true cargo clippy:*)",
+      "Bash(cd backend && cargo sqlx prepare:*)",
+      "Bash(wasm-pack test:*)",
+      "Bash(npm ci)",
+      "Bash(npm run build:*)",
+      "Bash(bea:*)",
+      "Bash(aphid build:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git -C:*)",
+      "Bash(git merge --ff-only:*)",
+      "Bash(git rebase:*)",
+      "Bash(git worktree:*)",
+      "Bash(git branch:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)"
+    ]
+  }
+}

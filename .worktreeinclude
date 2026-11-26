@@ -1,0 +1,3 @@
+# Gitignored files that Claude Code copies into the worktrees it creates.
+# The npm build output: Tauri's build script and Trunk need it.
+build/

@@ -131,6 +131,9 @@ cargo test -p granit-server
 
 # After changing any sqlx query, refresh the committed offline data:
 cd backend && cargo sqlx prepare -- --all-targets
+
+# Lint without a database, against the committed .sqlx/ data (as CI does):
+SQLX_OFFLINE=true cargo clippy -p granit-server -p granit-api --all-targets -- -D warnings
 ```
 
 Migrations are reversible sqlx-cli pairs in `migrations/` and run

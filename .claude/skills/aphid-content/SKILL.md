@@ -1,92 +1,52 @@
 ---
 name: aphid-content
-description: Reference for authoring aphid content. Use when writing or editing markdown files under content/blog/, content/wiki/, or content/pages/, or when configuring frontmatter or aphid.toml.
+description: Reference for writing Granit's documentation site (aphid). Use when writing or editing markdown under docs/content/ (wiki pages, standalone pages, home/wiki/404 intros) or changing docs/aphid.toml.
 ---
 
-This project is a static site built with aphid. Content lives under `content/` in three
-subdirectories:
+Granit's docs site is built with aphid from `docs/`: config in `docs/aphid.toml`, content
+in `docs/content/`, theme in `docs/theme/` (pebble; see the `aphid-theme` skill). The site
+has no blog.
 
-- `content/blog/` — dated blog posts
-- `content/wiki/` — reference/wiki pages
-- `content/pages/` — standalone pages (About, Contact, etc.)
+# Content files
 
-Every content file is Markdown with YAML frontmatter delimited by `---`.
+- `docs/content/wiki/<stem>.md` — the user documentation, at `/wiki/<stem>/`. Frontmatter
+  (all optional): `title` (else the stem), `category`, `tags` (list), `created`, `updated`
+  (YYYY-MM-DD), `draft`. `category` must be one of the `[[wiki_categories]]` names in
+  `aphid.toml` — Getting Started, Notes & Writing, AI Agent, Reference — or the page lands
+  in the default, Reference.
+- `docs/content/pages/<stem>.md` — standalone pages (About, Download) at `/<stem>/`.
+  Frontmatter: `title` (required), `order` (nav position, lower first), `draft`.
+- `docs/content/home.md`, `wiki.md`, `404.md` — no frontmatter: the bodies of the home
+  page, the intro above the wiki index, and the 404 page.
 
-# Blog posts (`content/blog/`)
+Scaffold a page with `aphid wiki new "Title"` or `aphid page new "Title"`, run from `docs/`.
 
-Required frontmatter: `title`, `slug`, `author`, `created` (YYYY-MM-DD).
-Optional: `updated`, `image`, `description`, `tags` (list of strings), `draft` (bool).
-The slug must be unique across all content. Use lowercase words separated by hyphens.
-Filename pattern: `YYYY-MM-DD_slug.md`. Posts live at `/blog/<slug>/`.
+# Headings
 
-# Wiki pages (`content/wiki/`)
+The page title comes from frontmatter and renders as `<h1>`; the pipeline shifts markdown
+headings one level down. Use `#` for top-level sections, `##` for subsections; never a `#`
+for the page title. `{#custom-id}` after a heading sets its id.
 
-All frontmatter fields are optional: `title`, `category`, `created`, `updated`, `tags`,
-`draft`. If `title` is omitted the filename stem is used. `category` groups pages on the
-wiki index. Wiki pages live at `/wiki/<stem>/`.
+# Links
 
-# Standalone pages (`content/pages/`)
+Link pages with `[[stem]]`, `[[stem|text]]`, `[[stem#section]]` or `[[#section]]`. Links are
+checked at build time, so prefer them over hand-written URLs. Check the page exists first.
 
-Required frontmatter: `title`. Optional: `order` (sort position in nav, lower = earlier),
-`draft`. Pages live at `/<stem>/`.
+# Markdown
 
-# Site config (`aphid.toml`)
+Tables, strikethrough, task lists, footnotes, fenced code with highlighting, ` ```mermaid `
+diagrams, and GitHub alerts (`> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+`[!CAUTION]`). Images and files go in `docs/static/` and are referenced as `/static/…`.
 
-Top-level fields used in content:
+# Building
 
-- `title` (required) — site title.
-- `base_url` (required) — canonical root URL, e.g. `https://example.com`.
-- `description` — used in feeds and SEO.
-- `source_dir` — content root (default `content`).
-- `static_dir` — static files root (default `static`).
-- `theme_dir` — theme directory (optional, defaults to the bundled theme).
-- `wiki_categories` — list of category names in display order.
-- `wiki_default_category` — fallback category name (default `"Other"`).
-- `favicon`, `social_image` — site-wide assets.
-- `feed_limit` (default 20), `posts_per_page` (default 10), `reading_wpm` (default 200).
-- `[[authors]]` — array of `{ name, link?, email?, image? }`.
-- `[[socials]]` — array of `{ platform, url }`.
+From `docs/`: `aphid serve` for a live preview on :3000, `aphid build -o <dir>` to build and
+validate links. Build into a scratch directory: a bare `aphid build` writes `docs/dist/`,
+which is gitignored but easy to confuse with the app's `dist/` at the repo root.
 
-# Heading rules
+# Style
 
-The page title comes from frontmatter and is rendered as `<h1>` by the template. The
-markdown pipeline shifts all heading levels up by one, so:
-
-- Use `#` for top-level sections (becomes `<h2>`)
-- Use `##` for subsections (becomes `<h3>`), and so on
-- Never use `#` for the page title — that comes from frontmatter
-
-Custom heading IDs are supported with the `{#custom-id}` suffix after the heading text.
-
-# Wiki-links
-
-Cross-link to any other page with `[[slug]]`, `[[slug|Display text]]`, `[[slug#section]]`,
-or `[[#section]]` (same-page anchor). The slug is the filename without the `.md` extension.
-Wiki-links resolve across blog, wiki, and pages — any slug that exists anywhere in
-`content/` is a valid target. Check what pages exist before linking.
-
-Prefer `[[page#section]]` over hand-written `/wiki/page/#section` markdown links — the wiki
-form is checked at build time.
-
-# Images and static files
-
-Place files in `static/` and reference them with absolute paths:
-`![alt](/static/images/photo.png)`. The user `static/` directory wins over theme static
-files of the same path.
-
-# Supported markdown extensions
-
-- Tables, strikethrough (`~~text~~`), task lists (`- [x]`), footnotes (`[^1]`).
-- Fenced code blocks with syntax highlighting (specify the language after the opening
-  fence). Highlighting emits CSS classes prefixed `hl-`.
-- Mermaid diagrams via fenced ` ```mermaid ` blocks — rendered as `<pre class="mermaid">`
-  and picked up by the bundled `mermaid.min.js`.
-- GitHub-style alerts: `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`,
-  `> [!CAUTION]`.
-
-# Writing style
-
-- Blog posts: open with a concise introduction, use `#` sections, link to wiki pages where
-  relevant, keep `description` to one or two sentences.
-- Wiki pages: neutral reference tone, start with a summary paragraph, cross-link liberally.
-- Keep content files focused — if a topic grows large, split it into its own page and link.
+Neutral reference tone, written for someone using the app, not developing it: name the UI
+by its labels, give the real keyboard shortcuts and defaults. Open with the point, not
+"This page covers…"; skip "Related pages" lists that repeat links already in the text.
+Each fact has one home: link to the page that owns it instead of repeating it.

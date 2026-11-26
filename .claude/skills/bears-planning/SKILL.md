@@ -1,147 +1,99 @@
 ---
 name: bears-planning
-description: "Plan work using Bears task tracker. Use when: breaking down features into epics and sub-tasks, creating implementation plans, organizing work with dependencies and priorities, scoping new functionality, decomposing user stories into trackable tasks."
+description: "Plan work in the Bears task tracker. Use when: breaking down features into epics and sub-tasks, creating implementation plans, organizing work with dependencies and priorities, scoping new functionality, decomposing user stories into trackable tasks."
 ---
 
 # Bears Planning
 
-Create structured plans using the Bears task tracker — epics with ordered, dependency-linked sub-tasks stored as Markdown files in `.bears/`.
+Plan work as Bears epics with ordered, dependency-linked sub-tasks, stored as Markdown files
+in `.bears/`. A planned epic is meant to be implementable unattended with
+`/implement-epic <id>`, so every task must be clear enough that an agent can build and a
+reviewer can check it without asking.
 
-## When to Use
+## Tools
 
-- Breaking a feature request into implementable tasks
-- Creating an epic with ordered sub-tasks
-- Organizing work with priorities and dependency chains
-- Scoping a refactor, bug fix, or new module
+Use the Bears MCP tools (`mcp__bears__*`). Without them, use the `bea` CLI with `--json`
+(`bea <command> --help` lists the flags):
 
-## Tool Selection
+| Action | MCP tool | CLI |
+|--------|----------|-----|
+| Create epic | `create_task(title, type="epic", priority)` | `bea create "Title" --epic --priority P1` |
+| Create task | `create_task(title, priority, parent, tags, depends_on)` | `bea create "Title" --priority P1 --parent <epic> --tag backend --depends-on <id>` |
+| Add / remove dependency | `add_dependency` / `remove_dependency` | `bea dep add <id> <dep>` / `bea dep remove <id> <dep>` |
+| Move under another epic | `update_task(id, parent)` | `bea update <id> --parent <epic>` |
+| List, ready, epics | `list_all_tasks`, `list_ready`, `list_epics` | `bea list --epic <id>`, `bea ready --epic <id>`, `bea epics` |
+| Show, search | `get_task`, `search_tasks` | `bea show <id>`, `bea search "query"` |
 
-**Prefer Bears MCP tools** (`mcp__bears__*`) when available. They are structured and avoid shell parsing issues.
+IDs are hierarchical: a task under epic `zem` gets an id like `zem.4q`, so the parent is part
+of the id and the file name. Moving a task renames it and its subtree; use the new ids the
+call returns.
 
-If MCP tools are not loaded or fail, **fall back to the `bea` CLI** with `--json` for structured output. See [CLI reference](./references/cli-fallback.md) for all commands.
+## Procedure
 
-### Quick tool mapping
+1. **Understand the request.** Clarify scope, must-haves and constraints with the user. Read
+   `CLAUDE.md` and the code where the work will land. Check existing epics and tasks
+   (`list_epics`, `search_tasks`) for duplicates and related work.
+2. **Design the breakdown** before creating anything:
+   - **One task = one commit = one release-note line.** Release notes are generated from
+     commit messages, so a task is a user-visible change (or a clearly named internal one),
+     and its title reads like the changelog entry it will become.
+   - **Layer order** for a feature: `granit-types` → backend module (`cave/`, `agent/`,
+     `backup/`, `markdown/`) → `#[tauri::command]` in `generate_handler!` → `src/app/ipc.rs`
+     wrapper → Leptos component. Split along that order only where a layer is substantial
+     on its own; a small feature is one task through all layers.
+   - **Tests and docs belong to the task** that changes the behaviour: its `CLAUDE.md` and
+     `docs/content/wiki/` updates are acceptance criteria, not a separate task.
+   - **Tasks that touch the same shared seam** (the IPC surface, `Cargo.toml`/`Cargo.lock`,
+     `package.json`, the JS bundles, migrations) are serialized with dependencies, since
+     only one can run at a time.
+   - **Tag** each task by area: `backend`, `frontend`, `agent`, `editor`, `docs`, `ci`,
+     `theme`. Tag work only the user can do (accounts, secrets, manual testing on a device)
+     `manual`: `implement-epic` never hands it to an agent. Name visual-design tasks plainly
+     (a theme, a panel's look): the orchestrator does those itself.
+3. **Create the epic**, then its sub-tasks in dependency order with `parent` and
+   `depends_on`. The epic's body states its scope and its own acceptance criteria (what
+   the whole branch must deliver).
+4. **Write each task body** — edit the `.bears/<id>-<slug>.md` file directly for long text:
 
-| Action | MCP tool | CLI fallback |
-|--------|----------|--------------|
-| Create epic | `create_task(title, type="epic", priority)` | `bea create "Title" --epic --priority P1 --json` |
-| Create task | `create_task(title, priority, parent, tags)` | `bea create "Title" --priority P1 --parent <id> --json` |
-| Add dependency | `add_dependency(id, depends_on)` | `bea dep add <id> <dep-id> --json` |
-| List ready | `list_ready(limit, tag, epic)` | `bea ready --json` |
-| List all tasks | `list_all_tasks(status, priority, tag, epic)` | `bea list --json` |
-| List epics | `list_epics()` | `bea epics --json` |
-| Get task | `get_task(id)` | `bea show <id> --json` |
-| Search tasks | `search_tasks(query)` | `bea search "query" --json` |
+   ```markdown
+   ## Summary
+   What this task delivers and why, in one paragraph.
 
-## Planning Procedure
+   ## Acceptance Criteria
+   - [ ] Specific, testable condition (each is implemented and tested, or the task is not done)
+   - [ ] Docs: the wiki page / CLAUDE.md section that changes
 
-### 1. Understand the request
+   ## Implementation Notes
+   - Files to read or modify, patterns to follow (with paths)
+   - Key types, commands, events, config fields involved
 
-Before creating any tasks, gather enough context:
+   ## Edge Cases
+   - Error scenarios, validation rules, effect on existing caves
+   ```
 
-- Clarify scope, constraints, and must-haves vs nice-to-haves with the user
-- Read relevant source files to understand existing patterns and where new code fits
-- Check existing tasks (`list_all_tasks` / `bea list --json`) to avoid duplicates
-- Check existing epics (`list_epics` / `bea epics --json`) for related work
+   The checks are the ones `CLAUDE.md` lists; do not restate them per task.
+5. **Verify and present.** `list_ready(epic)` should show only the first unblocked tasks.
+   Present a table to the user and ask them to confirm or adjust:
 
-### 2. Design the task breakdown
+   ```
+   Epic: <title> (<id>)
 
-Structure the plan mentally before creating anything:
+   | Task | ID | Priority | Depends on |
+   |------|----|----------|------------|
+   ```
 
-- **One concern per task**: each task should touch one layer or one logical unit
-- **Core before frontends**: model → storage → graph → service → CLI → MCP → TUI
-- **Tests are part of each task**, not separate tasks (unless purely adding coverage)
-- **Cross-cutting changes** (error types, docs) get their own task when substantial
+## Priorities
 
-### 3. Create the epic
-
-Create an epic to group the work:
-
-```
-create_task(
-  title="Feature name",
-  type="epic",
-  priority="P1",
-  body="## Scope\n\nWhat this epic covers.\n\n## Acceptance Criteria\n\n- [ ] Criterion 1\n- [ ] Criterion 2"
-)
-```
-
-### 4. Create sub-tasks with dependencies
-
-Create tasks in dependency order. Link each to the epic via `parent` and to predecessor tasks via `depends_on`:
-
-```
-create_task(title="Step 1: Data model", priority="P1", parent="<epic-id>", tags=["core"])
-  → returns id "abc"
-
-create_task(title="Step 2: Service logic", priority="P1", parent="<epic-id>", depends_on=["abc"])
-  → returns id "def"
-
-create_task(title="Step 3: CLI command", priority="P2", parent="<epic-id>", depends_on=["def"])
-```
-
-### 5. Enrich task bodies
-
-Each task body should include enough detail for an implementer to start without asking questions.
-
-**Task body template:**
-
-```markdown
-## Summary
-One-paragraph description of what this task accomplishes and why.
-
-## Acceptance Criteria
-- [ ] Criterion 1 — specific, testable
-- [ ] Criterion 2
-
-## Implementation Notes
-- Files to modify (with paths)
-- Patterns to follow from existing code
-- Key structs, functions, or types involved
-
-## Edge Cases
-- Error scenarios to handle
-- Validation rules
-
-## Testing
-- Unit tests to add or update
-- cargo fmt && cargo clippy && cargo test must pass
-```
-
-After creating a task, update its body with detailed content using `update_task(id, body=...)` or by editing the `.bears/*.md` file directly.
-
-> **Direct file editing**: Task files are plain Markdown with YAML frontmatter at `.bears/{id}-{slug}.md`. You can read and edit them with normal file tools — this is often easier than passing long body text through MCP or CLI arguments. Use file editing to add multi-line descriptions, acceptance criteria, and implementation notes. The frontmatter fields (`status`, `priority`, `tags`, `depends_on`, `parent`, etc.) can also be edited directly.
-
-### 6. Verify and present the plan
-
-- Use `list_all_tasks(epic="<id>")` or `bea list --epic <id> --json` to review all tasks
-- Confirm dependency ordering makes sense — `list_ready(epic="<id>")` should show only the first unblocked task(s)
-- Present a summary table to the user:
-
-```
-Epic: <title> (<id>)
-
-| # | Task | ID | Priority | Depends On |
-|---|------|----|----------|------------|
-| 1 | Data model changes | abc | P1 | — |
-| 2 | Service logic | def | P1 | abc |
-| 3 | CLI command | ghi | P2 | def |
-```
-
-## Priority Guidelines
-
-| Priority | When to use |
-|----------|-------------|
+| Priority | When |
+|----------|------|
 | **P0** | Blocking other work or breaking existing functionality |
 | **P1** | Core functionality on the critical path |
-| **P2** | Standard work, part of the epic but not blocking |
-| **P3** | Polish, nice-to-have, follow-up improvements |
+| **P2** | Standard work in the epic, not blocking |
+| **P3** | Polish, nice-to-have, follow-up |
 
-## Tips
+## Notes
 
-- **Keep tasks small** — completable in a single focused session
-- **Use tags** to categorize by area: `core`, `cli`, `mcp`, `tui`, `docs`
-- **Dependencies encode ordering**, not just tracking — use them to ensure correct execution order
-- **Epics auto-close** when all children complete — no need to manually complete them
-- **Check for cycles** — Bears rejects dependency edges that would create circular dependencies
-- **Edit files directly** — `.bears/*.md` files are plain Markdown; for long bodies or bulk edits, reading and editing the files is faster than repeated MCP/CLI calls
+- Epics close by themselves when their last child is done.
+- Bears rejects dependency edges that would form a cycle.
+- Frontmatter (`status`, `priority`, `tags`, `depends_on`) can be edited in the file; the
+  parent cannot, because it is part of the id.
