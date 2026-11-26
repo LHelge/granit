@@ -3,6 +3,7 @@
 //! that saves back through the cave.
 
 mod note_editor;
+mod roundtrip;
 mod save;
 mod sidebar;
 mod theme;
@@ -471,7 +472,13 @@ impl Render for Workspace {
 }
 
 fn main() {
-    let cave_path = std::env::args_os().nth(1).map(PathBuf::from);
+    let mut args = std::env::args_os().skip(1);
+    let first = args.next();
+    // Hidden mode for gate G2: `--roundtrip <cave> [...]` (see `roundtrip`).
+    if first.as_deref() == Some(std::ffi::OsStr::new("--roundtrip")) {
+        roundtrip::run_cli(args.collect());
+    }
+    let cave_path = first.map(PathBuf::from);
 
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
