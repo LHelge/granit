@@ -47,6 +47,7 @@ use log::warn;
 use zorite_editor::{EditorEvent, EditorState};
 
 use crate::cave_ops;
+use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use find::FindBar;
@@ -220,6 +221,9 @@ pub struct NoteView {
     /// construct a link click came from.
     last_press: Option<Point<Pixels>>,
     find: Option<FindBar>,
+    /// The font the editor area was last drawn with, for tests.
+    #[cfg(test)]
+    drawn_font: std::cell::Cell<Option<(SharedString, Pixels)>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -243,6 +247,15 @@ impl NoteView {
             }),
             // A theme switch (appearance or settings) restyles the editor.
             cx.observe_global::<Theme>(|this, cx| this.apply_theme(cx)),
+            // A font setting changes the ambient text style the editor draws with.
+            cx.subscribe(
+                &ConfigEvents::entity(cx),
+                |_, _, event: &ConfigEvent, cx| {
+                    if event.fonts {
+                        cx.notify();
+                    }
+                },
+            ),
             cx.subscribe(&CaveEvents::entity(cx), |this, _, event, _| {
                 if *event == CaveEvent::Opened {
                     this.image_cache.clear();
@@ -269,6 +282,8 @@ impl NoteView {
             dismissed_link: None,
             last_press: None,
             find: None,
+            #[cfg(test)]
+            drawn_font: Default::default(),
             _subscriptions: subscriptions,
         }
     }
@@ -298,6 +313,20 @@ impl NoteView {
     #[cfg(test)]
     pub fn editor(&self) -> Option<&Entity<EditorState>> {
         self.editor.as_ref()
+    }
+
+    /// The font family and size the editor area was last drawn with.
+    #[cfg(test)]
+    pub fn drawn_font(&self) -> Option<(SharedString, Pixels)> {
+        let font = self.drawn_font.take();
+        self.drawn_font.set(font.clone());
+        font
+    }
+
+    /// The name of the code-highlight theme the editors were last styled with.
+    #[cfg(test)]
+    pub fn highlight_theme_name(&self) -> SharedString {
+        self.highlighter.theme_name()
     }
 
     /// The open note's save state.
@@ -767,8 +796,11 @@ impl NoteView {
     }
 
     fn render_editor_area(&self, editor: Entity<EditorState>, cx: &mut Context<Self>) -> gpui::Div {
+        let font = Host::core(cx).lock_config().reading_font.clone();
         let theme = cx.theme();
-        let (font_family, font_size) = style::editor_font(theme);
+        let (font_family, font_size) = style::editor_font(&font, theme);
+        #[cfg(test)]
+        self.drawn_font.set(Some((font_family.clone(), font_size)));
         let area = div()
             .min_h_full()
             .px_8()

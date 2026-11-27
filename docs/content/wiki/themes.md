@@ -11,10 +11,12 @@ for the editor, reader, and agent chat. For the full configuration reference, se
 # Available themes
 
 Each theme has an id (the value written to the `theme` key) and a light or dark color scheme. The
-built-in `dark` theme is the default.
+default is `system`, which follows the operating system's appearance.
 
 | Theme | Id | Variant |
 | --- | --- | --- |
+| Follow the system | `system` | Light or dark, as the OS prefers |
+| Default Light | `light` | Light |
 | Default Dark | `dark` | Dark |
 | Catppuccin Latte | `catppuccin-latte` | Light |
 | Catppuccin Frappé | `catppuccin-frappe` | Dark |
@@ -28,7 +30,7 @@ built-in `dark` theme is the default.
 | One Dark | `one-dark` | Dark |
 
 > [!TIP]
-> Catppuccin Mocha is the designated dark theme for systems that prefer a dark color scheme.
+> With `system`, Catppuccin Mocha is used when the system prefers a dark color scheme.
 
 # Switching themes
 
@@ -41,7 +43,7 @@ You can also set it directly in the config file:
 theme: catppuccin-mocha
 ```
 
-The value is one of the ids from the table. An unknown id falls back to the default. Because the
+The value is one of the ids from the table. An unknown id follows the system, like `system`. Because the
 theme is stored per cave, different caves can use different themes.
 
 # Fonts

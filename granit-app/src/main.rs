@@ -14,6 +14,8 @@
 //! - [`explorer`]: the sidebar's note tree.
 //! - [`note_view`]: the main area, the open note in the live-preview editor.
 //! - [`chat`]: the agent chat panel; [`agent_ops`]: its agent settings.
+//! - [`settings`]: the settings view; [`config_ops`]: config changes and
+//!   their notifications ([`config_ops::ConfigEvents`]).
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`last_cave`]: the remembered last-open cave path.
 
@@ -21,12 +23,14 @@ mod agent_ops;
 mod assets;
 mod cave_ops;
 mod chat;
+mod config_ops;
 mod events;
 mod explorer;
 mod host;
 mod last_cave;
 mod note_view;
 mod runtime;
+mod settings;
 mod theme;
 mod workspace;
 

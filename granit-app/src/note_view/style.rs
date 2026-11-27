@@ -9,6 +9,7 @@ use gpui_kit::component::{
     input::Rope,
     Theme,
 };
+use granit_types::FontConfig;
 use zorite_editor::SyntaxStyle;
 
 /// Highlighted code blocks kept per highlighter; cleared when full, so a
@@ -26,10 +27,14 @@ fn with_alpha(mut color: Hsla, alpha: f32) -> Hsla {
     color
 }
 
-/// The editor's font family and size. The editor takes them from the
-/// ambient text style, which the note view sets from this.
-pub fn editor_font(theme: &Theme) -> (SharedString, Pixels) {
-    (theme.font_family.clone(), theme.font_size)
+/// The editor's font family and size: the cave config's `reading_font`
+/// (the Tauri app's reader font, as the live preview is also the reading
+/// view), resolved against the theme. Code stays in the theme's monospace
+/// font (`markdown_style`). The editor
+/// takes them from the ambient text style, which the note view sets from
+/// this.
+pub fn editor_font(font: &FontConfig, theme: &Theme) -> (SharedString, Pixels) {
+    crate::theme::resolve_font(font, theme)
 }
 
 /// Live-preview styling built from the active theme, so the editor follows
@@ -125,6 +130,12 @@ impl CodeHighlighter {
     pub fn hook(self: &Rc<Self>) -> impl Fn(&str, &str) -> Highlights + 'static {
         let this = self.clone();
         move |language, code| this.highlight(language, code)
+    }
+
+    /// The name of the highlight theme in use.
+    #[cfg(test)]
+    pub fn theme_name(&self) -> SharedString {
+        self.theme.borrow().name.clone().into()
     }
 
     /// How many languages have a parsed highlighter.

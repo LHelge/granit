@@ -30,10 +30,15 @@ pub enum AppIcon {
     SquarePen,
     Wrench,
     CircleAlert,
+    Settings,
+    Palette,
+    NotebookPen,
+    Bot,
+    Trash,
 }
 
 impl AppIcon {
-    const ALL: [AppIcon; 7] = [
+    const ALL: [AppIcon; 12] = [
         AppIcon::FilePlus,
         AppIcon::FolderPlus,
         AppIcon::PanelRight,
@@ -41,6 +46,11 @@ impl AppIcon {
         AppIcon::SquarePen,
         AppIcon::Wrench,
         AppIcon::CircleAlert,
+        AppIcon::Settings,
+        AppIcon::Palette,
+        AppIcon::NotebookPen,
+        AppIcon::Bot,
+        AppIcon::Trash,
     ];
 
     fn name(self) -> &'static str {
@@ -52,6 +62,11 @@ impl AppIcon {
             AppIcon::SquarePen => "square-pen",
             AppIcon::Wrench => "wrench",
             AppIcon::CircleAlert => "circle-alert",
+            AppIcon::Settings => "settings",
+            AppIcon::Palette => "palette",
+            AppIcon::NotebookPen => "notebook-pen",
+            AppIcon::Bot => "bot",
+            AppIcon::Trash => "trash-2",
         }
     }
 
@@ -64,6 +79,11 @@ impl AppIcon {
             AppIcon::SquarePen => icondata_lu::LuSquarePen,
             AppIcon::Wrench => icondata_lu::LuWrench,
             AppIcon::CircleAlert => icondata_lu::LuCircleAlert,
+            AppIcon::Settings => icondata_lu::LuSettings,
+            AppIcon::Palette => icondata_lu::LuPalette,
+            AppIcon::NotebookPen => icondata_lu::LuNotebookPen,
+            AppIcon::Bot => icondata_lu::LuBot,
+            AppIcon::Trash => icondata_lu::LuTrash2,
         }
     }
 }

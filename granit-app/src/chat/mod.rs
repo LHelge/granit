@@ -43,6 +43,7 @@ use log::warn;
 
 use crate::agent_ops;
 use crate::assets::AppIcon;
+use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::runtime;
@@ -86,6 +87,9 @@ pub struct ChatPanel {
     models_for: Option<ProviderConfig>,
     /// The running reply; dropping it cancels the stream.
     stream: Option<Task<()>>,
+    /// The font the panel was last drawn with, for tests.
+    #[cfg(test)]
+    drawn_font: Option<(SharedString, gpui::Pixels)>,
     /// Records every link URL the view parses, for tests.
     #[cfg(test)]
     link_probe: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
@@ -119,6 +123,9 @@ impl ChatPanel {
                 cx.subscribe(&CaveEvents::entity(cx), |this, _, event, cx| {
                     this.on_cave_event(event, cx)
                 }),
+                cx.subscribe(&ConfigEvents::entity(cx), |this, _, event, cx| {
+                    this.on_config_event(*event, cx)
+                }),
             ];
         let mut this = Self {
             view,
@@ -134,6 +141,8 @@ impl ChatPanel {
             models_task: None,
             models_for: None,
             stream: None,
+            #[cfg(test)]
+            drawn_font: None,
             #[cfg(test)]
             link_probe: Default::default(),
             _subscriptions: subscriptions,
@@ -164,6 +173,12 @@ impl ChatPanel {
     #[cfg(test)]
     pub fn take_stream(&mut self) -> Option<Task<()>> {
         self.stream.take()
+    }
+
+    /// The font family and size the panel was last drawn with.
+    #[cfg(test)]
+    pub fn drawn_font(&self) -> Option<(SharedString, gpui::Pixels)> {
+        self.drawn_font.clone()
     }
 
     /// Every link URL the view has parsed, for tests.
@@ -209,6 +224,20 @@ impl ChatPanel {
                 self.links.resolve_in(Vec::new(), true, cave);
                 Ok(())
             });
+        }
+        cx.notify();
+    }
+
+    /// A settings change: the chat font redraws; a reset agent (its config
+    /// or system prompt changed) stops the reply and starts over, and the
+    /// models are listed again if the selected provider changed.
+    fn on_config_event(&mut self, event: ConfigEvent, cx: &mut Context<Self>) {
+        if event.agent {
+            self.stream = None;
+            self.clear(cx);
+            if self.models_for.is_some() && agent_ops::selected_provider(cx) != self.models_for {
+                self.load_models(cx);
+            }
         }
         cx.notify();
     }
@@ -862,6 +891,11 @@ impl Render for ChatPanel {
                 config.agent_font.clone(),
             )
         };
+        let (font_family, font_size) = crate::theme::resolve_font(&font, theme);
+        #[cfg(test)]
+        {
+            self.drawn_font = Some((font_family.clone(), font_size));
+        }
         let (sidebar, sidebar_foreground, sidebar_border) = (
             theme.sidebar,
             theme.sidebar_foreground,
@@ -877,12 +911,8 @@ impl Render for ChatPanel {
             .text_color(sidebar_foreground)
             .border_l_1()
             .border_color(sidebar_border)
-            .when(!font.font_family.is_empty(), |panel| {
-                panel.font_family(SharedString::from(font.font_family.clone()))
-            })
-            .when(font.font_size > 0, |panel| {
-                panel.text_size(px(f32::from(font.font_size)))
-            })
+            .font_family(font_family)
+            .text_size(font_size)
             // While the task list is open, the arrow keys move through it.
             .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
                 if this.move_task_highlight(false, cx) {

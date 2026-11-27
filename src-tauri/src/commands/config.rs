@@ -2,8 +2,9 @@ use super::store::Store;
 use super::AppState;
 use crate::agent::{self, AgentError};
 use crate::cave::CaveError;
+use granit_core::config::{rag_index_action, RagIndexAction};
 use granit_core::open::{build_vector_index, prepare_cave, sync_vector_index, EmbeddingModelDirs};
-use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, RagConfig, SidebarConfig};
+use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
 use log::warn;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -118,30 +119,6 @@ pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn st
 fn get_config_for_state(state: &AppState) -> AppConfig {
     let config = state.lock_config();
     state.ipc_response(&config)
-}
-
-/// What a config change means for the RAG vector index.
-#[derive(Debug, PartialEq)]
-enum RagIndexAction {
-    /// No index-affecting RAG change.
-    None,
-    /// RAG was enabled, or is enabled and the embedding model changed:
-    /// the index must be (re)built.
-    Rebuild,
-    /// RAG was disabled: the index should be dropped.
-    Disable,
-}
-
-fn rag_index_action(old: &RagConfig, new: &RagConfig) -> RagIndexAction {
-    if new.enabled && (!old.enabled || old.embedding_model != new.embedding_model) {
-        RagIndexAction::Rebuild
-    } else if old.enabled && !new.enabled {
-        RagIndexAction::Disable
-    } else {
-        // A `top_n`-only change needs no rebuild: top_n is baked into the
-        // agent at build time and the caller resets the agent anyway.
-        RagIndexAction::None
-    }
 }
 
 /// Lock the config, apply `f`, persist to the cave, reset the agent, and
@@ -670,67 +647,7 @@ mod tests {
         assert!(saved.active_cave.is_none());
     }
 
-    // ── rag_index_action: which config changes touch the vector index ──────
-
-    fn rag(enabled: bool, top_n: usize, model: Option<&str>) -> RagConfig {
-        RagConfig {
-            enabled,
-            top_n,
-            embedding_model: model.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn rag_index_action_enabling_rag_rebuilds() {
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(true, 5, None)),
-            RagIndexAction::Rebuild
-        );
-    }
-
-    #[test]
-    fn rag_index_action_disabling_rag_disables() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(false, 5, None)),
-            RagIndexAction::Disable
-        );
-    }
-
-    #[test]
-    fn rag_index_action_model_change_while_enabled_rebuilds() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 5, Some("BGESmallENV15"))),
-            RagIndexAction::Rebuild
-        );
-    }
-
-    #[test]
-    fn rag_index_action_model_change_while_disabled_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(false, 5, Some("BGESmallENV15"))),
-            RagIndexAction::None
-        );
-    }
-
-    #[test]
-    fn rag_index_action_top_n_only_change_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 10, None)),
-            RagIndexAction::None
-        );
-    }
-
-    #[test]
-    fn rag_index_action_unchanged_config_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 5, None)),
-            RagIndexAction::None
-        );
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(false, 5, None)),
-            RagIndexAction::None
-        );
-    }
+    // rag_index_action itself is tested in granit_core::config.
 
     #[test]
     fn test_save_config_for_state_reports_rag_action() {

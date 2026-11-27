@@ -119,6 +119,76 @@ impl ProviderConfig {
             Self::OpenAiCompatible { .. } => "openai",
         }
     }
+
+    /// The provider types, as (`provider_type`, label), in the order the
+    /// settings offer them.
+    pub const TYPES: [(&'static str, &'static str); 4] = [
+        ("ollama", "Ollama"),
+        ("anthropic", "Anthropic"),
+        ("mistral", "Mistral"),
+        ("openai", "OpenAI-compatible"),
+    ];
+
+    /// A provider of `provider_type` with empty fields, or `None` for an
+    /// unknown type.
+    pub fn empty(provider_type: &str) -> Option<Self> {
+        Some(match provider_type {
+            "ollama" => Self::Ollama { base_url: None },
+            "anthropic" => Self::Anthropic {
+                api_key: String::new(),
+            },
+            "mistral" => Self::Mistral {
+                api_key: String::new(),
+            },
+            "openai" => Self::OpenAiCompatible {
+                api_key: String::new(),
+                base_url: String::new(),
+            },
+            _ => return None,
+        })
+    }
+
+    /// The base URL, for the providers that have one (Ollama: `""` means
+    /// its default).
+    pub fn base_url(&self) -> Option<&str> {
+        match self {
+            Self::Ollama { base_url } => Some(base_url.as_deref().unwrap_or_default()),
+            Self::OpenAiCompatible { base_url, .. } => Some(base_url),
+            Self::Anthropic { .. } | Self::Mistral { .. } => None,
+        }
+    }
+
+    /// Set the base URL, if this provider has one. An empty Ollama URL means
+    /// its default.
+    pub fn set_base_url(&mut self, url: &str) {
+        match self {
+            Self::Ollama { base_url } => {
+                *base_url = (!url.trim().is_empty()).then(|| url.to_string());
+            }
+            Self::OpenAiCompatible { base_url, .. } => *base_url = url.to_string(),
+            Self::Anthropic { .. } | Self::Mistral { .. } => {}
+        }
+    }
+
+    /// The API key, for the providers that need one.
+    pub fn api_key(&self) -> Option<&str> {
+        match self {
+            Self::Anthropic { api_key }
+            | Self::Mistral { api_key }
+            | Self::OpenAiCompatible { api_key, .. } => Some(api_key),
+            Self::Ollama { .. } => None,
+        }
+    }
+
+    /// Set the API key, if this provider needs one.
+    pub fn set_api_key(&mut self, key: &str) {
+        match self {
+            Self::Anthropic { api_key }
+            | Self::Mistral { api_key }
+            | Self::OpenAiCompatible { api_key, .. } => *api_key = key.to_string(),
+            Self::Ollama { .. } => {}
+        }
+    }
 }
 
 /// A provider entry with an optional user-defined name for disambiguation.
@@ -178,7 +248,7 @@ impl ProviderEntry {
 }
 
 /// Configuration for the `web_search` tool (Brave Search).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WebSearchConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
@@ -202,7 +272,7 @@ impl Default for WebSearchConfig {
 }
 
 /// Configuration for the `web_fetch` tool.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WebFetchConfig {
     #[serde(default = "WebFetchConfig::default_max_output_chars")]
     pub max_output_chars: usize,
@@ -223,7 +293,7 @@ impl Default for WebFetchConfig {
 }
 
 /// Per-tool configuration.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ToolsConfig {
     #[serde(default)]
     pub web_search: WebSearchConfig,
@@ -231,8 +301,25 @@ pub struct ToolsConfig {
     pub web_fetch: WebFetchConfig,
 }
 
+/// The embedding models the settings offer for RAG: (fastembed model id,
+/// label). `default` stands for `RagConfig::embedding_model: None`.
+pub const EMBEDDING_MODELS: &[(&str, &str)] = &[
+    ("default", "AllMiniLM-L6-v2 Quantized (built-in)"),
+    ("AllMiniLML6V2", "AllMiniLM-L6-v2"),
+    ("BGESmallENV15", "BGE Small EN v1.5"),
+    ("BGESmallENV15Q", "BGE Small EN v1.5 (quantized)"),
+    ("BGEBaseENV15", "BGE Base EN v1.5"),
+    ("BGEBaseENV15Q", "BGE Base EN v1.5 (quantized)"),
+    ("BGESmallZHV15", "BGE Small ZH v1.5"),
+    ("NomicEmbedTextV1", "Nomic Embed Text v1"),
+    ("NomicEmbedTextV15", "Nomic Embed Text v1.5"),
+    ("NomicEmbedTextV15Q", "Nomic Embed Text v1.5 (quantized)"),
+    ("MultilingualE5Small", "Multilingual E5 Small"),
+    ("MultilingualE5Large", "Multilingual E5 Large"),
+];
+
 /// RAG (Retrieval-Augmented Generation) configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RagConfig {
     /// Whether RAG is enabled.
     #[serde(default = "RagConfig::default_enabled")]
@@ -277,7 +364,7 @@ pub struct AgentDocInfo {
 }
 
 /// Agent configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AgentConfig {
     #[serde(default = "AgentConfig::default_providers")]
     pub providers: Vec<ProviderEntry>,
@@ -326,6 +413,49 @@ impl AgentConfig {
             name: None,
             provider: ProviderConfig::Ollama { base_url: None },
         }]
+    }
+
+    /// Add an Ollama provider with its default URL at the end.
+    pub fn add_provider(&mut self) {
+        self.providers.push(ProviderEntry {
+            name: None,
+            provider: ProviderConfig::Ollama { base_url: None },
+        });
+    }
+
+    /// Remove the provider at `index`, keeping the selection on the same
+    /// provider; removing the selected one selects the first, with its
+    /// default model.
+    pub fn remove_provider(&mut self, index: usize) {
+        if index >= self.providers.len() {
+            return;
+        }
+        self.providers.remove(index);
+        if self.selected_provider == index {
+            self.selected_provider = 0;
+            self.selected_model = None;
+        } else if self.selected_provider > index {
+            self.selected_provider -= 1;
+        }
+    }
+
+    /// Change the provider at `index` to an empty one of `provider_type`
+    /// (unless it already is one). The selected provider then uses its
+    /// default model.
+    pub fn set_provider_type(&mut self, index: usize, provider_type: &str) {
+        let Some(entry) = self.providers.get_mut(index) else {
+            return;
+        };
+        if entry.provider.provider_type() == provider_type {
+            return;
+        }
+        let Some(provider) = ProviderConfig::empty(provider_type) else {
+            return;
+        };
+        entry.provider = provider;
+        if self.selected_provider == index {
+            self.selected_model = None;
+        }
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -462,6 +592,79 @@ pub struct ToolInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn three_providers() -> AgentConfig {
+        let mut config = AgentConfig::default();
+        config.add_provider();
+        config.add_provider();
+        config.set_provider_type(1, "anthropic");
+        config.set_provider_type(2, "openai");
+        config
+    }
+
+    #[test]
+    fn removing_a_provider_keeps_the_selection_on_the_same_one() {
+        let mut config = three_providers();
+        config.selected_provider = 2;
+        config.selected_model = Some("gpt".into());
+
+        config.remove_provider(0);
+        assert_eq!(config.providers.len(), 2);
+        assert_eq!(config.selected_provider, 1);
+        assert_eq!(config.providers[1].provider.provider_type(), "openai");
+        assert_eq!(config.selected_model.as_deref(), Some("gpt"));
+
+        config.remove_provider(1);
+        assert_eq!(config.selected_provider, 0);
+        assert_eq!(config.selected_model, None);
+        config.remove_provider(5);
+        assert_eq!(config.providers.len(), 1);
+    }
+
+    #[test]
+    fn changing_a_provider_type_empties_it_and_resets_its_model() {
+        let mut config = three_providers();
+        config.providers[1].provider.set_api_key("sk-secret");
+        config.selected_provider = 1;
+        config.selected_model = Some("claude".into());
+
+        config.set_provider_type(1, "anthropic");
+        assert_eq!(config.providers[1].provider.api_key(), Some("sk-secret"));
+        assert_eq!(config.selected_model.as_deref(), Some("claude"));
+
+        config.set_provider_type(1, "mistral");
+        assert_eq!(config.providers[1].provider.api_key(), Some(""));
+        assert_eq!(config.selected_model, None);
+
+        config.set_provider_type(1, "nonsense");
+        assert_eq!(config.providers[1].provider.provider_type(), "mistral");
+    }
+
+    #[test]
+    fn provider_fields_are_set_where_they_exist() {
+        let mut ollama = ProviderConfig::empty("ollama").unwrap();
+        ollama.set_base_url("http://box:11434");
+        assert_eq!(ollama.base_url(), Some("http://box:11434"));
+        ollama.set_base_url("  ");
+        assert_eq!(ollama, ProviderConfig::Ollama { base_url: None });
+        ollama.set_api_key("ignored");
+        assert_eq!(ollama.api_key(), None);
+
+        let mut openai = ProviderConfig::empty("openai").unwrap();
+        openai.set_base_url("https://api.example/v1");
+        openai.set_api_key("sk");
+        assert_eq!(
+            openai,
+            ProviderConfig::OpenAiCompatible {
+                api_key: "sk".into(),
+                base_url: "https://api.example/v1".into()
+            }
+        );
+        assert_eq!(ProviderConfig::empty("nope"), None);
+        for (kind, _) in ProviderConfig::TYPES {
+            assert_eq!(ProviderConfig::empty(kind).unwrap().provider_type(), kind);
+        }
+    }
 
     #[test]
     fn provider_config_yaml_round_trip() {

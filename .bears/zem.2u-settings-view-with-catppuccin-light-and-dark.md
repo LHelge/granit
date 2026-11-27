@@ -1,10 +1,10 @@
 ---
 id: zem.2u
 title: Settings view with Catppuccin light and dark
-status: open
+status: done
 priority: P2
 created: "2026-11-26T21:09:38.877282Z"
-updated: "2026-11-26T21:09:38.877282Z"
+updated: "2026-11-27T01:38:04.996593982Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - settings
 depends_on:
   - zem.4b
+attempts: 1
 ---
 
 ## Summary

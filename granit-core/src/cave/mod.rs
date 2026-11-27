@@ -504,7 +504,7 @@ mod tests {
         assert!(config_path.exists());
 
         let config = cave.load_config().unwrap();
-        assert_eq!(config.theme, "dark");
+        assert_eq!(config.theme, "system");
         assert_eq!(config.daily_note_folder, "Daily");
     }
 
@@ -516,7 +516,7 @@ mod tests {
         std::fs::write(cave.config_path(), "").unwrap();
 
         let config = cave.load_config().unwrap();
-        assert_eq!(config.theme, "dark");
+        assert_eq!(config.theme, "system");
         assert_eq!(config.daily_note_folder, "Daily");
     }
 
