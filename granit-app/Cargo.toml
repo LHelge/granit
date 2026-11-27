@@ -40,6 +40,9 @@ thiserror = "2.0.20"
 dirs = "6"
 log = "0.4"
 env_logger = "0.11"
+# HTML on the clipboard ("Copy note"), which GPUI's clipboard cannot hold.
+# The same version and Wayland support as the Tauri clipboard plugin's.
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 
 [dev-dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }

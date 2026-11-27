@@ -5271,6 +5271,7 @@ dependencies = [
 name = "granit-app"
 version = "0.10.1"
 dependencies = [
+ "arboard",
  "dirs 6.0.0",
  "env_logger",
  "gpui-kit",

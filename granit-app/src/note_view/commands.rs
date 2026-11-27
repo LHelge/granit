@@ -1,13 +1,19 @@
 //! The web editor's own shortcuts on top of zorite-editor's formatting
-//! keys: insert a link (`Mod-k`) and toggle a task checkbox (`Mod-l`). Bold,
-//! italic and the rest come with the editor.
+//! keys: insert a link (`Mod-k`), toggle a task checkbox (`Mod-l`) and
+//! select the next occurrence (`Mod-d`). Bold, italic and the rest come with
+//! the editor. Also "Copy note" as rich text.
 
 use std::ops::Range;
+use std::time::Duration;
 
 use gpui::{Context, EntityInputHandler, Window};
+use granit_core::markdown::Markdown;
 
 use super::wiki_links::byte_offset_from_utf16;
-use super::{InsertLink, NoteView, ToggleTask};
+use super::{InsertLink, NoteView, SelectNext, ToggleTask};
+
+/// How long the copy button shows its check mark.
+const COPIED_FEEDBACK: Duration = Duration::from_millis(1500);
 
 /// One edit of the document: replace `range` with `text`, then put the caret
 /// at `caret`.
@@ -127,6 +133,45 @@ pub fn toggle_tasks(text: &str, selection: Range<usize>, caret: usize) -> Edit {
     }
 }
 
+/// Whether `c` belongs to a word, for selecting the word at the caret.
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// The word around `offset` (touching it on either side), if there is one.
+fn word_at(text: &str, offset: usize) -> Option<Range<usize>> {
+    let start = text[..offset]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| is_word_char(*c))
+        .last()
+        .map_or(offset, |(at, _)| at);
+    let end = text[offset..]
+        .char_indices()
+        .find(|(_, c)| !is_word_char(*c))
+        .map_or(text.len(), |(at, _)| offset + at);
+    (start < end).then_some(start..end)
+}
+
+/// What select-next selects, like the web editor's `Mod-d`: with nothing
+/// selected the word at the caret, else the next occurrence of the selected
+/// text after the selection (matching case), wrapping to the top. `None`
+/// when there is no word or no other occurrence.
+///
+/// The web editor adds the occurrence as another selection; zorite-editor
+/// has a single selection, so here the selection moves to it.
+pub fn select_next(text: &str, selection: Range<usize>) -> Option<Range<usize>> {
+    if selection.is_empty() {
+        return word_at(text, selection.start);
+    }
+    let needle = &text[selection.clone()];
+    let start = text[selection.end..]
+        .find(needle)
+        .map(|at| selection.end + at)
+        .or_else(|| text.find(needle).filter(|at| *at != selection.start))?;
+    Some(start..start + needle.len())
+}
+
 impl NoteView {
     /// The editor's selection as a byte range, and its caret.
     pub(super) fn selection(
@@ -146,7 +191,7 @@ impl NoteView {
 
     /// Apply `edit` as one undoable editor step and record it as a user
     /// edit.
-    fn apply_edit(&mut self, edit: Edit, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn apply_edit(&mut self, edit: Edit, window: &mut Window, cx: &mut Context<Self>) {
         let Some(editor) = self.editor.clone() else {
             return;
         };
@@ -157,6 +202,89 @@ impl NoteView {
         // `replace_range` does not emit `Changed`.
         self.note_edited(window, cx);
         self.mark_broken_links(cx);
+        self.request_images(cx);
+        if let Some(find) = &mut self.find {
+            find.refresh(self.editor.as_ref(), cx);
+        }
+    }
+
+    /// Select the byte `range` of the editor's text.
+    ///
+    /// zorite-editor has no selection setter, only `set_cursor`, so this
+    /// goes through the input handler: the range is "composed" with its own
+    /// text and the given selection, then the composition is ended. The text
+    /// and undo history stay as they are; the `Changed` event that sends is
+    /// ignored (`selection_echo`).
+    pub(super) fn select_range(
+        &mut self,
+        range: Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(editor) = self.editor.clone() else {
+            return;
+        };
+        self.selection_echo = true;
+        editor.update(cx, |editor, cx| {
+            let text = editor.text();
+            let start: usize = text[..range.start].encode_utf16().count();
+            let selected = text[range].to_string();
+            let len = selected.encode_utf16().count();
+            editor.replace_and_mark_text_in_range(
+                Some(start..start + len),
+                &selected,
+                Some(0..len),
+                window,
+                cx,
+            );
+            editor.unmark_text(window, cx);
+        });
+        self.follow_caret(window, cx);
+        cx.notify();
+    }
+
+    pub(super) fn on_select_next(
+        &mut self,
+        _: &SelectNext,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((selection, _)) = self.selection(window, cx) else {
+            return;
+        };
+        let Some(text) = self.text(cx) else {
+            return;
+        };
+        if let Some(next) = select_next(text, selection) {
+            self.select_range(next, window, cx);
+        }
+    }
+
+    /// Whether the copy button shows its check mark.
+    pub(super) fn just_copied(&self) -> bool {
+        self.copied.is_some()
+    }
+
+    /// Put the open document on the clipboard as rich text (HTML rendered
+    /// for use outside the app, like the Tauri app's `copy_note_html`), with
+    /// the markdown body as the plain-text alternative. Pending edits are
+    /// included; the frontmatter is not.
+    pub fn copy_as_html(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = self.text(cx) else {
+            return;
+        };
+        let plain = text.to_string();
+        let html = Markdown::new(&plain).render_for_export();
+        crate::clipboard::write_html(&html, &plain, cx);
+        self.copied = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(COPIED_FEEDBACK).await;
+            this.update(cx, |this, cx| {
+                this.copied = None;
+                cx.notify();
+            })
+            .ok();
+        }));
+        cx.notify();
     }
 
     pub(super) fn on_insert_link(

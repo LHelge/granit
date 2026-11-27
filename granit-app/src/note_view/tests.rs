@@ -898,6 +898,272 @@ fn find_highlights_and_steps_through_matches(cx: &mut TestAppContext) {
     assert!(focused, "the editor has focus again");
 }
 
+const FIND_NOTE: &str = "Volvo one\n\nvolvo two\n\nVOLVO three\n";
+
+fn find_cave() -> tempfile::TempDir {
+    let dir = fixture_cave();
+    std::fs::write(dir.path().join("find.md"), FIND_NOTE).unwrap();
+    dir
+}
+
+fn find_active(app: &App, cx: &mut TestAppContext) -> Option<usize> {
+    let view = view(app, cx);
+    cx.read_entity(&view, |view, _| view.find_state())
+        .expect("the find bar is open")
+        .1
+}
+
+fn click_selector(app: &App, selector: &'static str, cx: &mut TestAppContext) {
+    let mut vcx = VisualTestContext::from_window(app.window, cx);
+    let bounds = vcx
+        .debug_bounds(selector)
+        .unwrap_or_else(|| panic!("{selector} is drawn"));
+    vcx.simulate_click(bounds.center(), Modifiers::none());
+    vcx.run_until_parked();
+    let _ = vcx.update(|window, cx| window.draw(cx));
+}
+
+#[gpui::test]
+fn the_find_button_and_the_next_and_previous_keys_step_through_matches(cx: &mut TestAppContext) {
+    let dir = find_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "find", cx);
+    app.draw(cx);
+    let view = view(&app, cx);
+    assert!(cx.read_entity(&view, |view, _| view.find_state().is_none()));
+    click_selector(&app, "note-find", cx);
+    assert!(cx.read_entity(&view, |view, _| view.find_state().is_some()));
+
+    update_view(&app, cx, |view, window, cx| {
+        view.set_find_query("volvo", window, cx)
+    });
+    assert_eq!(find_active(&app, cx), Some(0));
+    keys(&app, super::FIND_NEXT_KEY, cx);
+    assert_eq!(find_active(&app, cx), Some(1));
+    keys(&app, super::FIND_PREVIOUS_KEY, cx);
+    keys(&app, super::FIND_PREVIOUS_KEY, cx);
+    assert_eq!(find_active(&app, cx), Some(2), "wraps to the last match");
+    keys(&app, "escape", cx);
+    assert!(cx.read_entity(&view, |view, _| view.find_state().is_none()));
+
+    // From the editor, find-next reopens the bar on the last query at the
+    // first match after the caret, and find-previous at the one before.
+    focus_at(&app, offset_in(FIND_NOTE, "volvo two") + 1, cx);
+    keys(&app, super::FIND_NEXT_KEY, cx);
+    let state = cx.read_entity(&view, |view, _| view.find_state()).unwrap();
+    assert_eq!(state, (vec![0..5, 11..16, 22..27], Some(2)));
+    keys(&app, "escape", cx);
+    focus_at(&app, offset_in(FIND_NOTE, "volvo two") + 1, cx);
+    keys(&app, super::FIND_PREVIOUS_KEY, cx);
+    assert_eq!(find_active(&app, cx), Some(1));
+    keys(&app, "escape", cx);
+
+    // A selected word seeds the query.
+    update_editor(&app, cx, |editor, window, cx| {
+        editor.focus(window, cx);
+        editor.replace_and_mark_text_in_range(Some(6..9), "one", Some(0..3), window, cx);
+        editor.unmark_text(window, cx);
+    });
+    keys(&app, super::FIND_KEY, cx);
+    let state = cx.read_entity(&view, |view, _| view.find_state()).unwrap();
+    assert_eq!(state.0.len(), 1);
+    assert_eq!(state.0[0], 6..9);
+}
+
+#[gpui::test]
+fn find_and_replace_replaces_one_match_or_all_of_them(cx: &mut TestAppContext) {
+    let dir = find_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "find", cx);
+    focus_at(&app, 0, cx);
+    keys(&app, super::FIND_KEY, cx);
+    update_view(&app, cx, |view, window, cx| {
+        view.set_find_query("volvo", window, cx);
+        view.set_replace_text("Saab", window, cx);
+    });
+    app.draw(cx);
+
+    // Enter in the replace field replaces the current match.
+    keys(&app, "enter", cx);
+    assert_eq!(text(&app, cx), "Saab one\n\nvolvo two\n\nVOLVO three\n");
+    let view = view(&app, cx);
+    let state = cx.read_entity(&view, |view, _| view.find_state()).unwrap();
+    assert_eq!(state, (vec![10..15, 21..26], Some(0)));
+
+    // A replacement that still matches is stepped over.
+    update_view(&app, cx, |view, window, cx| {
+        view.set_replace_text("volvos", window, cx);
+        view.replace_current(window, cx);
+    });
+    assert_eq!(text(&app, cx), "Saab one\n\nvolvos two\n\nVOLVO three\n");
+    assert_eq!(find_active(&app, cx), Some(1));
+
+    update_view(&app, cx, |view, window, cx| {
+        view.set_replace_text("Saab", window, cx);
+        view.replace_all(window, cx);
+    });
+    assert_eq!(text(&app, cx), "Saab one\n\nSaabs two\n\nSaab three\n");
+    let state = cx.read_entity(&view, |view, _| view.find_state()).unwrap();
+    assert_eq!(state, (vec![], None));
+    assert_eq!(
+        cx.read_entity(&view, |view, _| view.save_status()),
+        Some(SaveStatus::Edited)
+    );
+
+    // Replace all is one undo step.
+    keys(&app, "escape", cx);
+    keys(&app, "ctrl-z", cx);
+    assert_eq!(text(&app, cx), "Saab one\n\nvolvos two\n\nVOLVO three\n");
+    flush(&app, cx);
+    assert_eq!(
+        read(dir.path(), "find.md"),
+        "Saab one\n\nvolvos two\n\nVOLVO three\n"
+    );
+}
+
+#[test]
+fn replace_all_is_one_edit_over_the_matches() {
+    let text = "a-b-a";
+    let edit = super::find::replace_all_edit(text, &[0..1, 4..5], "xy").unwrap();
+    assert_eq!(edit.range, 0..5);
+    assert_eq!(edit.text, "xy-b-xy");
+    assert_eq!(edit.caret, 7);
+    assert!(super::find::replace_all_edit(text, &[], "x").is_none());
+}
+
+// ── Select next, alerts, copy ───────────────────────────────────────────
+
+fn selection(app: &App, cx: &mut TestAppContext) -> std::ops::Range<usize> {
+    update_editor(app, cx, |editor, window, cx| {
+        editor.selected_text_range(false, window, cx).unwrap().range
+    })
+}
+
+#[gpui::test]
+fn select_next_selects_the_word_then_its_next_occurrence(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    std::fs::write(dir.path().join("pets.md"), "cat dog cat\ncat").unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "pets", cx);
+    focus_at(&app, 1, cx);
+    keys(&app, super::SELECT_NEXT_KEY, cx);
+    assert_eq!(selection(&app, cx), 0..3);
+    // The key no longer duplicates, and selecting is not an edit.
+    assert_eq!(text(&app, cx), "cat dog cat\ncat");
+    let view = view(&app, cx);
+    assert_eq!(
+        cx.read_entity(&view, |view, _| view.save_status()),
+        Some(SaveStatus::Clean)
+    );
+    keys(&app, super::SELECT_NEXT_KEY, cx);
+    assert_eq!(selection(&app, cx), 8..11);
+    keys(&app, super::SELECT_NEXT_KEY, cx);
+    assert_eq!(selection(&app, cx), 12..15);
+    keys(&app, super::SELECT_NEXT_KEY, cx);
+    assert_eq!(selection(&app, cx), 0..3, "wraps to the top");
+    // Typing replaces the selection like any other.
+    type_text(&app, "bird", cx);
+    assert_eq!(text(&app, cx), "bird dog cat\ncat");
+}
+
+#[test]
+fn select_next_finds_words_and_occurrences() {
+    use super::commands::select_next;
+    let text = "foo_bar, foo_bar baz";
+    assert_eq!(select_next(text, 2..2), Some(0..7));
+    assert_eq!(select_next(text, 7..7), Some(0..7), "touching its end");
+    assert_eq!(select_next(text, 0..7), Some(9..16));
+    assert_eq!(select_next(text, 9..16), Some(0..7));
+    assert_eq!(select_next(text, 17..20), None, "the only one");
+    assert_eq!(select_next("a  b", 2..2), None, "no word at the caret");
+    assert_eq!(select_next("är år", 3..3), Some(0..3));
+}
+
+#[gpui::test]
+fn typing_an_alert_marker_offers_the_alert_types(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "b", cx);
+    focus_at_end(&app, cx);
+    keys(&app, "enter", cx);
+    type_text(&app, "> [!", cx);
+    assert_eq!(
+        completion_labels(&app, cx).expect("popup open"),
+        [
+            "[!NOTE]",
+            "[!TIP]",
+            "[!IMPORTANT]",
+            "[!WARNING]",
+            "[!CAUTION]"
+        ]
+    );
+    let view = view(&app, cx);
+    cx.update_window(app.window, |_, _, cx| {
+        view.update(cx, |view, cx| assert!(view.render_completion(cx).is_some()))
+    })
+    .unwrap();
+    type_text(&app, "wa", cx);
+    assert_eq!(completion_labels(&app, cx).unwrap(), ["[!WARNING]"]);
+    keys(&app, "enter", cx);
+    assert!(completion_labels(&app, cx).is_none(), "closed after accept");
+    type_text(&app, "Careful", cx);
+    // (Enter after a heading leaves a blank line.)
+    assert_eq!(text(&app, cx), "# B\n\n> [!WARNING]\n> Careful");
+}
+
+#[gpui::test]
+fn copy_note_puts_rendered_html_and_the_body_on_the_clipboard(cx: &mut TestAppContext) {
+    let copied = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let record = copied.clone();
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    cx.update(|cx| {
+        crate::clipboard::set_writer(
+            move |html, plain| {
+                record
+                    .borrow_mut()
+                    .push((html.to_string(), plain.to_string()));
+                Ok(())
+            },
+            cx,
+        )
+    });
+    open(&app, "a", cx);
+    // Pending edits are copied too.
+    type_at_end(&app, "**Bold** move.\n", cx);
+    app.draw(cx);
+    click_selector(&app, "note-copy", cx);
+
+    let copied = copied.borrow().clone();
+    assert_eq!(copied.len(), 1);
+    let (html, plain) = &copied[0];
+    assert_eq!(plain, &format!("{NOTE_A_BODY}**Bold** move.\n"));
+    assert!(html.contains("<h1"), "{html}");
+    assert!(html.contains("<strong>Bold</strong>"), "{html}");
+    // Wiki-links flatten to their text outside the app.
+    assert!(
+        !html.contains("[[b]]") && html.contains("Alpha links b"),
+        "{html}"
+    );
+
+    let view = view(&app, cx);
+    assert!(cx.read_entity(&view, |view, _| view.just_copied()));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(2));
+    cx.run_until_parked();
+    assert!(!cx.read_entity(&view, |view, _| view.just_copied()));
+}
+
+#[gpui::test]
+fn copy_note_falls_back_to_plain_text_without_a_rich_clipboard(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    update_view(&app, cx, |view, _, cx| view.copy_as_html(cx));
+    let item = cx.read_from_clipboard().expect("something was copied");
+    assert_eq!(item.text().as_deref(), Some(NOTE_A_BODY));
+}
+
 // ── Images ──────────────────────────────────────────────────────────────
 
 #[gpui::test]

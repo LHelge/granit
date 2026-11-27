@@ -21,6 +21,7 @@
 //!   none open.
 //! - [`resize`]: side panels resized by dragging their edge.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
+//! - [`clipboard`]: HTML on the clipboard, which GPUI's cannot hold.
 //! - [`last_cave`]: the remembered last-open cave path.
 
 mod agent_ops;
@@ -28,6 +29,7 @@ mod assets;
 mod backup_ops;
 mod cave_ops;
 mod chat;
+mod clipboard;
 mod config_ops;
 mod disaster_restore;
 mod events;
@@ -67,6 +69,7 @@ fn main() {
         .run(move |cx: &mut App| {
             gpui_kit::init(cx);
             Host::init(options, cx);
+            clipboard::init(cx);
             workspace::bind_keys(cx);
             cx.bind_keys([KeyBinding::new(workspace::QUIT_KEY, Quit, None)]);
             cx.on_action(|_: &Quit, cx: &mut App| cx.quit());

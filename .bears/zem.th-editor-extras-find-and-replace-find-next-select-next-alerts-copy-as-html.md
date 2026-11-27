@@ -1,10 +1,10 @@
 ---
 id: zem.th
 title: "Editor extras: find and replace, find next, select next, alerts, copy as HTML"
-status: open
+status: done
 priority: P3
 created: "2026-11-27T02:06:51.073856741Z"
-updated: "2026-11-27T02:06:51.073856741Z"
+updated: "2026-11-27T06:50:06.438192748Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - editor
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

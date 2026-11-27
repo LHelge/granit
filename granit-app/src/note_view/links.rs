@@ -1,6 +1,7 @@
 //! Wiki-links in the editor: following clicked links through the cave
 //! resolver, opening external URLs, marking broken links, and the `[[`
-//! completion popup.
+//! completion popup (which also completes `> [!` alert markers, see
+//! [`super::alerts`]).
 //!
 //! The editor crate has no completion API, so the view drives the popup: it
 //! watches `Changed` / `SelectionChanged`, finds the unclosed `[[` before
@@ -23,16 +24,26 @@ use log::warn;
 use zorite_editor::Diagnostic;
 
 use super::wiki_links::{self, Candidate, CandidateKind};
-use super::{DocKind, NoteView, NoteViewEvent, Reveal};
+use super::{alerts, DocKind, NoteView, NoteViewEvent, Reveal};
 use crate::cave_ops;
 use crate::host::Host;
 
 /// Most entries the popup lists.
 const COMPLETION_LIMIT: usize = 50;
 
-/// The open `[[` completion popup.
+/// What the popup completes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompletionKind {
+    /// A `[[` wiki-link.
+    Link,
+    /// A `> [!` alert marker.
+    Alert,
+}
+
+/// The open `[[` (or `> [!`) completion popup.
 pub struct LinkCompletion {
-    /// Byte offset of the `[[` being completed.
+    kind: CompletionKind,
+    /// Byte offset of the `[[` (or `[!`) being completed.
     start: usize,
     items: Vec<Candidate>,
     selected: usize,
@@ -60,6 +71,20 @@ pub fn is_safe_external_url(url: &str) -> bool {
         .iter()
         .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len());
     allowed && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+/// What is being completed at `cursor`: the `[[` link being typed, else
+/// the `> [!` alert marker, with its start offset and the typed query.
+fn completion_query(
+    text: &str,
+    spans: &LinkSpans,
+    cursor: usize,
+) -> Option<(CompletionKind, usize, String)> {
+    if let Some(query) = wiki_links::link_query(text, spans, cursor) {
+        return Some((CompletionKind::Link, query.start, query.query));
+    }
+    alerts::alert_query(text, spans, cursor)
+        .map(|query| (CompletionKind::Alert, query.start, query.typed))
 }
 
 /// Open an `[text](url)` link or bare URL in the system browser.
@@ -131,31 +156,35 @@ impl NoteView {
     ) {
         let query = self.spans(cx).and_then(|spans| {
             let editor = self.editor.as_ref()?.read(cx);
-            wiki_links::link_query(editor.text(), &spans, editor.cursor())
+            completion_query(editor.text(), &spans, editor.cursor())
         });
-        let Some(query) = query else {
+        let Some((kind, start, query)) = query else {
             self.dismissed_link = None;
             self.close_completion(cx);
             return;
         };
-        if self.dismissed_link == Some(query.start) {
+        if self.dismissed_link == Some(start) {
             return;
         }
         let reopen = self
             .completion
             .as_ref()
-            .is_some_and(|completion| completion.start == query.start);
+            .is_some_and(|completion| completion.start == start && completion.kind == kind);
         if !typed && !reopen {
             self.close_completion(cx);
             return;
         }
-        let items = self.links.complete(&query.query, COMPLETION_LIMIT);
+        let items = match kind {
+            CompletionKind::Link => self.links.complete(&query, COMPLETION_LIMIT),
+            CompletionKind::Alert => alerts::complete(&query),
+        };
         if items.is_empty() {
             self.close_completion(cx);
             return;
         }
         self.completion = Some(LinkCompletion {
-            start: query.start,
+            kind,
+            start,
             items,
             selected: 0,
             scroll: ScrollHandle::new(),
@@ -213,14 +242,20 @@ impl NoteView {
         };
         let applied = editor.update(cx, |editor, cx| {
             let (text, cursor) = (editor.text(), editor.cursor());
-            // Only apply to the link the popup was opened for.
-            if wiki_links::link_query(text, &spans, cursor).map(|q| q.start)
-                != Some(completion.start)
+            // Only apply to the link (or marker) the popup was opened for.
+            if completion_query(text, &spans, cursor).map(|(kind, start, _)| (kind, start))
+                != Some((completion.kind, completion.start))
             {
                 return false;
             }
-            let (range, insert) =
-                wiki_links::completion_edit(text, completion.start, cursor, &item.label);
+            let (range, insert) = match completion.kind {
+                CompletionKind::Link => {
+                    wiki_links::completion_edit(text, completion.start, cursor, &item.label)
+                }
+                CompletionKind::Alert => {
+                    alerts::completion_edit(completion.start, cursor, &item.label)
+                }
+            };
             editor.replace_range(range, &insert, cx);
             true
         });
@@ -358,8 +393,12 @@ impl NoteView {
                 CandidateKind::Anchor { note } => (Some(format!("# in {note}").into()), false),
                 CandidateKind::Broken => (Some("no note yet".into()), true),
                 CandidateKind::Create => (Some("new note".into()), true),
+                CandidateKind::Alert { detail } => (Some((*detail).into()), false),
             };
             let selected = ix == completion.selected;
+            // An alert's label is short and its description long: the
+            // description gives way instead of the label.
+            let alert = completion.kind == CompletionKind::Alert;
             div()
                 .id(ix)
                 .flex()
@@ -374,7 +413,13 @@ impl NoteView {
                 })
                 .child(
                     div()
-                        .flex_1()
+                        .map(|label| {
+                            if alert {
+                                label.flex_none()
+                            } else {
+                                label.flex_1()
+                            }
+                        })
                         .min_w_0()
                         .truncate()
                         .when(muted, |label| label.italic())
@@ -382,7 +427,13 @@ impl NoteView {
                 )
                 .children(detail.map(|detail| {
                     div()
-                        .flex_none()
+                        .map(|detail| {
+                            if alert {
+                                detail.flex_1().min_w_0().truncate()
+                            } else {
+                                detail.flex_none()
+                            }
+                        })
                         .text_xs()
                         .text_color(theme.muted_foreground)
                         .child(detail)

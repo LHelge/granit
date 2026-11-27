@@ -604,6 +604,35 @@ impl NoteView {
                     .text_color(status_color)
                     .child(status),
             )
+            // The selectors let tests find the buttons to click them.
+            .child(
+                div().debug_selector(|| "note-find".into()).child(
+                    Button::new("note-find")
+                        .ghost()
+                        .small()
+                        .icon(IconName::Search)
+                        .tooltip("Find and replace")
+                        .on_click(cx.listener(|this, _, window, cx| this.open_find(window, cx))),
+                ),
+            )
+            .child(
+                div().debug_selector(|| "note-copy".into()).child(
+                    Button::new("note-copy")
+                        .ghost()
+                        .small()
+                        .icon(if self.just_copied() {
+                            IconName::Check
+                        } else {
+                            IconName::Copy
+                        })
+                        .tooltip(if self.just_copied() {
+                            "Copied"
+                        } else {
+                            "Copy note as rich text"
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| this.copy_as_html(cx))),
+                ),
+            )
             .into_any_element()
     }
 

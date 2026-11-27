@@ -22,9 +22,11 @@
 //! Submodules: [`header`] (icon, favorite, title, tags, dates and
 //! backlinks above the editor), [`save`] (save bookkeeping), [`wiki_links`]
 //! (link parsing and completion ranking), [`links`] (navigation and the
-//! `[[` popup), [`find`] (the find bar), [`images`], [`style`] and
-//! [`commands`] (link and task shortcuts).
+//! `[[` popup), [`alerts`] (`> [!` alert completion in the same popup),
+//! [`find`] (the find and replace bar), [`images`], [`style`] and
+//! [`commands`] (link, task and select-next shortcuts, copy as HTML).
 
+mod alerts;
 mod commands;
 mod find;
 mod header;
@@ -77,6 +79,14 @@ gpui_kit::actions!(
         InsertLink,
         /// Toggle the task checkbox of the selected lines.
         ToggleTask,
+        /// Make the next find match current (opening the find bar if needed).
+        FindNext,
+        /// Make the previous find match current (opening the find bar if
+        /// needed).
+        FindPrevious,
+        /// Select the word at the caret, or the next occurrence of the
+        /// selection.
+        SelectNext,
     ]
 );
 
@@ -111,6 +121,32 @@ pub const TOGGLE_TASK_KEY: &str = "cmd-l";
 #[cfg(not(target_os = "macos"))]
 pub const TOGGLE_TASK_KEY: &str = "ctrl-l";
 
+/// Next find match (the web editor's `Mod-g`), also from the find field.
+#[cfg(target_os = "macos")]
+pub const FIND_NEXT_KEY: &str = "cmd-g";
+#[cfg(not(target_os = "macos"))]
+pub const FIND_NEXT_KEY: &str = "ctrl-g";
+
+/// Previous find match (the web editor's `Shift-Mod-g`).
+#[cfg(target_os = "macos")]
+pub const FIND_PREVIOUS_KEY: &str = "cmd-shift-g";
+#[cfg(not(target_os = "macos"))]
+pub const FIND_PREVIOUS_KEY: &str = "ctrl-shift-g";
+
+/// Select the word at the caret, then its next occurrence (the web editor's
+/// `Mod-d`). Bound over zorite-editor's Duplicate on the same key; duplicating
+/// lines stays on `Mod-Shift-d`.
+#[cfg(target_os = "macos")]
+pub const SELECT_NEXT_KEY: &str = "cmd-d";
+#[cfg(not(target_os = "macos"))]
+pub const SELECT_NEXT_KEY: &str = "ctrl-d";
+
+/// The editor inside the note view. zorite-editor's own bindings live in its
+/// `Editor` context, one level deeper than [`KEY_CONTEXT`], so a key that
+/// replaces one of them is bound here: at the same depth, the later binding
+/// wins.
+const EDITOR_KEY_CONTEXT: &str = "NoteView > Editor";
+
 /// Bind the editor's keys and the note view's shortcuts. Call once at
 /// startup.
 pub fn bind_keys(cx: &mut App) {
@@ -119,8 +155,11 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new(SAVE_KEY, SaveNote, context),
         gpui::KeyBinding::new(FIND_KEY, FindInNote, context),
+        gpui::KeyBinding::new(FIND_NEXT_KEY, FindNext, context),
+        gpui::KeyBinding::new(FIND_PREVIOUS_KEY, FindPrevious, context),
         gpui::KeyBinding::new(INSERT_LINK_KEY, InsertLink, context),
         gpui::KeyBinding::new(TOGGLE_TASK_KEY, ToggleTask, context),
+        gpui::KeyBinding::new(SELECT_NEXT_KEY, SelectNext, Some(EDITOR_KEY_CONTEXT)),
     ]);
 }
 
@@ -267,6 +306,13 @@ pub struct NoteView {
     /// construct a link click came from.
     last_press: Option<Point<Pixels>>,
     find: Option<FindBar>,
+    /// The query of the last closed find bar, for the next one.
+    last_find_query: SharedString,
+    /// The editor's next `Changed` event is the view's own selection change
+    /// (see `commands::select_range`), not an edit.
+    selection_echo: bool,
+    /// Shows the copy button's check mark for a moment after a copy.
+    copied: Option<Task<()>>,
     header: header::Header,
     /// Why the note cannot be edited now (a restore replaces the cave);
     /// shown instead of the note while set.
@@ -334,6 +380,9 @@ impl NoteView {
             dismissed_link: None,
             last_press: None,
             find: None,
+            last_find_query: SharedString::default(),
+            selection_echo: false,
+            copied: None,
             header,
             locked: None,
             #[cfg(test)]
@@ -656,6 +705,7 @@ impl NoteView {
         self.pending_scroll = None;
         self.last_press = None;
         self.undo_floor = None;
+        self.selection_echo = false;
         if let Some(find) = &mut self.find {
             find.clear_matches();
         }
@@ -872,6 +922,10 @@ impl NoteView {
             return;
         }
         match event {
+            // The text is unchanged: only the selection moved.
+            EditorEvent::Changed if std::mem::take(&mut self.selection_echo) => {
+                self.update_completion(false, window, cx);
+            }
             EditorEvent::Changed => {
                 self.note_edited(window, cx);
                 self.mark_broken_links(cx);
@@ -1124,8 +1178,11 @@ impl Render for NoteView {
             .key_context(KEY_CONTEXT)
             .on_action(cx.listener(Self::on_save))
             .on_action(cx.listener(Self::on_find))
+            .on_action(cx.listener(Self::on_find_next))
+            .on_action(cx.listener(Self::on_find_previous))
             .on_action(cx.listener(Self::on_insert_link))
             .on_action(cx.listener(Self::on_toggle_task))
+            .on_action(cx.listener(Self::on_select_next))
             .flex_1()
             .min_w_0()
             .h_full()

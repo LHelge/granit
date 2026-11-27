@@ -131,9 +131,14 @@ pub enum CandidateKind {
     Broken,
     /// Link the typed text, which matches nothing yet.
     Create,
+    /// Not a link: a `> [!TYPE]` alert marker (see `super::alerts`), with
+    /// what the type is for.
+    Alert {
+        detail: &'static str,
+    },
 }
 
-/// One entry of the `[[` completion list.
+/// One entry of the `[[` completion list (or of the alert list).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Candidate {
     /// The text inserted between `[[` and `]]`.
@@ -243,7 +248,7 @@ fn match_score(label: &str, query: &str) -> Option<u8> {
 
 fn kind_rank(kind: &CandidateKind) -> u8 {
     match kind {
-        CandidateKind::Note | CandidateKind::Anchor { .. } => 0,
+        CandidateKind::Note | CandidateKind::Anchor { .. } | CandidateKind::Alert { .. } => 0,
         CandidateKind::Broken => 1,
         CandidateKind::Create => 2,
     }
