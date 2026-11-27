@@ -25,15 +25,33 @@ const APP_ICON_DIR: &str = "app-icons/";
 pub enum AppIcon {
     FilePlus,
     FolderPlus,
+    PanelRight,
+    Send,
+    SquarePen,
+    Wrench,
+    CircleAlert,
 }
 
 impl AppIcon {
-    const ALL: [AppIcon; 2] = [AppIcon::FilePlus, AppIcon::FolderPlus];
+    const ALL: [AppIcon; 7] = [
+        AppIcon::FilePlus,
+        AppIcon::FolderPlus,
+        AppIcon::PanelRight,
+        AppIcon::Send,
+        AppIcon::SquarePen,
+        AppIcon::Wrench,
+        AppIcon::CircleAlert,
+    ];
 
     fn name(self) -> &'static str {
         match self {
             AppIcon::FilePlus => "file-plus",
             AppIcon::FolderPlus => "folder-plus",
+            AppIcon::PanelRight => "panel-right",
+            AppIcon::Send => "send",
+            AppIcon::SquarePen => "square-pen",
+            AppIcon::Wrench => "wrench",
+            AppIcon::CircleAlert => "circle-alert",
         }
     }
 
@@ -41,6 +59,11 @@ impl AppIcon {
         match self {
             AppIcon::FilePlus => icondata_lu::LuFilePlus,
             AppIcon::FolderPlus => icondata_lu::LuFolderPlus,
+            AppIcon::PanelRight => icondata_lu::LuPanelRight,
+            AppIcon::Send => icondata_lu::LuSend,
+            AppIcon::SquarePen => icondata_lu::LuSquarePen,
+            AppIcon::Wrench => icondata_lu::LuWrench,
+            AppIcon::CircleAlert => icondata_lu::LuCircleAlert,
         }
     }
 }

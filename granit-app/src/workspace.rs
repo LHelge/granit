@@ -7,29 +7,35 @@
 //! [`CaveEvent`]s. A new sidebar panel becomes a field here and a child in
 //! [`Workspace::render_sidebar`]; the main area is [`NoteView`], the note
 //! editor. Other panels open a note with [`Workspace::open_note`], or at a
-//! heading, line or offset with [`Workspace::open_note_at`].
+//! heading, line or offset with [`Workspace::open_note_at`]. The agent chat
+//! ([`ChatPanel`]) sits right of the main area while it is shown
+//! ([`ToggleChat`]); its visibility is kept in the cave's config
+//! (`agent_panel.visible`).
 
 use std::path::PathBuf;
 
 use gpui::{
-    div, px, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, PathPromptOptions, Render,
-    SharedString, Styled, Subscription, Window,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity, FocusHandle,
+    Focusable, InteractiveElement as _, IntoElement, MouseButton, ParentElement, PathPromptOptions,
+    Render, SharedString, Styled, Subscription, Window,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants},
-    h_flex, ActiveTheme, IconName, Sizable,
+    h_flex, ActiveTheme, Disableable as _, IconName, Sizable,
 };
 use log::warn;
 
+use crate::agent_ops;
+use crate::assets::AppIcon;
 use crate::cave_ops;
+use crate::chat::{ChatEvent, ChatPanel};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
 use crate::note_view::{NoteView, NoteViewEvent, Reveal};
 use crate::theme;
 
-gpui_kit::actions!(granit, [OpenCave]);
+gpui_kit::actions!(granit, [OpenCave, ToggleChat]);
 
 /// Which cave to open when the window opens.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +65,9 @@ pub struct Workspace {
     open_error: Option<SharedString>,
     explorer: Entity<Explorer>,
     note_view: Entity<NoteView>,
+    chat: Entity<ChatPanel>,
+    /// Whether the chat panel is shown.
+    chat_visible: bool,
     /// The open note.
     active: Option<String>,
     /// Keeps the workspace on the key-dispatch path while nothing inside it
@@ -73,7 +82,14 @@ impl Workspace {
         window.focus(&focus_handle, cx);
         let explorer = cx.new(Explorer::new);
         let note_view = cx.new(|cx| NoteView::new(window, cx));
+        let chat = cx.new(|cx| ChatPanel::new(window, cx));
         let subscriptions = vec![
+            cx.subscribe(&chat, |this, _, event: &ChatEvent, cx| match event {
+                ChatEvent::OpenNote { slug, anchor } => {
+                    let reveal = anchor.clone().map(Reveal::Anchor);
+                    this.open_note_at(slug.clone(), reveal, cx)
+                }
+            }),
             cx.subscribe(
                 &note_view,
                 |this, _, event: &NoteViewEvent, cx| match event {
@@ -98,6 +114,8 @@ impl Workspace {
             open_error: None,
             explorer,
             note_view,
+            chat,
+            chat_visible: false,
             active: None,
             focus_handle,
             _subscriptions: subscriptions,
@@ -130,6 +148,37 @@ impl Workspace {
     #[cfg(test)]
     pub fn note_view(&self) -> &Entity<NoteView> {
         &self.note_view
+    }
+
+    #[cfg(test)]
+    pub fn chat(&self) -> &Entity<ChatPanel> {
+        &self.chat
+    }
+
+    /// Whether the chat panel is shown.
+    #[cfg(test)]
+    pub fn chat_visible(&self) -> bool {
+        self.chat_visible
+    }
+
+    /// Show or hide the chat panel, remembering it in the cave's config.
+    pub fn toggle_chat(&mut self, cx: &mut Context<Self>) {
+        self.set_chat_visible(!self.chat_visible, cx);
+        if let Err(err) = agent_ops::set_chat_visible(self.chat_visible, cx) {
+            warn!("Could not remember the chat panel: {err}");
+        }
+    }
+
+    fn set_chat_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        self.chat_visible = visible;
+        if visible {
+            self.chat.update(cx, |chat, cx| chat.shown(cx));
+        }
+        cx.notify();
+    }
+
+    fn on_toggle_chat(&mut self, _: &ToggleChat, _: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_chat(cx);
     }
 
     /// Open the cave at `path`, replacing the open one when it succeeds.
@@ -240,6 +289,8 @@ impl Workspace {
                 self.status = Host::cave_path(cx).map_or(CaveStatus::Closed, CaveStatus::Open);
                 // The previous cave's note was written before the switch.
                 self.close_removed_note(cx);
+                let visible = Host::core(cx).lock_config().agent_panel.visible;
+                self.set_chat_visible(visible, cx);
             }
             CaveEvent::NoteRenamed { from, to } if self.active.as_deref() == Some(from) => {
                 // Pending edits follow the note to its new name.
@@ -318,6 +369,16 @@ impl Workspace {
                             .icon(IconName::FolderOpen)
                             .tooltip("Open cave…")
                             .on_click(cx.listener(|this, _, _, cx| this.pick_cave(cx))),
+                    )
+                    .child(
+                        Button::new("toggle-chat")
+                            .ghost()
+                            .xsmall()
+                            .icon(AppIcon::PanelRight)
+                            .tooltip("Toggle agent chat")
+                            .toggled(self.chat_visible)
+                            .disabled(!matches!(self.status, CaveStatus::Open(_)))
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_chat(cx))),
                     ),
             )
             .children(open_error.map(|error| {
@@ -383,6 +444,7 @@ impl Render for Workspace {
             .text_color(theme.foreground)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_open_cave))
+            .on_action(cx.listener(Self::on_toggle_chat))
             // A click that focused nothing inside (empty space, or after a
             // focused input went away) takes focus back, so the
             // workspace's keys keep working.
@@ -396,6 +458,10 @@ impl Render for Workspace {
             )
             .child(self.render_sidebar(cx))
             .child(self.render_main(cx))
+            .when(
+                self.chat_visible && matches!(self.status, CaveStatus::Open(_)),
+                |this| this.child(self.chat.clone()),
+            )
     }
 }
 
@@ -407,7 +473,10 @@ impl Focusable for Workspace {
 
 /// Bind the workspace's keys. Call once at startup.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([gpui::KeyBinding::new(OPEN_CAVE_KEY, OpenCave, None)]);
+    cx.bind_keys([
+        gpui::KeyBinding::new(OPEN_CAVE_KEY, OpenCave, None),
+        gpui::KeyBinding::new(TOGGLE_CHAT_KEY, ToggleChat, None),
+    ]);
     crate::note_view::bind_keys(cx);
 }
 
@@ -419,6 +488,12 @@ pub fn bind_keys(cx: &mut App) {
 pub const OPEN_CAVE_KEY: &str = "cmd-o";
 #[cfg(not(target_os = "macos"))]
 pub const OPEN_CAVE_KEY: &str = "ctrl-o";
+
+/// The key that shows or hides the agent chat.
+#[cfg(target_os = "macos")]
+pub const TOGGLE_CHAT_KEY: &str = "cmd-shift-a";
+#[cfg(not(target_os = "macos"))]
+pub const TOGGLE_CHAT_KEY: &str = "ctrl-shift-a";
 
 /// The key that quits the app.
 #[cfg(target_os = "macos")]

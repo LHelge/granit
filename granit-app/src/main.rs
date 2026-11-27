@@ -13,11 +13,14 @@
 //! - [`workspace`]: the root view (sidebar and main area).
 //! - [`explorer`]: the sidebar's note tree.
 //! - [`note_view`]: the main area, the open note in the live-preview editor.
+//! - [`chat`]: the agent chat panel; [`agent_ops`]: its agent settings.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`last_cave`]: the remembered last-open cave path.
 
+mod agent_ops;
 mod assets;
 mod cave_ops;
+mod chat;
 mod events;
 mod explorer;
 mod host;

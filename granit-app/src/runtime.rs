@@ -49,6 +49,38 @@ where
     handle().spawn(future)
 }
 
+/// [`spawn`], but dropping the returned future aborts the tokio task. Use
+/// it for work a GPUI task awaits and that must stop when that task is
+/// dropped (a cancelled agent stream closes its connection).
+pub fn spawn_abortable<F>(future: F) -> AbortOnDrop<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    AbortOnDrop(spawn(future))
+}
+
+/// A tokio join handle that aborts its task when dropped; see
+/// [`spawn_abortable`].
+pub struct AbortOnDrop<T>(JoinHandle<T>);
+
+impl<T> Future for AbortOnDrop<T> {
+    type Output = Result<T, tokio::task::JoinError>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        std::pin::Pin::new(&mut self.0).poll(cx)
+    }
+}
+
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

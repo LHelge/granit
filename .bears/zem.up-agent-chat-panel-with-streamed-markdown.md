@@ -1,10 +1,10 @@
 ---
 id: zem.up
 title: Agent chat panel with streamed markdown
-status: open
+status: done
 priority: P1
 created: "2026-11-26T21:09:38.859735Z"
-updated: "2026-11-26T21:09:38.859735Z"
+updated: "2026-11-27T00:58:02.431881127Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - agent
 depends_on:
   - zem.4b
+attempts: 1
 ---
 
 ## Summary

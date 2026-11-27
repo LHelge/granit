@@ -184,6 +184,14 @@ impl Agent {
         }
     }
 
+    /// Record a finished turn, the prompt as sent and the full reply, so
+    /// the next message sees it. Hosts call this only when the agent is
+    /// still the one that streamed the reply (same generation).
+    pub fn record_exchange(&mut self, prompt: &str, reply: &str) {
+        self.push_history(Message::user(prompt));
+        self.push_history(Message::assistant(reply));
+    }
+
     /// Clear all conversation history.
     pub fn clear_history(&mut self) {
         self.history.clear();
@@ -368,6 +376,28 @@ impl AgentStream {
     /// turns while still bounding a stuck connection.
     const ITEM_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+    /// A stream that yields `items`, for hosts that replay a canned response
+    /// (tests) instead of calling a provider.
+    pub fn from_items(items: Vec<Result<AgentStreamItem, AgentError>>) -> Self {
+        Self {
+            inner: Box::pin(futures::stream::iter(items)),
+        }
+    }
+
+    /// Wait for the next item, bounded by [`Self::ITEM_TIMEOUT`] like
+    /// [`Self::collect_with`]. `None` once the stream has ended.
+    ///
+    /// Hosts that hand items to a UI one at a time use this instead of
+    /// `collect_with`; it must run on the tokio runtime.
+    pub async fn next_item(&mut self) -> Option<Result<AgentStreamItem, AgentError>> {
+        use futures::StreamExt;
+
+        match tokio::time::timeout(Self::ITEM_TIMEOUT, self.next()).await {
+            Ok(item) => item,
+            Err(_) => Some(Err(AgentError::StreamTimeout(Self::ITEM_TIMEOUT.as_secs()))),
+        }
+    }
+
     /// Consume the stream, collecting the full response text.
     /// Calls `on_chunk` for each text chunk received, and `on_tool` for
     /// tool call / tool result items.
@@ -380,17 +410,9 @@ impl AgentStream {
         mut on_chunk: impl FnMut(&str),
         mut on_tool: impl FnMut(AgentStreamItem),
     ) -> Result<String, AgentError> {
-        use futures::StreamExt;
-
         let mut full_response = String::new();
         loop {
-            let next = match tokio::time::timeout(Self::ITEM_TIMEOUT, self.next()).await {
-                Ok(item) => item,
-                Err(_) => {
-                    return Err(AgentError::StreamTimeout(Self::ITEM_TIMEOUT.as_secs()));
-                }
-            };
-            match next {
+            match self.next_item().await {
                 Some(Ok(AgentStreamItem::Text(text))) => {
                     full_response.push_str(&text);
                     on_chunk(&text);
@@ -619,6 +641,30 @@ mod tests {
         // not the fallback.
         let known = anthropic_completion_model(client(), "claude-opus-4-8");
         assert!(unknown.default_max_tokens < known.default_max_tokens);
+    }
+
+    #[tokio::test]
+    async fn a_canned_stream_yields_its_items_then_ends() {
+        let mut stream = AgentStream::from_items(vec![
+            Ok(AgentStreamItem::Text("Hel".into())),
+            Ok(AgentStreamItem::ToolResult),
+            Ok(AgentStreamItem::Text("lo".into())),
+            Ok(AgentStreamItem::Done),
+        ]);
+        let mut tools = 0;
+        let reply = stream.collect_with(|_| {}, |_| tools += 1).await.unwrap();
+        assert_eq!(reply, "Hello");
+        assert_eq!(tools, 1);
+        assert!(stream.next_item().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn record_exchange_adds_both_sides_to_the_history() {
+        let mut agent = Agent::from_config(&AgentConfig::default(), empty_cave(), None).unwrap();
+        agent.record_exchange("question", "answer");
+        assert_eq!(agent.history.len(), 2);
+        agent.clear_history();
+        assert!(agent.history.is_empty());
     }
 
     #[test]
