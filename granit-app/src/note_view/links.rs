@@ -8,12 +8,17 @@
 //! editor's own Up/Down/Enter/Tab/Escape actions in the capture phase while
 //! the list is open.
 
+use std::rc::Rc;
+
 use gpui::{
     anchored, deferred, div, point, prelude::FluentBuilder, px, Anchor, AnyElement, App, Context,
     Div, EntityInputHandler, Focusable, InteractiveElement, IntoElement, MouseButton,
     ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_kit::component::ActiveTheme;
+use granit_core::markdown::LinkSpans;
+#[cfg(test)]
+use granit_core::markdown::Markdown;
 use log::warn;
 use zorite_editor::Diagnostic;
 
@@ -77,7 +82,7 @@ impl NoteView {
     /// The editor has one link color, so broken links get its diagnostic
     /// squiggle instead.
     pub(super) fn mark_broken_links(&mut self, cx: &mut Context<Self>) {
-        let Some(editor) = &self.editor else {
+        let Some(editor) = self.editor.clone() else {
             return;
         };
         // A template's links are filled in when a note is made from it
@@ -86,14 +91,20 @@ impl NoteView {
             editor.update(cx, |editor, cx| editor.set_diagnostics(Vec::new(), cx));
             return;
         }
-        let text = editor.read(cx).text();
-        let diagnostics = wiki_links::broken_link_ranges(&wiki_links::wiki_links(text), |target| {
-            self.links.is_resolved(target)
-        })
-        .into_iter()
-        .map(|range| Diagnostic { range })
-        .collect();
+        let spans = self.link_spans.get(editor.read(cx).text());
+        let diagnostics = self
+            .links
+            .broken_ranges(&spans)
+            .into_iter()
+            .map(|range| Diagnostic { range })
+            .collect();
         editor.update(cx, |editor, cx| editor.set_diagnostics(diagnostics, cx));
+    }
+
+    /// The wiki-links, code and anchors of the editor's text.
+    fn spans(&mut self, cx: &App) -> Option<Rc<LinkSpans>> {
+        let editor = self.editor.clone()?;
+        Some(self.link_spans.get(editor.read(cx).text()))
     }
 
     /// The byte ranges of the broken links marked in the open note.
@@ -105,9 +116,7 @@ impl NoteView {
         if self.template_slug().is_some() {
             return Vec::new();
         }
-        wiki_links::broken_link_ranges(&wiki_links::wiki_links(text), |target| {
-            self.links.is_resolved(target)
-        })
+        self.links.broken_ranges(&Markdown::link_spans(text))
     }
 
     /// Open, refilter or close the popup for the caret's position. Only a
@@ -119,9 +128,9 @@ impl NoteView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let query = self.editor.as_ref().and_then(|editor| {
-            let editor = editor.read(cx);
-            wiki_links::link_query(editor.text(), editor.cursor())
+        let query = self.spans(cx).and_then(|spans| {
+            let editor = self.editor.as_ref()?.read(cx);
+            wiki_links::link_query(editor.text(), &spans, editor.cursor())
         });
         let Some(query) = query else {
             self.dismissed_link = None;
@@ -198,10 +207,15 @@ impl NoteView {
         let Some(editor) = self.editor.clone() else {
             return;
         };
+        let Some(spans) = self.spans(cx) else {
+            return;
+        };
         let applied = editor.update(cx, |editor, cx| {
             let (text, cursor) = (editor.text(), editor.cursor());
             // Only apply to the link the popup was opened for.
-            if wiki_links::link_query(text, cursor).map(|q| q.start) != Some(completion.start) {
+            if wiki_links::link_query(text, &spans, cursor).map(|q| q.start)
+                != Some(completion.start)
+            {
                 return false;
             }
             let (range, insert) =
@@ -239,17 +253,17 @@ impl NoteView {
                 Some(wiki_links::byte_offset_from_utf16(editor.text(), utf16))
             })
         });
-        let target = {
-            let text = editor.read(cx).text();
-            let links = wiki_links::wiki_links(text);
-            match offset {
-                Some(offset) => wiki_links::link_at(&links, offset).map(|link| link.target.clone()),
-                None => links
-                    .iter()
-                    .find(|link| link.target == payload.as_ref())
-                    .map(|link| link.target.clone()),
-            }
+        let Some(spans) = self.spans(cx) else {
+            return;
         };
+        let target = match offset {
+            Some(offset) => spans.link_at(offset),
+            None => spans
+                .links
+                .iter()
+                .find(|link| link.target == payload.as_ref()),
+        }
+        .map(|link| link.target.clone());
         if let Some(target) = target {
             self.navigate_to_link(&target, cx);
         }

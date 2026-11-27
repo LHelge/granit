@@ -193,19 +193,12 @@ impl<'a> Markdown<'a> {
     /// document order (`[[target]]` / `[[target|label]]` both yield `target`).
     ///
     /// Wiki-links inside code spans/blocks are not links and are not returned.
+    /// The same links the editor marks ([`Markdown::link_spans`]).
     pub fn wiki_link_targets(&self) -> Vec<String> {
-        let mut options = base_options();
-        options.insert(Options::ENABLE_WIKILINKS);
-
-        Parser::new_ext(self.body(), options)
-            .filter_map(|event| match event {
-                Event::Start(Tag::Link {
-                    link_type: LinkType::WikiLink { .. },
-                    dest_url,
-                    ..
-                }) => Some(dest_url.to_string()),
-                _ => None,
-            })
+        Markdown::link_spans(self.body())
+            .links
+            .into_iter()
+            .map(|link| link.target)
             .collect()
     }
 
@@ -214,12 +207,10 @@ impl<'a> Markdown<'a> {
     /// These are the headings that act as wiki-link targets. Plain headings
     /// without an attribute carry no id and are not returned.
     pub fn anchor_ids(&self) -> Vec<String> {
-        let options = base_options();
-        Parser::new_ext(self.body(), options)
-            .filter_map(|event| match event {
-                Event::Start(Tag::Heading { id: Some(id), .. }) => Some(id.to_string()),
-                _ => None,
-            })
+        Markdown::link_spans(self.body())
+            .anchors
+            .into_iter()
+            .map(|anchor| anchor.id)
             .collect()
     }
 }
@@ -234,9 +225,6 @@ impl Markdown<'_> {
     /// caller passes the full file content; frontmatter is irrelevant since it
     /// never contains wiki-links, and splicing raw bytes preserves it verbatim.
     pub fn rename_wiki_links(text: &str, old_slug: &str, new_slug: &str) -> Option<String> {
-        let mut opts = base_options();
-        opts.insert(Options::ENABLE_WIKILINKS);
-
         // Unicode-lowercase, matching `Cave::lookup_slug_in_notes`: a link like
         // `[[övningar]]` resolves to the note `Övningar`, so renaming that note
         // must rewrite it too — ASCII-only case folding would skip it and leave
@@ -244,17 +232,10 @@ impl Markdown<'_> {
         let old_lower = old_slug.to_lowercase();
 
         let mut edits: Vec<(Range<usize>, String)> = Vec::new();
-        for (event, range) in Parser::new_ext(text, opts).into_offset_iter() {
-            if let Event::Start(Tag::Link {
-                link_type: LinkType::WikiLink { .. },
-                dest_url,
-                ..
-            }) = event
-            {
-                if dest_url.trim().to_lowercase() == old_lower {
-                    if let Some(replacement) = rewrite_wiki_span(&text[range.clone()], new_slug) {
-                        edits.push((range, replacement));
-                    }
+        for link in Markdown::link_spans(text).links {
+            if link.target.trim().to_lowercase() == old_lower {
+                if let Some(replacement) = rewrite_wiki_span(&text[link.range.clone()], new_slug) {
+                    edits.push((link.range, replacement));
                 }
             }
         }

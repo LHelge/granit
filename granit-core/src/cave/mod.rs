@@ -381,6 +381,15 @@ impl Cave {
         self.anchors.keys().cloned().collect()
     }
 
+    /// Every heading anchor id with the slug of the note declaring it, in no
+    /// particular order. Reads the index directly, unlike a
+    /// [`Cave::resolve_link`] per anchor, which scans every note and anchor.
+    pub fn anchor_notes(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.anchors
+            .iter()
+            .map(|(id, note)| (id.as_str(), note.as_str()))
+    }
+
     /// All broken wiki-link targets used across the cave, for link completion.
     pub fn list_broken_links(&self) -> Vec<String> {
         self.broken_links.clone()
@@ -684,6 +693,14 @@ mod tests {
         let mut anchors = cave.list_anchors();
         anchors.sort();
         assert_eq!(anchors, vec!["saab".to_string(), "volvo".to_string()]);
+
+        let mut owned: Vec<(&str, &str)> = cave.anchor_notes().collect();
+        owned.sort();
+        assert_eq!(
+            owned,
+            [("saab", "Car brands"), ("volvo", "Car brands")],
+            "each anchor with the note declaring it"
+        );
     }
 
     // ── Broken links ───────────────────────────────────────────────────────

@@ -1,9 +1,11 @@
 mod builder;
 mod frontmatter;
+mod links;
 mod presentation;
 mod render;
 
 pub use frontmatter::split_frontmatter;
+pub use links::{AnchorHeading, LinkSpans, WikiLinkSpan};
 pub use render::cave_image_path;
 
 use std::cell::OnceCell;

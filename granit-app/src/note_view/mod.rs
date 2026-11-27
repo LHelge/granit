@@ -51,12 +51,13 @@ use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use find::FindBar;
+use granit_core::markdown::Markdown;
 use images::{ImageBase, ImageCache};
 use links::LinkCompletion;
 pub use save::{DocKind, FlushOutcome, AUTOSAVE_DELAY};
 use save::{NoteSession, SaveSnapshot, SaveStatus};
 use style::CodeHighlighter;
-use wiki_links::LinkIndex;
+use wiki_links::{LinkIndex, SpanCache};
 
 gpui_kit::actions!(
     note_view,
@@ -136,7 +137,7 @@ impl Reveal {
     /// note does not declare.
     fn offset_in(&self, text: &str) -> Option<usize> {
         match self {
-            Reveal::Anchor(id) => wiki_links::anchor_heading_offset(text, id),
+            Reveal::Anchor(id) => Markdown::link_spans(text).anchor_offset(id),
             Reveal::Line(line) => Some(wiki_links::line_offset(text, *line)),
             Reveal::Offset(offset) => Some((*offset).min(text.len())),
         }
@@ -235,6 +236,8 @@ pub struct NoteView {
     highlighter: Rc<CodeHighlighter>,
     image_cache: Rc<ImageCache>,
     links: LinkIndex,
+    /// Wiki-links, code and anchors of the editor's text, from granit-core.
+    link_spans: SpanCache,
     /// Scroll container around the editor, which grows to its content
     /// height.
     scroll: ScrollHandle,
@@ -304,6 +307,7 @@ impl NoteView {
             highlighter: CodeHighlighter::new(cx.theme().highlight_theme.clone()),
             image_cache: ImageCache::new(),
             links: LinkIndex::default(),
+            link_spans: SpanCache::default(),
             scroll: ScrollHandle::new(),
             autosave: None,
             completion: None,

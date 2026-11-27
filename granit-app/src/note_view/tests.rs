@@ -9,6 +9,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseUpEvent, Pixels, PlatformInput, Point, TestAppContext,
     VisualTestContext, Window,
 };
+use granit_core::markdown::Markdown;
 use zorite_editor::EditorState;
 
 use super::save::{FlushOutcome, SaveStatus};
@@ -620,7 +621,9 @@ fn an_anchor_link_opens_the_note_and_scrolls_to_the_heading(cx: &mut TestAppCont
     let (_dir, app) = open_links(cx);
     click_offset(&app, offset_in(LINKS, "[[volvo]]") + 3, cx);
     assert_eq!(app.active_note(cx).as_deref(), Some("long"));
-    let heading = wiki_links::anchor_heading_offset(&text(&app, cx), "volvo").unwrap();
+    let heading = Markdown::link_spans(&text(&app, cx))
+        .anchor_offset("volvo")
+        .unwrap();
     assert_eq!(cursor(&app, cx), heading, "the caret is on the heading");
 
     // Frames are not scheduled in tests: the first paint lays the note
@@ -664,6 +667,29 @@ fn reveals_point_into_the_text() {
     assert_eq!(Reveal::Anchor("b".into()).offset_in(text), None);
     assert_eq!(Reveal::Line(1).offset_in(text), Some(9));
     assert_eq!(Reveal::Offset(99).offset_in(text), Some(text.len()));
+    // A setext heading is an anchor too, found at its text line; a heading
+    // in code is not.
+    let text = "Intro\n\nSaab {#saab}\n----\n\n```\n# B {#b}\n```\n";
+    assert_eq!(Reveal::Anchor("SAAB".into()).offset_in(text), Some(7));
+    assert_eq!(Reveal::Anchor("b".into()).offset_in(text), None);
+}
+
+#[gpui::test]
+fn a_note_opens_at_a_setext_anchor(cx: &mut TestAppContext) {
+    let dir = link_cave();
+    let filler = "Filler line.\n\n".repeat(150);
+    let body = format!("# Setext\n\n{filler}Saab {{#saab}}\n----\n\n{filler}");
+    std::fs::write(dir.path().join("setext.md"), &body).unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note_at("setext".into(), Some(Reveal::Anchor("saab".into())), cx)
+    });
+    assert_eq!(cursor(&app, cx), offset_in(&body, "Saab {#saab}"));
+    app.draw(cx);
+    app.draw(cx);
+    let view = view(&app, cx);
+    let offset = cx.read_entity(&view, |view, _| view.scroll.offset());
+    assert!(offset.y < px(0.), "scrolled down");
 }
 
 #[gpui::test]

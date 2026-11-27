@@ -1,10 +1,10 @@
 ---
 id: zem.cn
 title: "Editor: take wiki-links, code ranges and anchors from granit-core"
-status: open
+status: done
 priority: P2
 created: "2026-11-27T01:10:30.400904439Z"
-updated: "2026-11-27T01:10:30.400904439Z"
+updated: "2026-11-27T02:19:03.299003416Z"
 tags:
   - gpui
   - port
@@ -13,6 +13,7 @@ tags:
   - core
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary
