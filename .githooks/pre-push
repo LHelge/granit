@@ -1,11 +1,12 @@
 #!/bin/sh
-# Granit pre-push hook: clippy (backend, core, frontend), backend tests, and
-# frontend WASM tests. Mirrors the clippy/test steps in .github/workflows/ci.yml.
+# Granit pre-push hook: clippy (backend, core, GPUI app, frontend), backend
+# and GPUI app tests, and frontend WASM tests. Mirrors the clippy/test steps in
+# .github/workflows/ci.yml.
 
 set -e
 
-echo "pre-push: cargo clippy -p granit -p granit-core (backend + core)"
-cargo clippy -p granit -p granit-core --all-targets -- -D warnings
+echo "pre-push: cargo clippy -p granit -p granit-core -p granit-app (backend + core + GPUI app)"
+cargo clippy -p granit -p granit-core -p granit-app --all-targets -- -D warnings
 
 echo "pre-push: cargo clippy -p granit-ui (frontend, wasm32)"
 cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
@@ -18,8 +19,8 @@ SQLX_OFFLINE=true cargo clippy -p granit-server -p granit-api --all-targets -- -
 echo "pre-push: cargo test -p granit-api"
 cargo test -p granit-api
 
-echo "pre-push: cargo test -p granit -p granit-core"
-cargo test -p granit -p granit-core
+echo "pre-push: cargo test -p granit -p granit-core -p granit-app"
+cargo test -p granit -p granit-core -p granit-app
 
 # CI runs these in Firefox; Chrome is the local default because macOS
 # Gatekeeper kills wasm-pack's cached geckodriver. Override with e.g.

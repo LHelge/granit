@@ -1,0 +1,36 @@
+[package]
+name = "granit-app"
+version.workspace = true
+license.workspace = true
+description = "Granit's native desktop app, built on GPUI"
+authors = ["LHelge"]
+edition = "2021"
+publish = false
+
+# The binary is `granit-app` until the cutover from the Tauri app, whose
+# package already owns `granit`. The bundle id stays `se.lhelge.granit` and the
+# product name `Granit` (see `host::APP_ID`).
+[[bin]]
+name = "granit-app"
+path = "src/main.rs"
+
+[dependencies]
+# One gpui-pre for every GPUI crate: gpui-kit 0.10 pins =0.3.12.
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+gpui-kit = "0.10"
+granit-core = { path = "../granit-core" }
+granit-types = { path = "../granit-types" }
+icondata_core = "0.1.0"
+icondata_lu = "0.1.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.20"
+dirs = "6"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }
+gpui-kit = { version = "0.10", features = ["test-support"] }
+tempfile = "3.27.0"

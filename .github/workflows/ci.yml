@@ -32,11 +32,16 @@ jobs:
       # Normally under a minute. Bounded because an unreachable Ubuntu
       # mirror makes apt wait ~20 s per package, which once stalled this
       # job for over half an hour (Canonical DNS outage, 2026-11-11).
+      # The first line is the Tauri app's; the second is GPUI's (granit-app):
+      # keyboard handling, Wayland/X11, Vulkan and fonts. Its gpui::tests run
+      # on GPUI's headless test platform, so no display is needed.
       - name: Install Linux system dependencies
         timeout-minutes: 5
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev \
+            libxcb1-dev libfontconfig-dev libfreetype-dev
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -59,14 +64,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Clippy (backend + core)
-        run: cargo clippy -p granit -p granit-core --all-targets -- -D warnings
+      - name: Clippy (backend + core + GPUI app)
+        run: cargo clippy -p granit -p granit-core -p granit-app --all-targets -- -D warnings
 
       - name: Clippy (frontend)
         run: cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
 
       - name: Run tests
-        run: cargo test -p granit -p granit-core
+        run: cargo test -p granit -p granit-core -p granit-app
 
       # The rustwasm.github.io installer serves a stale version (the project
       # moved to the drager org); install-action tracks the latest release.

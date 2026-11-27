@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::sync::Arc;
 
 use parking_lot::{Mutex, MutexGuard};
 
@@ -11,7 +12,8 @@ use super::{ConfigError, ShownPresentation};
 /// cave, agent, vector index and their locking helpers, reached through
 /// `Deref`) plus what only the Tauri app has, the presentation window.
 pub(crate) struct AppState {
-    core: CoreState,
+    /// Shared so background tasks (the vector-index build) can hold it.
+    core: Arc<CoreState>,
     /// What the presentation window shows, while it is open.
     presentation: Mutex<Option<ShownPresentation>>,
 }
@@ -27,9 +29,13 @@ impl Deref for AppState {
 impl AppState {
     pub(crate) fn new(config: AppConfig) -> Self {
         Self {
-            core: CoreState::new(config),
+            core: Arc::new(CoreState::new(config)),
             presentation: Mutex::new(None),
         }
+    }
+
+    pub(super) fn core(&self) -> &Arc<CoreState> {
+        &self.core
     }
 
     pub(super) fn lock_presentation(&self) -> MutexGuard<'_, Option<ShownPresentation>> {

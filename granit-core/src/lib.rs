@@ -3,15 +3,17 @@
 //! Everything that does not depend on the UI host lives here: the cave model
 //! and its indexes (`cave`), markdown rendering (`markdown`), the AI agent with
 //! its tools and RAG index (`agent`), encrypted backups (`backup`), and the
-//! shared state the host keeps for the open cave (`state`), and the
-//! `granit://` URLs rendered HTML links to (`urls`). The Tauri app in
-//! `src-tauri/` wraps it with IPC commands, events and plugins; this crate must
-//! never depend on Tauri.
+//! shared state the host keeps for the open cave (`state`), the open-cave flow
+//! and the RAG index build (`open`), and the `granit://` URLs rendered HTML
+//! links to (`urls`). The Tauri app in `src-tauri/` wraps it with IPC
+//! commands, events and plugins, the GPUI app in `granit-app/` calls it
+//! directly; this crate must never depend on a UI host.
 
 pub mod agent;
 pub mod backup;
 pub mod cave;
 pub mod markdown;
+pub mod open;
 pub mod state;
 pub mod urls;
 
