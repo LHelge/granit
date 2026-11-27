@@ -116,13 +116,22 @@ impl Cave {
             .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
 
         let raw = std::fs::read_to_string(abs_path)?;
-        let mut lines: Vec<String> = raw.lines().map(str::to_owned).collect();
-
-        if line == 0 || line > lines.len() {
+        // Line numbers count over the whole file, like `str::lines`; only
+        // body lines can be toggled.
+        let line_start: usize = raw
+            .split_inclusive('\n')
+            .take(line.saturating_sub(1))
+            .map(str::len)
+            .sum();
+        let body = Markdown::new(&raw).body();
+        let body_start = raw.len() - body.len();
+        if line == 0 || line_start >= raw.len() || line_start < body_start {
             return Err(CaveError::InvalidTodoLine(line));
         }
 
-        let target = lines[line - 1].clone();
+        let rest_of_file = &raw[line_start..];
+        let target_len = rest_of_file.find('\n').unwrap_or(rest_of_file.len());
+        let target = rest_of_file[..target_len].trim_end_matches('\r');
         let trimmed = target.trim_start();
         let leading_ws = &target[..target.len() - trimmed.len()];
 
@@ -135,15 +144,14 @@ impl Cave {
             checkbox.marker, checkbox.rest
         );
 
-        lines[line - 1] = toggled;
-        // Preserve trailing newline if original had one
-        let mut new_content = lines.join("\n");
-        if raw.ends_with('\n') {
-            new_content.push('\n');
-        }
-
-        let updated =
-            crate::markdown::Markdown::rebuild(&new_content, &new_content, None, None, None, None);
+        // Splice the toggled line into the body, keeping its line ending.
+        let offset = line_start - body_start;
+        let new_body = format!(
+            "{}{toggled}{}",
+            &body[..offset],
+            &body[offset + target.len()..]
+        );
+        let updated = Markdown::rebuild(&raw, &new_body, None, None, None, None);
         super::helpers::write_atomic(abs_path, updated)?;
         Ok(())
     }
@@ -212,6 +220,32 @@ mod tests {
         // CommonMark caps ordered markers at 9 digits.
         assert!(parse_checkbox("1234567890. [ ] too many digits").is_none());
         assert!(parse_checkbox("").is_none());
+    }
+
+    #[test]
+    fn test_toggle_todo_keeps_line_endings_and_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = "---\r\n# kept\r\ntags: [a, b]\r\n---\r\n- [ ] one\r\n- [ ] two\r\n";
+        std::fs::write(dir.path().join("note.md"), raw).unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.toggle_todo("note", 6).unwrap();
+        let saved = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        // The frontmatter is kept and gains only `modified_at`, in CRLF.
+        assert!(
+            saved.starts_with("---\r\n# kept\r\ntags: [a, b]\r\nmodified_at: \""),
+            "{saved:?}"
+        );
+        assert!(
+            saved.ends_with("\"\r\n---\r\n- [ ] one\r\n- [x] two\r\n"),
+            "{saved:?}"
+        );
+
+        // Frontmatter lines are not toggleable.
+        assert!(matches!(
+            cave.toggle_todo("note", 3),
+            Err(CaveError::InvalidTodoLine(3))
+        ));
     }
 
     #[test]

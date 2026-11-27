@@ -60,6 +60,12 @@ favorite: true
 Body text starts here.
 ```
 
+## How Granit writes frontmatter
+
+Granit never rewrites a note it has not changed. Saving a note whose text you did not edit leaves the file exactly as it was, and `modified_at` is only updated when the body changes or when you change a field in the note header (tags, icon, favorite, presentation). When it does write, only the lines of the changed keys are touched: other keys, their order, YAML comments, flow-style lists such as `tags: [a, b]`, quoting and Windows (CRLF) line endings are kept, and `created_at` is never reformatted.
+
+A block at the top of a note counts as frontmatter when it opens with a `---` line, closes with a `---` (or `...`) line, and holds `key: value` entries. A paragraph, heading or list between two rules is shown as part of the note instead. Frontmatter that is not valid YAML is hidden and kept as written; fix it in another text editor. A block that starts the body of a note that already has frontmatter stays part of the body.
+
 > [!IMPORTANT]
 > Frontmatter does **not** set the note's title. The title always comes from the filename stem. See [[cave-rules]] for why filenames are the single source of identity.
 

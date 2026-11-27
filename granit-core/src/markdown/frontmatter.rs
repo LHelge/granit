@@ -1,5 +1,4 @@
 use granit_types::Frontmatter;
-use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
 
 use super::Markdown;
 
@@ -37,52 +36,136 @@ impl<'a> Markdown<'a> {
     }
 }
 
+/// The location of a frontmatter block inside a note's raw text.
+///
+/// The raw text is always `raw[..yaml_start]` (optional BOM plus the opening
+/// fence line) + `yaml` + `raw[yaml_end..body_start]` (the closing fence
+/// line with its line ending, if any) + the body, so the block can be edited
+/// by splicing the YAML text and copying everything else verbatim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FrontmatterSpan<'a> {
+    /// The YAML lines between the fences, each with its line ending.
+    pub yaml: &'a str,
+    /// Byte offset where `yaml` starts in the raw text.
+    pub yaml_start: usize,
+    /// Byte offset where `yaml` ends (the start of the closing fence line).
+    pub yaml_end: usize,
+    /// Byte offset of the first body byte.
+    pub body_start: usize,
+    /// The line ending of the opening fence, used for any line Granit adds.
+    pub eol: &'static str,
+}
+
+const BOM: char = '\u{feff}';
+
+/// Whether `line` (with or without its line ending) is a `---` fence, or a
+/// `...` fence when `closing`. Trailing spaces and tabs are allowed.
+fn is_fence(line: &str, closing: bool) -> bool {
+    let text = line
+        .trim_end_matches(['\n', '\r'])
+        .trim_end_matches([' ', '\t']);
+    text == "---" || (closing && text == "...")
+}
+
+/// Find the frontmatter block at the start of `raw`, if there is one.
+///
+/// The rule that separates frontmatter from a body that merely starts with
+/// a `---`-fenced block:
+///
+/// 1. The file starts (after an optional UTF-8 BOM) with a `---` line, and a
+///    later line is `---` or `...`. The first such line closes the block.
+/// 2. The text between the fences is frontmatter when it is blank, when it
+///    parses as a YAML mapping, or — so malformed frontmatter is kept rather
+///    than shown as body text — when it fails to parse as YAML but its first
+///    non-blank, non-comment line looks like a `key:` line.
+///
+/// Anything else (a paragraph between two thematic breaks, a heading between
+/// rules, a YAML scalar or list) is body. Only the first block of a file is
+/// ever considered: whatever follows the closing fence is body, verbatim, so
+/// a note with frontmatter whose body starts with its own
+/// `---\nkey: value\n---` keeps that block. A note *without* frontmatter
+/// whose body starts with such a block is indistinguishable from one with
+/// frontmatter and is read as frontmatter.
+pub(crate) fn locate_frontmatter(raw: &str) -> Option<FrontmatterSpan<'_>> {
+    let start = if raw.starts_with(BOM) {
+        BOM.len_utf8()
+    } else {
+        0
+    };
+    let mut lines = raw[start..].split_inclusive('\n');
+    let open = lines.next()?;
+    if !open.ends_with('\n') || !is_fence(open, false) {
+        return None;
+    }
+    let eol = if open.ends_with("\r\n") { "\r\n" } else { "\n" };
+    let yaml_start = start + open.len();
+    let mut pos = yaml_start;
+    for line in lines {
+        if is_fence(line, true) {
+            let yaml = &raw[yaml_start..pos];
+            return looks_like_frontmatter(yaml).then_some(FrontmatterSpan {
+                yaml,
+                yaml_start,
+                yaml_end: pos,
+                body_start: pos + line.len(),
+                eol,
+            });
+        }
+        pos += line.len();
+    }
+    None
+}
+
+/// Rule 2 of [`locate_frontmatter`].
+fn looks_like_frontmatter(yaml: &str) -> bool {
+    if yaml.trim().is_empty() {
+        return true;
+    }
+    match serde_yml::from_str::<serde_yml::Value>(yaml) {
+        Ok(value) => value.is_mapping(),
+        Err(_) => yaml
+            .lines()
+            .map(str::trim_end)
+            .find(|line| !line.is_empty() && !line.trim_start().starts_with('#'))
+            .is_some_and(|line| key_end(line).is_some()),
+    }
+}
+
+/// If `line` is a top-level YAML mapping entry (`key: value`, `key:`, or a
+/// quoted key), the byte offset of its `:`.
+pub(crate) fn key_end(line: &str) -> Option<usize> {
+    let line = line.trim_end_matches(['\n', '\r']);
+    let first = line.chars().next()?;
+    let colon = match first {
+        '"' | '\'' => {
+            let close = line[1..].find(first)? + 1;
+            let after = &line[close + 1..];
+            let gap = after.len() - after.trim_start_matches([' ', '\t']).len();
+            let colon = close + 1 + gap;
+            (line[colon..].starts_with(':')).then_some(colon)?
+        }
+        c if c.is_whitespace() || "#-:?[]{},&*!|>%@`".contains(c) => return None,
+        _ => line
+            .match_indices(':')
+            .map(|(i, _)| i)
+            .find(|&i| line[i + 1..].is_empty() || line[i + 1..].starts_with([' ', '\t']))?,
+    };
+    let after = &line[colon + 1..];
+    (after.is_empty() || after.starts_with([' ', '\t'])).then_some(colon)
+}
+
 /// Split raw markdown into its YAML frontmatter text and body.
 ///
-/// Uses pulldown-cmark's `ENABLE_YAML_STYLE_METADATA_BLOCKS` to detect
-/// frontmatter delimited by `---` (or `...`) at the very start of the
-/// document. Returns `(None, raw)` when no frontmatter block is present;
-/// the YAML text is returned unparsed so callers can deserialize it into
-/// whatever shape they need.
+/// See [`locate_frontmatter`] for what counts as frontmatter. Returns
+/// `(None, raw)` when no frontmatter block is present; the YAML text is
+/// returned unparsed so callers can deserialize it into whatever shape they
+/// need. The body is everything after the closing fence's line ending,
+/// byte for byte.
 pub fn split_frontmatter(raw: &str) -> (Option<String>, &str) {
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
-
-    let mut yaml_text = String::new();
-    let mut found_metadata = false;
-    let mut body_start: usize = 0;
-
-    for (event, range) in Parser::new_ext(raw, options).into_offset_iter() {
-        match event {
-            Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                found_metadata = true;
-            }
-            Event::Text(text) if found_metadata && body_start == 0 => {
-                yaml_text.push_str(&text);
-            }
-            Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                body_start = range.end;
-                break;
-            }
-            _ if !found_metadata => {
-                return (None, raw);
-            }
-            _ => {}
-        }
+    match locate_frontmatter(raw) {
+        Some(span) => (Some(span.yaml.to_string()), &raw[span.body_start..]),
+        None => (None, raw),
     }
-
-    if !found_metadata {
-        return (None, raw);
-    }
-
-    let body = &raw[body_start..];
-    // Skip the newline after the closing fence (pulldown-cmark's range ends
-    // right after `---` / `...` but does not consume the line ending).
-    let body = body
-        .strip_prefix('\n')
-        .or_else(|| body.strip_prefix("\r\n"))
-        .unwrap_or(body);
-    (Some(yaml_text), body)
 }
 
 /// Strip YAML frontmatter from `raw`, returning `(Option<Frontmatter>, body)`.
@@ -141,11 +224,58 @@ mod tests {
     }
 
     #[test]
-    fn test_frontmatter_malformed_yaml() {
-        let raw = "---\n: invalid: yaml: :\n---\nBody";
+    fn test_frontmatter_malformed_yaml_with_keys_is_frontmatter() {
+        let raw = "---\n# comment\ntags: [unclosed\nicon: x\n---\nBody";
         let md = Markdown::new(raw);
         assert!(md.frontmatter().is_none());
         assert_eq!(md.body(), "Body");
+    }
+
+    #[test]
+    fn test_fenced_block_that_is_not_a_mapping_is_body() {
+        for raw in [
+            // Not YAML-looking at all.
+            "---\n: invalid: yaml: :\n---\nBody",
+            // A paragraph between two rules (a YAML scalar).
+            "---\nJust a paragraph between two rules.\n---\n\n# Title\n",
+            // A heading between rules (comments only, to YAML).
+            "---\n# Heading\n---\nBody",
+            // A list between rules.
+            "---\n- one\n- two\n---\nBody",
+        ] {
+            let md = Markdown::new(raw);
+            assert!(md.frontmatter().is_none(), "{raw}");
+            assert_eq!(md.body(), raw);
+        }
+    }
+
+    #[test]
+    fn test_frontmatter_fences_and_line_endings() {
+        let crlf = "---\r\ntags: [a]\r\n---\r\nBody\r\n";
+        assert_eq!(Markdown::new(crlf).tags(), ["a"]);
+        assert_eq!(Markdown::new(crlf).body(), "Body\r\n");
+
+        let dots = "---\ntags: [a]\n...\nBody";
+        assert_eq!(Markdown::new(dots).body(), "Body");
+
+        let bom = "\u{feff}---\ntags: [a]\n---\nBody";
+        assert_eq!(Markdown::new(bom).tags(), ["a"]);
+        assert_eq!(Markdown::new(bom).body(), "Body");
+
+        // An unclosed block is body; a closing fence at EOF ends the block.
+        let unclosed = "---\ntags: [a]\nBody";
+        assert_eq!(Markdown::new(unclosed).body(), unclosed);
+        assert_eq!(Markdown::new("---\ntags: [a]\n---").body(), "");
+
+        let empty = "---\n---\nBody";
+        assert!(Markdown::new(empty).frontmatter().is_some());
+        assert_eq!(Markdown::new(empty).body(), "Body");
+    }
+
+    #[test]
+    fn test_body_block_after_frontmatter_is_body() {
+        let raw = "---\ntags: [a]\n---\n---\nkey: value\n---\n\nText";
+        assert_eq!(Markdown::new(raw).body(), "---\nkey: value\n---\n\nText");
     }
 
     #[test]

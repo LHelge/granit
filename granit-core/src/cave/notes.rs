@@ -23,7 +23,9 @@ impl Cave {
     ///
     /// Validates and resolves `slug`, reads the raw file, lets `f` derive the
     /// new body (and optional frontmatter changes) from it, rebuilds the file
-    /// preserving remaining frontmatter, writes it atomically, and returns
+    /// splicing only the changed frontmatter keys (see
+    /// [`crate::markdown::Markdown::rebuild`]), writes it atomically unless
+    /// nothing changed, and returns
     /// metadata for the rewritten note. Callers whose change can affect
     /// wiki-links must call `rebuild_link_indexes()` afterwards.
     fn rewrite_note(
@@ -48,7 +50,10 @@ impl Cave {
             rewrite.favorite,
             rewrite.presentation,
         );
-        write_atomic(&abs_path, updated.as_str())?;
+        // An unchanged note is not written at all.
+        if updated != raw {
+            write_atomic(&abs_path, updated.as_str())?;
+        }
 
         let rel = self.relative_path(&abs_path);
         let mut meta = note_meta_from_relative_path(&rel);
@@ -119,7 +124,8 @@ impl Cave {
         Ok(notes)
     }
 
-    /// Read a note by slug.
+    /// Read a note by slug. `content` is the body: the file minus its
+    /// frontmatter block, byte for byte.
     pub fn read_note(&self, slug: &str) -> Result<Document, CaveError> {
         validate_name(slug)?;
         let abs_path = self
@@ -150,7 +156,12 @@ impl Cave {
         Ok(std::fs::read_to_string(abs_path)?)
     }
 
-    /// Save new content to an existing note (looked up by slug).
+    /// Save a new body to an existing note (looked up by slug).
+    ///
+    /// `content` is the body as [`Cave::read_note`] returned it, without
+    /// frontmatter; the note's existing frontmatter is re-attached. A body
+    /// equal to the one on disk writes nothing; otherwise only `modified_at`
+    /// changes in the frontmatter.
     pub fn save_note(&mut self, slug: &str, content: &str) -> Result<DocumentMeta, CaveError> {
         let meta = self.rewrite_note(slug, |_raw| {
             Ok(NoteRewrite {
@@ -385,7 +396,13 @@ impl Cave {
             favorite,
             presentation,
         );
-        if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
+        // An unchanged note is not written at all.
+        let written = if updated == existing_raw {
+            Ok(())
+        } else {
+            write_atomic(&final_abs, updated.as_str())
+        };
+        if let Err(e) = written {
             // Rollback the rename so index stays consistent with filesystem.
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
@@ -1458,6 +1475,171 @@ mod tests {
             crate::markdown::Markdown::new(&raw).tags(),
             vec!["legacy", "migrated"]
         );
+    }
+
+    // ── byte-identical round-trips ─────────────────────────────────
+
+    /// A fixture note: slug, path in the test cave, original bytes.
+    type FixtureNote = (String, std::path::PathBuf, Vec<u8>);
+
+    /// A cave holding the edge-case fixtures of `tests/fixtures/roundtrip`,
+    /// with the original bytes of each note.
+    fn fixture_cave() -> (tempfile::TempDir, Cave, Vec<FixtureNote>) {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/roundtrip");
+        let dir = tempfile::tempdir().unwrap();
+        let mut notes = Vec::new();
+        for entry in std::fs::read_dir(&fixtures).unwrap() {
+            let path = entry.unwrap().path();
+            let bytes = std::fs::read(&path).unwrap();
+            let target = dir.path().join(path.file_name().unwrap());
+            std::fs::write(&target, &bytes).unwrap();
+            let slug = path.file_stem().unwrap().to_string_lossy().into_owned();
+            notes.push((slug, target, bytes));
+        }
+        notes.sort();
+        assert!(notes.len() >= 10, "fixtures missing");
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        (dir, cave, notes)
+    }
+
+    /// The frontmatter block of `raw` without its `modified_at` line.
+    fn head_without_modified_at(raw: &str) -> String {
+        let body = crate::markdown::Markdown::new(raw).body();
+        raw[..raw.len() - body.len()]
+            .split_inclusive('\n')
+            .filter(|line| !line.starts_with("modified_at:"))
+            .collect()
+    }
+
+    #[test]
+    fn test_unedited_save_leaves_fixtures_byte_identical() {
+        let (_dir, mut cave, notes) = fixture_cave();
+        for (slug, path, original) in &notes {
+            let body = cave.read_note(slug).unwrap().content;
+            cave.save_note(slug, &body).unwrap();
+            assert_eq!(&std::fs::read(path).unwrap(), original, "save_note: {slug}");
+
+            // What the editor sends on every autosave: the body plus the
+            // header's current values.
+            let raw = String::from_utf8(original.clone()).unwrap();
+            let md = crate::markdown::Markdown::new(&raw);
+            cave.update_note(
+                slug,
+                slug,
+                &body,
+                Some(md.tags()),
+                Some(md.icon().unwrap_or_default()),
+                md.favorite(),
+                Some(md.presentation().unwrap_or_default()),
+            )
+            .unwrap();
+            assert_eq!(
+                &std::fs::read(path).unwrap(),
+                original,
+                "update_note: {slug}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_body_edit_changes_only_body_and_modified_at() {
+        let (_dir, mut cave, notes) = fixture_cave();
+        for (slug, path, original) in &notes {
+            let original = String::from_utf8(original.clone()).unwrap();
+            let body = cave.read_note(slug).unwrap().content;
+            let edited = format!("{body}edited\n");
+            cave.save_note(slug, &edited).unwrap();
+
+            let saved = std::fs::read_to_string(path).unwrap();
+            assert_eq!(cave.read_note(slug).unwrap().content, edited, "{slug}");
+            assert!(saved.ends_with(&edited), "{slug}");
+            assert_eq!(
+                head_without_modified_at(&saved),
+                head_without_modified_at(&original),
+                "{slug}"
+            );
+            let well_formed = crate::markdown::Markdown::new(&original)
+                .frontmatter()
+                .is_some();
+            if well_formed {
+                let fm = crate::markdown::Markdown::new(&saved)
+                    .frontmatter()
+                    .cloned()
+                    .unwrap();
+                let stamp = fm.modified_at.unwrap();
+                assert!(chrono::Utc::now() - stamp < chrono::Duration::minutes(1));
+            } else {
+                // Malformed (or no) frontmatter is kept verbatim.
+                assert_eq!(saved, format!("{original}edited\n"), "{slug}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_fixture_edge_cases_read_as_expected() {
+        let (_dir, cave, _notes) = fixture_cave();
+        // A body starting with its own fenced block keeps it.
+        let body = cave
+            .read_note("Body starts with a yaml block")
+            .unwrap()
+            .content;
+        assert!(body.starts_with("---\nkey: value\n---\n"), "{body}");
+        // A paragraph between rules is body, not frontmatter.
+        let body = cave.read_note("Rule block at start").unwrap().content;
+        assert!(body.starts_with("---\nJust a paragraph"), "{body}");
+        // Malformed frontmatter is hidden from the body, not shown or lost.
+        let body = cave.read_note("Frontmatter malformed").unwrap().content;
+        assert!(body.starts_with("# Frontmatter malformed"), "{body}");
+        // CRLF frontmatter is still frontmatter.
+        let body = cave.read_note("CRLF frontmatter").unwrap().content;
+        assert!(body.starts_with("# CRLF frontmatter\r\n"), "{body:?}");
+    }
+
+    #[test]
+    fn test_tag_edit_rewrites_only_the_tags_key() {
+        let (_dir, mut cave, notes) = fixture_cave();
+        let (slug, path, original) = notes
+            .iter()
+            .find(|(slug, ..)| slug == "Frontmatter unknown keys")
+            .unwrap();
+        let original = String::from_utf8(original.clone()).unwrap();
+        let body = cave.read_note(slug).unwrap().content;
+        cave.update_note(
+            slug,
+            slug,
+            &body,
+            Some(vec!["inline".into(), "list".into(), "new".into()]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let saved = std::fs::read_to_string(path).unwrap();
+        let expected = original.replace("tags: [inline, list]", "tags: [inline, list, new]");
+        assert_eq!(
+            head_without_modified_at(&saved),
+            head_without_modified_at(&expected)
+        );
+        assert!(saved.contains("\n# a YAML comment\ntitle: Custom title\naliases: [one, two]\n"));
+        assert!(saved.contains("created_at: 2026-11-26T14:00:00Z\n"));
+        assert!(saved.ends_with(&body));
+    }
+
+    #[test]
+    fn test_created_at_with_zero_fraction_is_not_reformatted() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = "---\ncreated_at: \"2026-11-26T14:00:00.000000Z\"\nmodified_at: \"2026-11-26T14:00:00.000000Z\"\n---\nBody\n";
+        std::fs::write(dir.path().join("note.md"), raw).unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        cave.save_note("note", "Changed\n").unwrap();
+        let saved = std::fs::read_to_string(dir.path().join("note.md")).unwrap();
+        assert!(
+            saved.starts_with("---\ncreated_at: \"2026-11-26T14:00:00.000000Z\"\nmodified_at: \""),
+            "{saved}"
+        );
+        assert!(!saved.contains("modified_at: \"2026-11-26T14:00:00.000000Z\""));
     }
 
     // ── backlinks ──────────────────────────────────────────────────

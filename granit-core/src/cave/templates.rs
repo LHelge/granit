@@ -95,7 +95,9 @@ impl Cave {
         let existing_raw = std::fs::read_to_string(abs_path)?;
         let updated =
             crate::markdown::Markdown::rebuild(&existing_raw, content, None, None, None, None);
-        write_atomic(abs_path, updated.as_str())?;
+        if updated != existing_raw {
+            write_atomic(abs_path, updated.as_str())?;
+        }
         let mut meta = template_meta_from_path(abs_path);
         meta.icon = crate::markdown::Markdown::new(&updated).icon();
         Ok(meta)
@@ -191,7 +193,12 @@ impl Cave {
         let existing_raw = std::fs::read_to_string(&final_abs)?;
         let updated =
             crate::markdown::Markdown::rebuild(&existing_raw, content, tags, icon, None, None);
-        if let Err(e) = write_atomic(&final_abs, updated.as_str()) {
+        let written = if updated == existing_raw {
+            Ok(())
+        } else {
+            write_atomic(&final_abs, updated.as_str())
+        };
+        if let Err(e) = written {
             if renamed {
                 if let Err(rollback_err) = std::fs::rename(&final_abs, &old_abs) {
                     return Err(CaveError::Io(format!(
