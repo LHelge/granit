@@ -79,11 +79,17 @@ gpui_kit::actions!(
         InsertLink,
         /// Toggle the task checkbox of the selected lines.
         ToggleTask,
+        /// Find next.
+        ///
         /// Make the next find match current (opening the find bar if needed).
         FindNext,
+        /// Find previous.
+        ///
         /// Make the previous find match current (opening the find bar if
         /// needed).
         FindPrevious,
+        /// Select next occurrence.
+        ///
         /// Select the word at the caret, or the next occurrence of the
         /// selection.
         SelectNext,

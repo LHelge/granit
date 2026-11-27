@@ -1,16 +1,17 @@
 ---
 id: zem.s9
 title: Keyboard shortcuts, about dialog and font picker
-status: open
+status: done
 priority: P3
 created: "2026-11-27T02:06:51.096035959Z"
-updated: "2026-11-27T02:06:51.096035959Z"
+updated: "2026-11-27T06:50:18.877464983Z"
 tags:
   - gpui
   - port
   - frontend
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

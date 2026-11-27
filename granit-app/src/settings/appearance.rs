@@ -6,10 +6,9 @@ use gpui_kit::component::setting::{
 };
 use granit_types::{AppConfig, FontConfig, ThemeChoice};
 
-use super::fields::number_field;
+use super::fields::{font_field, number_field};
 use super::{getter, SettingsCtx};
 use crate::assets::AppIcon;
-use crate::theme::{MONO_FONT, SANS_FONT};
 
 /// The smallest and largest font size offered.
 const FONT_SIZES: (f64, f64) = (8., 48.);
@@ -68,19 +67,16 @@ fn font_group(
     font: fn(&AppConfig) -> &FontConfig,
     font_mut: fn(&mut AppConfig) -> &mut FontConfig,
 ) -> SettingGroup {
-    let mut families: Vec<(SharedString, SharedString)> = vec![
-        (SANS_FONT.into(), "Theme font".into()),
-        (MONO_FONT.into(), "Theme monospace font".into()),
-    ];
-    families.extend(fonts.iter().map(|name| (name.clone(), name.clone())));
     SettingGroup::new()
         .title(title)
         .description(description)
         .item(SettingItem::new(
             "Family",
-            SettingField::scrollable_dropdown(
-                families,
-                getter(move |config| font(config).font_family.clone().into()),
+            font_field(
+                format!("font-family-{title}"),
+                format!("{title} family"),
+                fonts.to_vec(),
+                getter(move |config| font(config).clone()),
                 ctx.setter(move |config, value: SharedString| {
                     font_mut(config).font_family = value.to_string();
                 }),

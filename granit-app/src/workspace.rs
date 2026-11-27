@@ -68,13 +68,20 @@ use crate::resize::PanelResize;
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
 
+// The first line of each action's doc comment is its description in the
+// keyboard-shortcuts dialog (`shortcuts.rs`).
 gpui_kit::actions!(
     granit,
     [
+        /// Open a cave.
         OpenCave,
+        /// Show or hide the agent chat.
         ToggleChat,
+        /// Show or hide the sidebar.
         ToggleSidebar,
+        /// Open or close the settings.
         ToggleSettings,
+        /// Search the notes.
         SearchNotes
     ]
 );
@@ -1043,6 +1050,22 @@ impl Workspace {
                             .toggled(self.chat_visible)
                             .disabled(!cave_open)
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_chat(cx))),
+                    )
+                    .child(
+                        Button::new("keyboard-shortcuts")
+                            .ghost()
+                            .xsmall()
+                            .icon(AppIcon::Keyboard)
+                            .tooltip("Keyboard shortcuts")
+                            .on_click(|_, window, cx| crate::shortcuts::open(window, cx)),
+                    )
+                    .child(
+                        Button::new("about")
+                            .ghost()
+                            .xsmall()
+                            .icon(AppIcon::Info)
+                            .tooltip("About Granit")
+                            .on_click(|_, window, cx| crate::about::open(window, cx)),
                     )
                     .child(
                         Button::new("toggle-settings")

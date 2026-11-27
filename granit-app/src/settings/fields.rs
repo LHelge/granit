@@ -1,20 +1,26 @@
 //! Setting fields GPUI Kit's `SettingField` does not offer: a text input
 //! bound to a config value that can be masked (API keys), with a
 //! placeholder, and a number input. Both commit a typed edit on Enter and
-//! blur, which the Kit's own fields cannot.
+//! blur, which the Kit's own fields cannot. And a font picker
+//! ([`font_field`]): a searchable list of fonts, each drawn in itself, with
+//! a preview line.
 
 use std::rc::Rc;
 
 use crate::config_ops;
+use crate::theme::{self, MONO_FONT, SANS_FONT};
 use gpui::{
-    prelude::FluentBuilder as _, App, AppContext as _, Axis, Entity, SharedString, Styled,
-    Subscription,
+    div, prelude::FluentBuilder as _, px, AnyElement, App, AppContext as _, Axis, Entity,
+    IntoElement, ParentElement as _, SharedString, Styled, Subscription, Window,
 };
 use gpui_kit::component::{
     input::{Input, InputEvent, InputState, NumberInput},
+    searchable_list::{SearchableListItem, SearchableVec},
+    select::{Select, SelectEvent, SelectState},
     setting::{NumberFieldOptions, SettingField},
-    Disableable as _, Sizable as _,
+    v_flex, ActiveTheme as _, Disableable as _, IndexPath, Sizable as _, Theme,
 };
+use granit_types::FontConfig;
 
 /// The inputs [`text_field`] created on this thread, by key, for tests.
 #[cfg(test)]
@@ -41,6 +47,26 @@ pub mod probe {
                 .rev()
                 .find(|(k, _)| k.as_ref() == key)
                 .map(|(_, input)| input.clone())
+        })
+    }
+
+    thread_local! {
+        static FONTS: RefCell<Vec<(SharedString, Entity<super::FontSelect>)>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub(super) fn record_font(key: SharedString, select: Entity<super::FontSelect>) {
+        FONTS.with(|fonts| fonts.borrow_mut().push((key, select)));
+    }
+
+    /// The last font picker created for `key`.
+    pub fn font(key: &str) -> Option<Entity<super::FontSelect>> {
+        FONTS.with(|fonts| {
+            fonts
+                .borrow()
+                .iter()
+                .rev()
+                .find(|(k, _)| k.as_ref() == key)
+                .map(|(_, select)| select.clone())
         })
     }
 }
@@ -227,5 +253,196 @@ pub fn number_field(
                     this.w_full()
                 }
             })
+    })
+}
+
+/// The text of a [`font_field`]'s preview line.
+pub const FONT_PREVIEW: &str = "The quick brown fox jumps over the lazy dog";
+
+/// A font family offered by a [`font_field`]: the value stored in the
+/// config, its label and the family it is drawn in (the theme's fonts for
+/// the CSS generics).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FontChoice {
+    value: SharedString,
+    label: SharedString,
+    family: SharedString,
+}
+
+impl FontChoice {
+    /// The label, drawn in the font itself.
+    fn sample(&self) -> impl IntoElement {
+        div()
+            .font_family(self.family.clone())
+            .child(self.label.clone())
+    }
+}
+
+impl SearchableListItem for FontChoice {
+    type Value = SharedString;
+
+    fn title(&self) -> SharedString {
+        self.label.clone()
+    }
+
+    fn display_title(&self) -> Option<AnyElement> {
+        Some(self.sample().into_any_element())
+    }
+
+    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        self.sample()
+    }
+
+    fn value(&self) -> &SharedString {
+        &self.value
+    }
+
+    /// The label or the stored name contains the query, ignoring case.
+    fn matches(&self, query: &str) -> bool {
+        let query = query.to_lowercase();
+        self.label.to_lowercase().contains(&query) || self.value.to_lowercase().contains(&query)
+    }
+}
+
+/// The families a [`font_field`] offers: the theme's UI and monospace
+/// fonts (stored as the CSS generics `sans-serif` and `monospace`, which
+/// the Tauri app reads too), the stored family when it is neither of
+/// those nor installed (another generic such as `serif`, or a font since
+/// removed), then the installed `fonts`.
+pub fn font_choices(fonts: &[SharedString], current: &str, theme: &Theme) -> Vec<FontChoice> {
+    let resolve = |value: &str| {
+        let font = FontConfig {
+            font_family: value.to_string(),
+            font_size: 0,
+        };
+        theme::resolve_font(&font, theme).0
+    };
+    let choice = |value: &str, label: &str| FontChoice {
+        value: value.to_string().into(),
+        label: label.to_string().into(),
+        family: resolve(value),
+    };
+    let mut choices = vec![
+        choice(SANS_FONT, "Theme font"),
+        choice(MONO_FONT, "Theme monospace font"),
+    ];
+    let current = current.trim();
+    let known = current.is_empty()
+        || choices.iter().any(|c| c.value.as_ref() == current)
+        || fonts.iter().any(|font| font.as_ref() == current);
+    if !known {
+        choices.push(choice(current, current));
+    }
+    choices.extend(fonts.iter().map(|font| choice(font, font)));
+    choices
+}
+
+/// The Kit select a [`font_field`] draws.
+pub type FontSelect = SelectState<SearchableVec<FontChoice>>;
+
+/// The select of a [`font_field`], kept across renders by its key.
+struct BoundFont {
+    select: Entity<FontSelect>,
+    /// The family last read from the config: the selection follows the
+    /// config only when this changes, so it never clears a search query
+    /// being typed.
+    value: SharedString,
+    _subscription: Subscription,
+}
+
+/// A font picker: a searchable list of `fonts` (and the theme's fonts, see
+/// [`font_choices`]), each drawn in itself, with the chosen family shown in
+/// itself and a preview line in the configured family and size below.
+/// `get` reads the font setting, `set` stores a picked family (pass a
+/// [`super::SettingsCtx::setter`]: a pick saves at once and the note or
+/// chat redraws in it). `key` names its state, so it must be unique in the
+/// view; `label` is the select's accessible name.
+pub fn font_field(
+    key: impl Into<SharedString>,
+    label: impl Into<SharedString>,
+    fonts: Vec<SharedString>,
+    get: impl Fn(&App) -> FontConfig + 'static,
+    set: impl Fn(SharedString, &mut App) + 'static,
+) -> SettingField<SharedString> {
+    let key: SharedString = key.into();
+    let label: SharedString = label.into();
+    let fonts = Rc::new(fonts);
+    let set = Rc::new(set);
+    SettingField::render(move |render, window, cx| {
+        let font = get(cx);
+        let value = SharedString::from(font.font_family.trim().to_string());
+        let state = window.use_keyed_state(key.clone(), cx, {
+            let fonts = fonts.clone();
+            let set = set.clone();
+            let value = value.clone();
+            #[cfg(test)]
+            let key = key.clone();
+            move |window, cx| {
+                let choices = font_choices(&fonts, &value, cx.theme());
+                let selected = choices
+                    .iter()
+                    .position(|choice| choice.value == value)
+                    .map(|row| IndexPath::default().row(row));
+                let select = cx.new(|cx| {
+                    SelectState::new(SearchableVec::new(choices), selected, window, cx)
+                        .searchable(true)
+                });
+                #[cfg(test)]
+                probe::record_font(key.clone(), select.clone());
+                let _subscription = cx.subscribe(
+                    &select,
+                    move |_, _, event: &SelectEvent<SearchableVec<FontChoice>>, cx| {
+                        let SelectEvent::Confirm(Some(family)) = event else {
+                            return;
+                        };
+                        set(family.clone(), cx);
+                    },
+                );
+                BoundFont {
+                    select,
+                    value,
+                    _subscription,
+                }
+            }
+        });
+        // The config changed elsewhere: show its family as chosen, adding
+        // it to the list when it is not there.
+        if state.read(cx).value != value {
+            let choices = font_choices(&fonts, &value, cx.theme());
+            state.update(cx, |state, cx| {
+                state.value = value.clone();
+                state.select.update(cx, |select, cx| {
+                    select.set_items(SearchableVec::new(choices), window, cx);
+                    select.set_selected_value(&value, window, cx);
+                });
+            });
+        }
+        let select = state.read(cx).select.clone();
+        let (family, size) = theme::resolve_font(&font, cx.theme());
+        v_flex()
+            .gap_1()
+            .map(|this| {
+                if render.layout() == Axis::Horizontal {
+                    this.w_64()
+                } else {
+                    this.w_full()
+                }
+            })
+            .child(
+                Select::new(&select)
+                    .accessibility_label(label.clone())
+                    .search_placeholder("Search fonts…")
+                    .menu_max_h(px(320.))
+                    .disabled(render.is_disabled())
+                    .with_size(render.size()),
+            )
+            .child(
+                div()
+                    .truncate()
+                    .font_family(family)
+                    .text_size(size)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(FONT_PREVIEW),
+            )
     })
 }

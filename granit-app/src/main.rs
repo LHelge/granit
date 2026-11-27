@@ -20,10 +20,12 @@
 //!   ([`backup_ops::BackupOps`]); [`disaster_restore`]: restoring a cave with
 //!   none open.
 //! - [`resize`]: side panels resized by dragging their edge.
+//! - [`shortcuts`], [`about`]: the keyboard-shortcuts and about dialogs.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`clipboard`]: HTML on the clipboard, which GPUI's cannot hold.
 //! - [`last_cave`]: the remembered last-open cave path.
 
+mod about;
 mod agent_ops;
 mod assets;
 mod backup_ops;
@@ -41,6 +43,7 @@ mod panels;
 mod resize;
 mod runtime;
 mod settings;
+mod shortcuts;
 mod theme;
 mod workspace;
 
@@ -52,7 +55,13 @@ use log::warn;
 use host::{Host, HostOptions};
 use workspace::StartupCave;
 
-gpui_kit::actions!(granit, [Quit]);
+gpui_kit::actions!(
+    granit,
+    [
+        /// Quit Granit.
+        Quit
+    ]
+);
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();

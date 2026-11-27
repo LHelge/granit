@@ -540,3 +540,82 @@ fn font_changes_apply_to_the_editor_and_chat_live(cx: &mut TestAppContext) {
     assert_eq!(note, Some((mono, gpui::px(20.))));
     assert_eq!(chat_font.map(|(_, size)| size), Some(gpui::px(11.)));
 }
+
+#[test]
+fn the_font_list_keeps_the_generics_and_an_unknown_stored_family() {
+    use super::fields::font_choices;
+    use gpui_kit::component::searchable_list::SearchableListItem as _;
+
+    let theme = gpui_kit::component::Theme::default();
+    let fonts: Vec<gpui::SharedString> = vec!["Fira Sans".into(), "Iosevka".into()];
+    let values = |current: &str| -> Vec<String> {
+        font_choices(&fonts, current, &theme)
+            .iter()
+            .map(|choice| choice.value().to_string())
+            .collect()
+    };
+    assert_eq!(
+        values("Iosevka"),
+        ["sans-serif", "monospace", "Fira Sans", "Iosevka"]
+    );
+    assert_eq!(
+        values("sans-serif"),
+        ["sans-serif", "monospace", "Fira Sans", "Iosevka"]
+    );
+    // Another generic, or a font no longer installed, stays selectable.
+    assert_eq!(
+        values("serif"),
+        ["sans-serif", "monospace", "serif", "Fira Sans", "Iosevka"]
+    );
+
+    let choices = font_choices(&fonts, "", &theme);
+    let matching = |query: &str| -> Vec<String> {
+        choices
+            .iter()
+            .filter(|choice| choice.matches(query))
+            .map(|choice| choice.title().to_string())
+            .collect()
+    };
+    assert_eq!(matching("iose"), ["Iosevka"]);
+    assert_eq!(matching("MONO"), ["Theme monospace font"]);
+    assert_eq!(matching("sans"), ["Theme font", "Fira Sans"]);
+}
+
+#[gpui::test]
+fn picking_a_font_saves_it_and_follows_the_config(cx: &mut TestAppContext) {
+    use gpui_kit::component::select::SelectEvent;
+
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open_settings(&app, 0, cx);
+    let select = probe::font("font-family-Note font").expect("the note font picker is drawn");
+    let selected = |cx: &mut TestAppContext| {
+        cx.read_entity(&select, |select, _| select.selected_value().cloned())
+    };
+    assert_eq!(selected(cx).as_deref(), Some("sans-serif"));
+
+    // A pick is saved at once.
+    select.update(cx, |_, cx| {
+        cx.emit(SelectEvent::Confirm(Some("monospace".into())))
+    });
+    cx.run_until_parked();
+    let family = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            Host::core(cx)
+                .lock_config()
+                .reading_font
+                .font_family
+                .clone()
+        })
+    };
+    assert_eq!(family(cx), "monospace");
+    assert!(saved_config(&dir).contains("monospace"));
+
+    // A change made elsewhere shows as the choice, even a family the list
+    // did not have.
+    update(cx, |config| {
+        config.reading_font.font_family = "serif".into()
+    });
+    app.draw(cx);
+    assert_eq!(selected(cx).as_deref(), Some("serif"));
+}
