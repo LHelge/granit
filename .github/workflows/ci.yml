@@ -59,14 +59,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Clippy (backend)
-        run: cargo clippy -p granit --all-targets -- -D warnings
+      - name: Clippy (backend + core)
+        run: cargo clippy -p granit -p granit-core --all-targets -- -D warnings
 
       - name: Clippy (frontend)
         run: cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
 
       - name: Run tests
-        run: cargo test -p granit
+        run: cargo test -p granit -p granit-core
 
       # The rustwasm.github.io installer serves a stale version (the project
       # moved to the drager org); install-action tracks the latest release.

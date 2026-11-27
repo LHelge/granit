@@ -3313,13 +3313,53 @@ dependencies = [
 name = "granit"
 version = "0.10.1"
 dependencies = [
+ "chrono",
+ "font-kit",
+ "granit-api",
+ "granit-core",
+ "granit-types",
+ "hex",
+ "log",
+ "parking_lot",
+ "percent-encoding",
+ "rig-core",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "sha2 0.10.9",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.20",
+ "uuid",
+]
+
+[[package]]
+name = "granit-api"
+version = "0.10.1"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "granit-core"
+version = "0.10.1"
+dependencies = [
  "argon2",
  "atomic-write-file",
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
  "fastembed",
- "font-kit",
  "futures",
  "granit-api",
  "granit-types",
@@ -3339,30 +3379,12 @@ dependencies = [
  "serde_yml",
  "sha2 0.10.9",
  "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-store",
- "tauri-plugin-updater",
  "tempfile",
  "tera",
  "thiserror 2.0.20",
  "tokio",
  "uuid",
  "zstd",
-]
-
-[[package]]
-name = "granit-api"
-version = "0.10.1"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "uuid",
 ]
 
 [[package]]

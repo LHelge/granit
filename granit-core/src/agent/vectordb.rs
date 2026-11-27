@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-use crate::commands::SharedCave;
+use crate::state::SharedCave;
 
 use super::AgentError;
 
@@ -36,10 +36,10 @@ struct EmbeddingEntry {
 
 /// Shared, cloneable vector index over cave notes.
 ///
-/// Wraps an `Arc<Inner>` so it can be held in `AppState` and passed to the
+/// Wraps an `Arc<Inner>` so it can be held in `CoreState` and passed to the
 /// agent builder. Uses fastembed for local CPU-based embeddings.
 #[derive(Clone)]
-pub(crate) struct CaveVectorIndex {
+pub struct CaveVectorIndex {
     inner: Arc<CaveVectorIndexInner>,
 }
 
@@ -58,6 +58,10 @@ struct CaveVectorIndexInner {
     pending_updates: Mutex<HashSet<String>>,
     /// Whether a flush task is currently armed for `pending_updates`.
     flush_armed: std::sync::atomic::AtomicBool,
+    /// The tokio runtime the index was built on. Flush tasks are spawned on
+    /// it, so [`CaveVectorIndex::schedule_note_update`] also works from host
+    /// threads outside the runtime (e.g. synchronous UI command handlers).
+    runtime: tokio::runtime::Handle,
 }
 
 /// Holdoff between a note mutation and the embedding update. Saves arriving
@@ -79,12 +83,18 @@ impl CaveVectorIndex {
     /// Loads cached embeddings from `.granit/embeddings.bin` if the file
     /// exists and the model name matches. Does **not** rebuild — call
     /// [`rebuild`] afterwards (typically on a background task).
-    pub(crate) fn new(
+    ///
+    /// Must be called from within a tokio runtime (an async task or a
+    /// `spawn_blocking` closure); debounced updates are spawned on it.
+    pub fn new(
         cave: SharedCave,
         model_name: &str,
         models_dir: &Path,
         bundled_model_dir: Option<&Path>,
     ) -> Result<Self, AgentError> {
+        let runtime = tokio::runtime::Handle::try_current().map_err(|e| {
+            AgentError::Embedding(format!("vector index needs a tokio runtime: {e}"))
+        })?;
         let t0 = Instant::now();
         let model = if model_name == DEFAULT_EMBEDDING_MODEL {
             if let Some(dir) = bundled_model_dir {
@@ -125,6 +135,7 @@ impl CaveVectorIndex {
                 cancelled: std::sync::atomic::AtomicBool::new(false),
                 pending_updates: Mutex::new(HashSet::new()),
                 flush_armed: std::sync::atomic::AtomicBool::new(false),
+                runtime,
             }),
         })
     }
@@ -134,7 +145,7 @@ impl CaveVectorIndex {
     /// The first call arms a flush task that sleeps for
     /// [`EMBED_UPDATE_HOLDOFF`], then embeds every slug queued in the
     /// meantime; repeated saves of the same note collapse into one update.
-    pub(crate) fn schedule_note_update(&self, slug: String) {
+    pub fn schedule_note_update(&self, slug: String) {
         self.inner.pending_updates.lock().insert(slug);
         let already_armed = self
             .inner
@@ -144,7 +155,7 @@ impl CaveVectorIndex {
             return;
         }
         let index = self.clone();
-        tauri::async_runtime::spawn(async move {
+        self.inner.runtime.spawn(async move {
             tokio::time::sleep(EMBED_UPDATE_HOLDOFF).await;
             // Disarm before draining: a save landing after the drain arms a
             // fresh flush instead of being silently dropped.
@@ -164,7 +175,7 @@ impl CaveVectorIndex {
 
     /// Mark this index as superseded, aborting any in-flight rebuild at the
     /// next chunk boundary.
-    pub(crate) fn cancel(&self) {
+    pub fn cancel(&self) {
         self.inner
             .cancelled
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -178,7 +189,7 @@ impl CaveVectorIndex {
 
     /// Rebuild the index: compare in-memory entries against the cave's current
     /// notes, re-embed any new or modified notes, and persist the cache.
-    pub(crate) async fn rebuild(&self) -> Result<(), AgentError> {
+    pub async fn rebuild(&self) -> Result<(), AgentError> {
         let rebuild_start = Instant::now();
 
         // Snapshot cached entry mtimes so we can compare without holding the
@@ -306,7 +317,7 @@ impl CaveVectorIndex {
     }
 
     /// Re-embed a single note after it has been saved or created.
-    pub(crate) async fn update_note(&self, slug: &str) {
+    pub async fn update_note(&self, slug: &str) {
         if self.is_cancelled() {
             debug!("skipping embedding update for {slug}: index superseded");
             return;
@@ -374,7 +385,7 @@ impl CaveVectorIndex {
     }
 
     /// Remove the embedding for a deleted note.
-    pub(crate) async fn remove_note(&self, slug: &str) {
+    pub async fn remove_note(&self, slug: &str) {
         if self.is_cancelled() {
             debug!("skipping embedding removal for {slug}: index superseded");
             return;
@@ -387,7 +398,7 @@ impl CaveVectorIndex {
     }
 
     /// Embed a query string and find the top N most similar note slugs.
-    pub(crate) async fn search(
+    pub async fn search(
         &self,
         query: &str,
         n: usize,
@@ -595,7 +606,7 @@ const DEFAULT_EMBEDDING_MODEL: &str = "AllMiniLML6V2Q";
 const EMBED_CHUNK_SIZE: usize = 32;
 
 /// Resolve the model name from config, falling back to the default.
-pub(crate) fn resolve_model_name(config_model: Option<&str>) -> &str {
+pub fn resolve_model_name(config_model: Option<&str>) -> &str {
     config_model.unwrap_or(DEFAULT_EMBEDDING_MODEL)
 }
 

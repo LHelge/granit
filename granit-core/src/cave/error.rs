@@ -92,12 +92,6 @@ impl From<serde_yml::Error> for CaveError {
     }
 }
 
-impl From<tauri::Error> for CaveError {
-    fn from(e: tauri::Error) -> Self {
-        CaveError::Window(e.to_string())
-    }
-}
-
 impl From<tera::Error> for CaveError {
     fn from(e: tera::Error) -> Self {
         CaveError::TemplateRender(e.to_string())

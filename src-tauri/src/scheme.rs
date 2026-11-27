@@ -10,9 +10,8 @@
 //!   page of the note `slug`.
 //!
 //! Requests are matched by path, not host, because platforms spell custom
-//! schemes differently: macOS and Linux use `granit://localhost/cave/a.png`,
-//! while WebView2 on Windows (and Android) maps custom schemes to
-//! `http://granit.localhost/cave/a.png`. [`base_url`] hides that difference.
+//! schemes differently (see `granit_core::urls`, which builds the URLs and is
+//! re-exported here).
 //!
 //! Every served path is canonicalized and checked to stay under its route's
 //! root, so `..` segments and symlinks that escape the cave are rejected.
@@ -20,76 +19,22 @@
 use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
-use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
+use percent_encoding::percent_decode_str;
 use tauri::http::{header, Request, Response, StatusCode};
 
 use crate::cave::{CaveError, PRESENTATIONS_DIR};
 use crate::commands::{render_presentation_page, AppState};
-
-/// Scheme name registered with Tauri.
-pub const SCHEME: &str = "granit";
-
-/// First path segment of the route serving files from the cave root.
-pub const ROUTE_CAVE: &str = "cave";
-/// First path segment of the route serving files from `.granit/presentations/`.
-pub const ROUTE_PRESENTATION: &str = "presentation";
-/// First path segment of the route serving bundled app assets.
-pub const ROUTE_ASSET: &str = "asset";
+pub use granit_core::urls::*;
 
 /// The mermaid bundle (`build/mermaid.js`, staged by the build script) that
 /// the presentation page loads to render diagrams. Empty when the JS build
 /// had not run at compile time.
 const MERMAID_JS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mermaid.js"));
-/// File name of the mermaid bundle under the asset route.
-pub const MERMAID_ASSET: &str = "mermaid.js";
-
-/// Origin the webview uses for scheme URLs, with a trailing slash.
-pub fn base_url() -> &'static str {
-    if cfg!(any(windows, target_os = "android")) {
-        "http://granit.localhost/"
-    } else {
-        "granit://localhost/"
-    }
-}
-
-/// URL serving the file at `relative` (forward-slash path under the cave root).
-pub fn cave_file_url(relative: &str) -> String {
-    route_url(ROUTE_CAVE, relative)
-}
-
-/// URL serving the file at `relative` (forward-slash path under
-/// `.granit/presentations/`).
-pub fn presentation_url(relative: &str) -> String {
-    route_url(ROUTE_PRESENTATION, relative)
-}
-
-/// URL of a bundled app asset (`mermaid.js`).
-pub fn asset_url(name: &str) -> String {
-    route_url(ROUTE_ASSET, name)
-}
 
 /// URL of the presentation page for the note `slug`.
 pub fn presentation_page_url(slug: &str) -> Result<tauri::Url, CaveError> {
     tauri::Url::parse(&route_url(ROUTE_PRESENTATION, slug))
         .map_err(|e| CaveError::Window(format!("invalid presentation URL: {e}")))
-}
-
-/// Characters percent-encoded inside a path segment: everything except the
-/// RFC 3986 unreserved set.
-const SEGMENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'~');
-
-fn route_url(route: &str, relative: &str) -> String {
-    let mut url = String::from(base_url());
-    url.push_str(route);
-    for segment in relative.split('/').filter(|s| !s.is_empty()) {
-        url.push('/');
-        url.push_str(&utf8_percent_encode(segment, SEGMENT_ENCODE_SET).to_string());
-    }
-    url
 }
 
 /// Split a request path (`/cave/a/b%20c.png`) into its route and the
@@ -265,22 +210,6 @@ mod tests {
 
     fn respond_in(dir: &tempfile::TempDir, path: &str) -> Response<Cow<'static, [u8]>> {
         respond(&state_for(dir), &request(path))
-    }
-
-    // ── URL building ────────────────────────────────────────────────
-
-    #[test]
-    fn test_cave_file_url_encodes_segments() {
-        let url = cave_file_url("sub/pic ture#1.jpg");
-        assert_eq!(url, format!("{}cave/sub/pic%20ture%231.jpg", base_url()));
-    }
-
-    #[test]
-    fn test_route_url_drops_empty_segments() {
-        assert_eq!(
-            cave_file_url("/a//b.png"),
-            format!("{}cave/a/b.png", base_url())
-        );
     }
 
     // ── Path scoping ────────────────────────────────────────────────

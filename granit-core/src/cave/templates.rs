@@ -215,16 +215,16 @@ impl Cave {
 
     // ── Template rendering helpers ─────────────────────────────────
 
-    pub(crate) fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {
+    pub fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {
         let raw = self.read_template_raw(slug)?;
         Ok(crate::markdown::Markdown::new(&raw).body().to_string())
     }
 
-    pub(crate) fn parse_daily_note_slug(slug: &str) -> Option<NaiveDate> {
+    pub fn parse_daily_note_slug(slug: &str) -> Option<NaiveDate> {
         NaiveDate::parse_from_str(slug, "%Y-%m-%d").ok()
     }
 
-    pub(crate) fn render_note_template(
+    pub fn render_note_template(
         &self,
         template_slug: &str,
         note_slug: &str,
@@ -249,7 +249,7 @@ impl Cave {
         Ok(tera::Tera::one_off(&template_body, &context, false)?)
     }
 
-    pub(crate) fn initial_body_for_new_note(
+    pub fn initial_body_for_new_note(
         &self,
         slug: &str,
         template_slug: Option<&str>,
@@ -261,7 +261,7 @@ impl Cave {
         Ok(String::new())
     }
 
-    pub(crate) fn initial_icon_for_new_note(
+    pub fn initial_icon_for_new_note(
         &self,
         template_slug: Option<&str>,
     ) -> Result<Option<String>, CaveError> {
@@ -273,7 +273,7 @@ impl Cave {
         Ok(crate::markdown::Markdown::new(&raw).icon())
     }
 
-    pub(crate) fn initial_presentation_for_new_note(
+    pub fn initial_presentation_for_new_note(
         &self,
         template_slug: Option<&str>,
     ) -> Result<Option<String>, CaveError> {
@@ -285,7 +285,7 @@ impl Cave {
         Ok(crate::markdown::Markdown::new(&raw).presentation())
     }
 
-    pub(crate) fn initial_tags_for_new_note(
+    pub fn initial_tags_for_new_note(
         &self,
         template_slug: Option<&str>,
     ) -> Result<Vec<String>, CaveError> {

@@ -3,7 +3,7 @@ mod frontmatter;
 mod presentation;
 mod render;
 
-pub(crate) use frontmatter::split_frontmatter;
+pub use frontmatter::split_frontmatter;
 
 use std::cell::OnceCell;
 

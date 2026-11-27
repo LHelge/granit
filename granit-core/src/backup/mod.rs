@@ -13,10 +13,10 @@ mod client;
 mod crypto;
 mod restore;
 
-pub(crate) use archive::pack_cave;
-pub(crate) use client::BackupApiClient;
-pub(crate) use crypto::{encrypt, has_key_file, load_key, set_passphrase};
-pub(crate) use restore::{restore_in_place, restore_to_new_dir, verify_and_decrypt};
+pub use archive::pack_cave;
+pub use client::BackupApiClient;
+pub use crypto::{encrypt, has_key_file, load_key, set_passphrase};
+pub use restore::{restore_in_place, restore_to_new_dir, verify_and_decrypt};
 
 /// Errors from packing, encrypting, or uploading a backup.
 #[derive(Debug, thiserror::Error)]

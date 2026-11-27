@@ -36,18 +36,18 @@ const NONCE_LEN: usize = 24;
 const KEY_LEN: usize = 32;
 const HEADER_LEN: usize = 4 + 1 + 12 + SALT_LEN + NONCE_LEN;
 
-pub(crate) const MIN_PASSPHRASE_LEN: usize = 8;
+pub const MIN_PASSPHRASE_LEN: usize = 8;
 
 /// Name of the cached key file inside `.granit/`. Must never be included in
 /// the archive itself.
-pub(crate) const KEY_FILE_NAME: &str = "backup.key";
+pub const KEY_FILE_NAME: &str = "backup.key";
 const KEY_FILE_HEADER: &str = "GRANIT-BACKUP-KEY v1";
 
 /// Argon2id cost parameters. Fixed for new backups, but recorded in both the
 /// key cache and every archive header, so older archives (and caches) made
 /// with different parameters keep working.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct KdfParams {
+pub struct KdfParams {
     pub m_kib: u32,
     pub t: u32,
     pub p: u32,
@@ -72,7 +72,7 @@ impl KdfParams {
 }
 
 /// The cached derived key plus everything needed to stamp archive headers.
-pub(crate) struct CachedKey {
+pub struct CachedKey {
     pub key: [u8; KEY_LEN],
     pub salt: [u8; SALT_LEN],
     pub params: KdfParams,
@@ -97,7 +97,7 @@ fn derive_key(
 }
 
 /// Whether a cached key exists for this cave.
-pub(crate) fn has_key_file(granit_dir: &Path) -> bool {
+pub fn has_key_file(granit_dir: &Path) -> bool {
     key_file_path(granit_dir).is_file()
 }
 
@@ -105,7 +105,7 @@ pub(crate) fn has_key_file(granit_dir: &Path) -> bool {
 /// `.granit/backup.key`. Deliberately slow (Argon2id) — call off the main
 /// thread. Replacing an existing key file is fine: older archives carry
 /// their own salt and parameters in the header.
-pub(crate) fn set_passphrase(granit_dir: &Path, passphrase: &str) -> Result<(), BackupError> {
+pub fn set_passphrase(granit_dir: &Path, passphrase: &str) -> Result<(), BackupError> {
     if passphrase.chars().count() < MIN_PASSPHRASE_LEN {
         return Err(BackupError::WeakPassphrase);
     }
@@ -144,7 +144,7 @@ pub(crate) fn set_passphrase(granit_dir: &Path, passphrase: &str) -> Result<(), 
 /// Load the cached key. A missing file means no passphrase has been set; a
 /// present-but-unreadable file is an error and is never silently replaced —
 /// regenerating the key would orphan every existing backup.
-pub(crate) fn load_key(granit_dir: &Path) -> Result<CachedKey, BackupError> {
+pub fn load_key(granit_dir: &Path) -> Result<CachedKey, BackupError> {
     let path = key_file_path(granit_dir);
     if !path.is_file() {
         return Err(BackupError::PassphraseNotSet);
@@ -221,7 +221,7 @@ fn build_header(cached: &CachedKey, nonce: &[u8; NONCE_LEN]) -> Vec<u8> {
 }
 
 /// Encrypt `plaintext` into a self-describing container (header + ciphertext).
-pub(crate) fn encrypt(cached: &CachedKey, plaintext: &[u8]) -> Result<Vec<u8>, BackupError> {
+pub fn encrypt(cached: &CachedKey, plaintext: &[u8]) -> Result<Vec<u8>, BackupError> {
     let mut nonce = [0u8; NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce);
     let header = build_header(cached, &nonce);
@@ -292,7 +292,7 @@ fn decrypt_parsed(key: &[u8; KEY_LEN], parsed: &ParsedContainer) -> Result<Vec<u
 /// Whether `cached` was derived with the exact salt and KDF parameters
 /// recorded in this container's header — i.e. whether it can decrypt the
 /// archive without re-prompting for the passphrase.
-pub(crate) fn key_matches(cached: &CachedKey, container: &[u8]) -> Result<bool, BackupError> {
+pub fn key_matches(cached: &CachedKey, container: &[u8]) -> Result<bool, BackupError> {
     let parsed = parse_container(container)?;
     Ok(parsed.salt == cached.salt && parsed.params == cached.params)
 }
@@ -300,10 +300,7 @@ pub(crate) fn key_matches(cached: &CachedKey, container: &[u8]) -> Result<bool, 
 /// Decrypt a container with the cached key. Fails as [`BackupError::Decrypt`]
 /// when the header's salt or KDF parameters differ from the cache — check
 /// [`key_matches`] first to decide whether to prompt for the passphrase.
-pub(crate) fn decrypt_with_cached(
-    cached: &CachedKey,
-    container: &[u8],
-) -> Result<Vec<u8>, BackupError> {
+pub fn decrypt_with_cached(cached: &CachedKey, container: &[u8]) -> Result<Vec<u8>, BackupError> {
     let parsed = parse_container(container)?;
     if parsed.salt != cached.salt || parsed.params != cached.params {
         return Err(BackupError::Decrypt);
@@ -314,7 +311,7 @@ pub(crate) fn decrypt_with_cached(
 /// Decrypt a container using only the passphrase — the salt and KDF
 /// parameters come from the header, so this works on a machine that has
 /// never seen the cave.
-pub(crate) fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, BackupError> {
+pub fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, BackupError> {
     let parsed = parse_container(container)?;
     let key = derive_key(passphrase, &parsed.salt, parsed.params)?;
     decrypt_parsed(&key, &parsed)
@@ -323,7 +320,7 @@ pub(crate) fn decrypt(passphrase: &str, container: &[u8]) -> Result<Vec<u8>, Bac
 /// Cheap test-only key: tiny Argon2 parameters so tests don't burn
 /// 64 MiB × 3 iterations per derive. Shared with the restore tests.
 #[cfg(test)]
-pub(crate) fn fast_key(passphrase: &str) -> CachedKey {
+pub fn fast_key(passphrase: &str) -> CachedKey {
     let params = KdfParams {
         m_kib: 8,
         t: 1,

@@ -51,7 +51,7 @@ impl Cave {
     }
 
     /// Scan the flat presentations directory for `.css` files.
-    pub(crate) fn scan_presentations(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+    pub fn scan_presentations(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
         Self::scan_flat_dir(dir, "css")
     }
 
@@ -84,7 +84,7 @@ impl Cave {
     }
 
     /// Absolute path of the template `slug`, or `PresentationNotFound`.
-    pub(crate) fn presentation_path(&self, slug: &str) -> Result<&Path, CaveError> {
+    pub fn presentation_path(&self, slug: &str) -> Result<&Path, CaveError> {
         validate_name(slug)?;
         self.presentations
             .get(slug)

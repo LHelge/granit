@@ -8,7 +8,7 @@ mod web;
 mod writing;
 
 use crate::agent::vectordb::CaveVectorIndex;
-use crate::commands::{with_shared_cave, SharedCave};
+use crate::state::{with_shared_cave, SharedCave};
 use granit_types::{AgentConfig, AgentMode};
 pub use navigation::{
     ListFoldersTool, ListNotesTool, ListTagsTool, ListTemplatesTool, SearchContentTool,

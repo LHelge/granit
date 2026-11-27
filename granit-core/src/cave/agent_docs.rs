@@ -145,7 +145,7 @@ impl Cave {
     /// `SKILL.md`, returning name → SKILL.md path. Directories with invalid
     /// names or without a `SKILL.md` are logged and skipped rather than
     /// refusing to open the cave.
-    pub(crate) fn scan_skills(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+    pub fn scan_skills(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
         if !dir.is_dir() {
             return Ok(HashMap::new());
         }

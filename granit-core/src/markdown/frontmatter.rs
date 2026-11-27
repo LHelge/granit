@@ -44,7 +44,7 @@ impl<'a> Markdown<'a> {
 /// document. Returns `(None, raw)` when no frontmatter block is present;
 /// the YAML text is returned unparsed so callers can deserialize it into
 /// whatever shape they need.
-pub(crate) fn split_frontmatter(raw: &str) -> (Option<String>, &str) {
+pub fn split_frontmatter(raw: &str) -> (Option<String>, &str) {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 

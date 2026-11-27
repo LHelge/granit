@@ -165,7 +165,7 @@ impl Markdown<'_> {
         {
             page.push_str(&format!(
                 "<script src=\"{}\"></script>\n",
-                escape_html(&crate::scheme::asset_url(crate::scheme::MERMAID_ASSET))
+                escape_html(&crate::urls::asset_url(crate::urls::MERMAID_ASSET))
             ));
         }
         page.push_str(&format!(
@@ -541,7 +541,7 @@ mod tests {
         let page = doc.render_presentation("talk", "t.css");
         let script = format!(
             "<script src=\"{}\"></script>",
-            crate::scheme::asset_url(crate::scheme::MERMAID_ASSET)
+            crate::urls::asset_url(crate::urls::MERMAID_ASSET)
         );
         assert!(page.contains(&script), "got: {page}");
         // The bundle must be loaded before the page script uses it.
@@ -558,7 +558,7 @@ mod tests {
         let slides = Markdown::new("![](img/a.png)")
             .with_image_base("talks")
             .render_slides();
-        let expected = crate::scheme::cave_file_url("talks/img/a.png");
+        let expected = crate::urls::cave_file_url("talks/img/a.png");
         assert!(
             slides[0].html.contains(&expected),
             "got: {}",

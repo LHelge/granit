@@ -14,14 +14,14 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Generous overall timeout: covers uploading a whole archive on a slow link.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
-pub(crate) struct BackupApiClient {
+pub struct BackupApiClient {
     base_url: String,
     api_key: String,
     http: reqwest::Client,
 }
 
 impl BackupApiClient {
-    pub(crate) fn new(base_url: &str, api_key: &str) -> Result<Self, BackupError> {
+    pub fn new(base_url: &str, api_key: &str) -> Result<Self, BackupError> {
         let base_url = base_url.trim().trim_end_matches('/').to_string();
         let api_key = api_key.trim().to_string();
         if base_url.is_empty() || api_key.is_empty() {
@@ -59,7 +59,7 @@ impl BackupApiClient {
         })
     }
 
-    pub(crate) async fn create_backup(
+    pub async fn create_backup(
         &self,
         request: &CreateBackupRequest,
     ) -> Result<CreateBackupResponse, BackupError> {
@@ -73,7 +73,7 @@ impl BackupApiClient {
         Ok(Self::expect_success(response).await?.json().await?)
     }
 
-    pub(crate) async fn complete_backup(&self, id: Uuid) -> Result<BackupInfo, BackupError> {
+    pub async fn complete_backup(&self, id: Uuid) -> Result<BackupInfo, BackupError> {
         let response = self
             .http
             .post(format!("{}/api/v1/backups/{id}/complete", self.base_url))
@@ -83,7 +83,7 @@ impl BackupApiClient {
         Ok(Self::expect_success(response).await?.json().await?)
     }
 
-    pub(crate) async fn list_backups(&self) -> Result<Vec<BackupInfo>, BackupError> {
+    pub async fn list_backups(&self) -> Result<Vec<BackupInfo>, BackupError> {
         let response = self
             .http
             .get(format!("{}/api/v1/backups", self.base_url))
@@ -94,7 +94,7 @@ impl BackupApiClient {
         Ok(listed.backups)
     }
 
-    pub(crate) async fn delete_backup(&self, id: Uuid) -> Result<(), BackupError> {
+    pub async fn delete_backup(&self, id: Uuid) -> Result<(), BackupError> {
         let response = self
             .http
             .delete(format!("{}/api/v1/backups/{id}", self.base_url))
@@ -105,10 +105,7 @@ impl BackupApiClient {
         Ok(())
     }
 
-    pub(crate) async fn download_backup(
-        &self,
-        id: Uuid,
-    ) -> Result<DownloadBackupResponse, BackupError> {
+    pub async fn download_backup(&self, id: Uuid) -> Result<DownloadBackupResponse, BackupError> {
         let response = self
             .http
             .get(format!("{}/api/v1/backups/{id}/download", self.base_url))
@@ -120,7 +117,7 @@ impl BackupApiClient {
 
     /// Fetch the encrypted archive from the presigned URL. Like `upload`,
     /// a plain request with no auth header — the signature is in the URL.
-    pub(crate) async fn download(&self, presigned_url: &str) -> Result<Vec<u8>, BackupError> {
+    pub async fn download(&self, presigned_url: &str) -> Result<Vec<u8>, BackupError> {
         let response = self.http.get(presigned_url).send().await?;
         let status = response.status();
         if !status.is_success() {
@@ -134,7 +131,7 @@ impl BackupApiClient {
 
     /// Upload the encrypted archive to the presigned URL. Deliberately a
     /// plain PUT with no auth header — the signature is in the URL.
-    pub(crate) async fn upload(
+    pub async fn upload(
         &self,
         presigned_url: &str,
         headers: &std::collections::BTreeMap<String, String>,

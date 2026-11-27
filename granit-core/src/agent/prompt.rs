@@ -8,7 +8,7 @@ use chrono::Datelike;
 use granit_types::{AgentConfig, AgentDocInfo, AgentMode, NOTE_ICONS};
 
 /// Configuration-derived values exposed to the system prompt template.
-pub(crate) struct PromptContext {
+pub struct PromptContext {
     pub mode: AgentMode,
     /// Names of the tools that will be registered for this agent.
     pub tools: Vec<String>,
@@ -27,7 +27,7 @@ impl PromptContext {
     /// Derive the template context from the agent configuration. Used both
     /// when building the agent and when rendering the editor preview, so the
     /// preview shows exactly what the model will receive.
-    pub(crate) fn from_config(
+    pub fn from_config(
         config: &AgentConfig,
         has_vector_index: bool,
         skills: Vec<AgentDocInfo>,
@@ -51,7 +51,7 @@ impl PromptContext {
 ///
 /// A template error falls back to the raw text: a typo in the user's
 /// `system.md` must never prevent the agent from building.
-pub(crate) fn assemble_system_prompt(base: &str, ctx: &PromptContext) -> String {
+pub fn assemble_system_prompt(base: &str, ctx: &PromptContext) -> String {
     let mut context = tera::Context::new();
 
     let now = chrono::Local::now();

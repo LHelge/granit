@@ -1,9 +1,9 @@
 mod error;
-pub(crate) mod prompt;
-pub(crate) mod tools;
-pub(crate) mod vectordb;
+pub mod prompt;
+pub mod tools;
+pub mod vectordb;
 
-pub(crate) use crate::commands::SharedCave;
+pub use crate::state::SharedCave;
 pub use error::AgentError;
 use rig_core::message::ToolCall;
 
@@ -86,14 +86,14 @@ impl Agent {
         // The system prompt is a Tera template: the user's `.granit/agent/system.md`
         // when a cave is open, else the built-in default. The cave lock is taken
         // and released here, before the toolset/agent construction below.
-        let base = match crate::commands::with_shared_cave(&cave, |c| c.read_system_prompt_raw()) {
+        let base = match crate::state::with_shared_cave(&cave, |c| c.read_system_prompt_raw()) {
             Ok(Some(content)) => content,
             _ => granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE.to_string(),
         };
-        let skills = crate::commands::with_shared_cave(&cave, |c| c.list_skills())
+        let skills = crate::state::with_shared_cave(&cave, |c| c.list_skills())
             .ok()
             .unwrap_or_default();
-        let presentations = crate::commands::with_shared_cave(&cave, |c| c.list_presentations())
+        let presentations = crate::state::with_shared_cave(&cave, |c| c.list_presentations())
             .map(|list| list.into_iter().map(|p| p.slug).collect())
             .unwrap_or_default();
         let system_prompt = prompt::assemble_system_prompt(
@@ -274,7 +274,7 @@ fn configure_agent(
 }
 
 /// Query the selected provider's API for available models.
-pub(crate) async fn list_models(
+pub async fn list_models(
     provider: &ProviderConfig,
 ) -> Result<Vec<granit_types::ModelInfo>, AgentError> {
     use rig_core::client::ModelListingClient;
@@ -419,7 +419,7 @@ impl futures::Stream for AgentStream {
     }
 }
 
-pub(crate) fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> String {
+pub fn build_agent_prompt(msg: &str, attached_notes: &[AttachedNote]) -> String {
     if attached_notes.is_empty() {
         return msg.to_string();
     }

@@ -518,7 +518,7 @@ pub(super) fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
     if segments.is_empty() {
         return None;
     }
-    Some(crate::scheme::cave_file_url(&segments.join("/")))
+    Some(crate::urls::cave_file_url(&segments.join("/")))
 }
 
 /// Whether `src` starts with a URL scheme (`scheme:` per RFC 3986).
@@ -825,7 +825,7 @@ mod tests {
         let html = Markdown::new("![logo](img/logo.png)")
             .with_image_base("projects/alpha")
             .render_html();
-        let expected = crate::scheme::cave_file_url("projects/alpha/img/logo.png");
+        let expected = crate::urls::cave_file_url("projects/alpha/img/logo.png");
         assert!(
             html.contains(&format!(r#"src="{expected}""#)),
             "got: {html}"
@@ -839,7 +839,7 @@ mod tests {
             .with_image_base("")
             .render_html();
         assert!(
-            root.contains(&crate::scheme::cave_file_url("logo.png")),
+            root.contains(&crate::urls::cave_file_url("logo.png")),
             "got: {root}"
         );
 
@@ -847,7 +847,7 @@ mod tests {
             .with_image_base("deep/folder")
             .render_html();
         assert!(
-            absolute.contains(&crate::scheme::cave_file_url("assets/logo.png")),
+            absolute.contains(&crate::urls::cave_file_url("assets/logo.png")),
             "got: {absolute}"
         );
     }
@@ -858,7 +858,7 @@ mod tests {
             .with_image_base("sub")
             .render_html();
         assert!(
-            html.contains(&crate::scheme::cave_file_url("shared/a.png")),
+            html.contains(&crate::urls::cave_file_url("shared/a.png")),
             "got: {html}"
         );
 
@@ -878,7 +878,7 @@ mod tests {
         let html = Markdown::new("![](my%20img.png) ![](<my img.png>)")
             .with_image_base("")
             .render_html();
-        let expected = crate::scheme::cave_file_url("my img.png");
+        let expected = crate::urls::cave_file_url("my img.png");
         assert_eq!(html.matches(&expected).count(), 2, "got: {html}");
         assert!(!html.contains("%2520"), "got: {html}");
     }

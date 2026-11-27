@@ -18,9 +18,9 @@ fn request_animation_frame(f: impl FnOnce() + 'static) {
 /// skills are loaded verbatim by `use_skill`, never rendered with Tera).
 ///
 /// Mirrors the backend template contexts: `render_note_template` in
-/// `src-tauri/src/cave/templates.rs`, `assemble_system_prompt` in
-/// `src-tauri/src/agent/prompt.rs`, and `render_task` in
-/// `src-tauri/src/cave/agent_docs.rs`.
+/// `granit-core/src/cave/templates.rs`, `assemble_system_prompt` in
+/// `granit-core/src/agent/prompt.rs`, and `render_task` in
+/// `granit-core/src/cave/agent_docs.rs`.
 fn tera_variables(kind: Option<DocumentKind>) -> Option<Vec<(&'static str, &'static str)>> {
     match kind? {
         DocumentKind::Note | DocumentKind::Skill | DocumentKind::Presentation => None,

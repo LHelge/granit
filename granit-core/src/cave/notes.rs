@@ -449,7 +449,7 @@ impl Cave {
     /// backlink graph (resolved targets) and the broken-link list
     /// (unresolved targets, deduplicated case-insensitively keeping the
     /// first-seen spelling, sorted).
-    pub(crate) fn build_link_graph(
+    pub fn build_link_graph(
         notes: &HashMap<String, std::path::PathBuf>,
         anchors: &HashMap<String, String>,
     ) -> (HashMap<String, Vec<String>>, Vec<String>) {
@@ -513,7 +513,7 @@ impl Cave {
     /// returned as the second tuple element. The map keeps the first occurrence
     /// in a deterministic (sorted-by-note) order, so callers that ignore the
     /// error still get a consistent index.
-    pub(crate) fn collect_anchors(
+    pub fn collect_anchors(
         notes: &HashMap<String, std::path::PathBuf>,
     ) -> (HashMap<String, String>, Option<CaveError>) {
         let mut anchors: HashMap<String, String> = HashMap::new();
@@ -565,7 +565,7 @@ impl Cave {
     /// Anchors are rebuilt leniently (collisions are dropped, first wins) so a
     /// duplicate introduced during live editing never blocks the mutation; the
     /// strict check that refuses to open the cave runs only on a full scan.
-    pub(crate) fn rebuild_link_indexes(&mut self) {
+    pub fn rebuild_link_indexes(&mut self) {
         let (anchors, _collision) = Self::collect_anchors(&self.notes);
         self.anchors = anchors;
         (self.backlinks, self.broken_links) = Self::build_link_graph(&self.notes, &self.anchors);

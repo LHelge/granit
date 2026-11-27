@@ -39,7 +39,7 @@ fn is_excluded(relative: &Path) -> bool {
 /// personal markdown directory, far below 1 GB compressed. The container
 /// format's version byte leaves room for a streamed v2 if that assumption
 /// ever breaks.
-pub(crate) fn pack_cave(cave_root: &Path) -> Result<Vec<u8>, BackupError> {
+pub fn pack_cave(cave_root: &Path) -> Result<Vec<u8>, BackupError> {
     let encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
     let mut builder = tar::Builder::new(encoder);
     append_dir(&mut builder, cave_root, cave_root)?;
@@ -50,7 +50,7 @@ pub(crate) fn pack_cave(cave_root: &Path) -> Result<Vec<u8>, BackupError> {
 /// Unpack a tar.zst archive (the decrypted payload of a backup container)
 /// into `target`, which must already exist. `tar::Archive::unpack` refuses
 /// entries that would escape the target directory.
-pub(crate) fn unpack_cave(archive: &[u8], target: &Path) -> Result<(), BackupError> {
+pub fn unpack_cave(archive: &[u8], target: &Path) -> Result<(), BackupError> {
     let decoder = zstd::Decoder::new(archive)?;
     let mut tar = tar::Archive::new(decoder);
     tar.unpack(target)?;

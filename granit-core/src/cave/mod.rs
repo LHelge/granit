@@ -11,7 +11,7 @@ mod todos;
 
 pub use error::CaveError;
 use granit_types::AppConfig;
-pub(crate) use helpers::write_atomic;
+pub use helpers::write_atomic;
 use helpers::{ensure_md_extension, validate_folder_path};
 pub use helpers::{Document, DocumentMeta, RenderedDocument};
 pub use presentations::PRESENTATIONS_DIR;
@@ -178,7 +178,7 @@ impl Cave {
     ///
     /// Subdirectories starting with `.` (hidden) are skipped, as is `.granit/`.
     /// Returns an error if two files share the same slug.
-    pub(crate) fn scan_recursive(
+    pub fn scan_recursive(
         cave_root: &Path,
         dir: &Path,
     ) -> Result<HashMap<String, PathBuf>, CaveError> {
@@ -256,13 +256,13 @@ impl Cave {
     }
 
     /// Scan the flat `.granit/templates` directory for markdown template files.
-    pub(crate) fn scan_templates(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
+    pub fn scan_templates(dir: &Path) -> Result<HashMap<String, PathBuf>, CaveError> {
         Self::scan_flat_dir(dir, "md")
     }
 
     /// Scan a flat directory for files with the given extension and return a
     /// slug (file stem) → absolute-path map. A missing directory is empty.
-    pub(crate) fn scan_flat_dir(
+    pub fn scan_flat_dir(
         dir: &Path,
         extension: &str,
     ) -> Result<HashMap<String, PathBuf>, CaveError> {
@@ -301,7 +301,7 @@ impl Cave {
     }
 
     /// Return the relative path from `self.path` to `abs_path` as a `PathBuf`.
-    pub(crate) fn relative_path(&self, abs_path: &Path) -> PathBuf {
+    pub fn relative_path(&self, abs_path: &Path) -> PathBuf {
         abs_path
             .strip_prefix(&self.path)
             .unwrap_or(abs_path)
@@ -311,7 +311,7 @@ impl Cave {
     /// The directory `abs_dir` as a cave-relative path with forward slashes
     /// (`""` for the cave root). Used as the base for resolving relative
     /// image sources when rendering a file that lives in that directory.
-    pub(crate) fn relative_dir(&self, abs_dir: &Path) -> String {
+    pub fn relative_dir(&self, abs_dir: &Path) -> String {
         self.relative_path(abs_dir)
             .components()
             .filter_map(|c| match c {
@@ -324,7 +324,7 @@ impl Cave {
 
     /// Cave-relative directory containing the note `slug`, for image
     /// resolution. See [`Cave::relative_dir`].
-    pub(crate) fn note_dir(&self, slug: &str) -> Result<String, CaveError> {
+    pub fn note_dir(&self, slug: &str) -> Result<String, CaveError> {
         let abs = self
             .notes
             .get(slug)
@@ -400,7 +400,7 @@ impl Cave {
     }
 
     /// Slug → absolute path map for all notes in the cave.
-    pub(crate) fn note_paths(&self) -> &HashMap<String, PathBuf> {
+    pub fn note_paths(&self) -> &HashMap<String, PathBuf> {
         &self.notes
     }
 
@@ -467,7 +467,7 @@ impl Cave {
     /// canonical paths. Walks up to the nearest existing ancestor so this works
     /// for paths that are about to be created as well as paths that already exist.
     /// Returns `CaveError::InvalidName` if the path escapes the cave root.
-    pub(crate) fn check_containment(&self, abs_path: &Path) -> Result<(), CaveError> {
+    pub fn check_containment(&self, abs_path: &Path) -> Result<(), CaveError> {
         let canonical_root =
             std::fs::canonicalize(&self.path).map_err(|e| CaveError::Io(e.to_string()))?;
         let mut candidate = abs_path;

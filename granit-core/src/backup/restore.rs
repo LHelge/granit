@@ -17,7 +17,7 @@ use crate::backup::crypto::{CachedKey, KEY_FILE_NAME};
 /// it — silently with the cave's cached key when its salt and KDF parameters
 /// match the archive header, with the passphrase otherwise. With neither, the
 /// caller must prompt ([`BackupError::PassphraseRequired`]).
-pub(crate) fn verify_and_decrypt(
+pub fn verify_and_decrypt(
     container: &[u8],
     expected_sha256_hex: &str,
     cached: Option<&CachedKey>,
@@ -39,7 +39,7 @@ pub(crate) fn verify_and_decrypt(
 
 /// Unpack into `target`, which must be a nonexistent path or an empty
 /// directory. Creates the directory (and parents) as needed.
-pub(crate) fn restore_to_new_dir(plaintext: &[u8], target: &Path) -> Result<(), BackupError> {
+pub fn restore_to_new_dir(plaintext: &[u8], target: &Path) -> Result<(), BackupError> {
     if target.exists() {
         if !target.is_dir() {
             return Err(BackupError::TargetNotEmpty);
@@ -60,7 +60,7 @@ pub(crate) fn restore_to_new_dir(plaintext: &[u8], target: &Path) -> Result<(), 
 /// the old cave to `<name>.pre-restore-<timestamp>` and moves the new tree
 /// into place. Returns the pre-restore path — the old contents are left
 /// there as the user's escape hatch.
-pub(crate) fn restore_in_place(plaintext: &[u8], cave_root: &Path) -> Result<PathBuf, BackupError> {
+pub fn restore_in_place(plaintext: &[u8], cave_root: &Path) -> Result<PathBuf, BackupError> {
     let parent = cave_root
         .parent()
         .ok_or_else(|| BackupError::Io("cave has no parent directory".to_string()))?;

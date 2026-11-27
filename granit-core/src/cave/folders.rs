@@ -175,7 +175,7 @@ impl Cave {
 
     /// Update indexed note paths after a folder is moved or renamed.
     /// Replaces `old_prefix` with `new_prefix` for every note under the old location.
-    pub(crate) fn update_child_paths(&mut self, old_prefix: &Path, new_prefix: &Path) {
+    pub fn update_child_paths(&mut self, old_prefix: &Path, new_prefix: &Path) {
         let updates: Vec<(String, std::path::PathBuf)> = self
             .notes
             .iter()

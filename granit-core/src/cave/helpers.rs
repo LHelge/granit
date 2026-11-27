@@ -16,7 +16,7 @@ pub use granit_types::{Document, DocumentMeta, RenderedDocument};
 /// Using the hidden-dotfile tmp convention means a crashed commit also
 /// cannot be picked up by the cave scanner (which skips dotfiles and
 /// files without a `.md` extension).
-pub(crate) fn write_atomic(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+pub fn write_atomic(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
     use std::io::Write;
 
     let mut file = atomic_write_file::AtomicWriteFile::open(path)?;
@@ -30,7 +30,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Res
 /// Uses `OpenOptions::create_new(true)` so the existence check and claim are
 /// atomic at the filesystem level, closing the TOCTOU window that a separate
 /// `exists()` check would leave open. Contents are fsynced before returning.
-pub(crate) fn write_new(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
+pub fn write_new(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result<()> {
     use std::io::Write;
 
     let mut file = std::fs::OpenOptions::new()
@@ -56,7 +56,7 @@ pub(crate) fn write_new(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Result
 /// Reads frontmatter from `abs_path` to populate fields like `icon` and
 /// `favorite`. Falls back to `None` if the file cannot be read or the field is
 /// absent.
-pub(crate) fn note_meta_with_frontmatter(
+pub fn note_meta_with_frontmatter(
     relative_path: &Path,
     abs_path: &std::path::Path,
 ) -> DocumentMeta {
@@ -73,7 +73,7 @@ pub(crate) fn note_meta_with_frontmatter(
 ///
 /// `DocumentMeta.relative_path` is always stored with forward slashes so it is
 /// consistent across platforms when sent over IPC.
-pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta {
+pub fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta {
     let slug = relative_path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -99,7 +99,7 @@ pub(crate) fn note_meta_from_relative_path(relative_path: &Path) -> DocumentMeta
 /// Build template metadata including the icon from a file on disk.
 ///
 /// `favorite` is always `None` for templates.
-pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> DocumentMeta {
+pub fn template_meta_with_icon(abs_path: &std::path::Path) -> DocumentMeta {
     let mut meta = template_meta_from_path(abs_path);
     if let Ok(raw) = std::fs::read_to_string(abs_path) {
         meta.icon = crate::markdown::Markdown::new(&raw).icon();
@@ -110,7 +110,7 @@ pub(crate) fn template_meta_with_icon(abs_path: &std::path::Path) -> DocumentMet
 /// Build template metadata from a template file path.
 ///
 /// `favorite` is always `None` for templates.
-pub(crate) fn template_meta_from_path(path: &Path) -> DocumentMeta {
+pub fn template_meta_from_path(path: &Path) -> DocumentMeta {
     let slug = path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -130,7 +130,7 @@ pub(crate) fn template_meta_from_path(path: &Path) -> DocumentMeta {
 
 /// Validate a bare note filename (no directory components).
 /// Must be non-empty, no path separators, no null bytes, not starting with a dot.
-pub(crate) fn validate_name(name: &str) -> Result<(), CaveError> {
+pub fn validate_name(name: &str) -> Result<(), CaveError> {
     if name.is_empty() {
         return Err(CaveError::InvalidName("name cannot be empty".to_string()));
     }
@@ -150,7 +150,7 @@ pub(crate) fn validate_name(name: &str) -> Result<(), CaveError> {
 /// Validate a relative folder path using `Path::components()`.
 ///
 /// Rejects traversal (`..`), current-dir (`.`), root, and hidden components.
-pub(crate) fn validate_folder_path(path: &Path) -> Result<(), CaveError> {
+pub fn validate_folder_path(path: &Path) -> Result<(), CaveError> {
     let mut has_components = false;
     for component in path.components() {
         match component {
@@ -184,7 +184,7 @@ pub(crate) fn validate_folder_path(path: &Path) -> Result<(), CaveError> {
 }
 
 /// Ensure the name has a .md extension, adding it if missing.
-pub(crate) fn ensure_md_extension(name: &str) -> String {
+pub fn ensure_md_extension(name: &str) -> String {
     if name.ends_with(".md") {
         name.to_string()
     } else {
@@ -199,7 +199,7 @@ pub(crate) fn ensure_md_extension(name: &str) -> String {
 /// under `"foo.md"` while every rescan derives `"foo"` from the file stem — and
 /// a rename to `"bar.md"` would rewrite inbound wiki-links to the bogus
 /// `[[bar.md]]` on disk, permanently breaking them after the next restart.
-pub(crate) fn normalize_note_name(name: &str) -> &str {
+pub fn normalize_note_name(name: &str) -> &str {
     let mut name = name;
     while let Some(stripped) = name.strip_suffix(".md") {
         name = stripped;
