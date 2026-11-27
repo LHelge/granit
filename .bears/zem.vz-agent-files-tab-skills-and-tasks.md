@@ -1,10 +1,10 @@
 ---
 id: zem.vz
 title: "Agent files tab: skills and tasks"
-status: open
+status: done
 priority: P2
 created: "2026-11-27T02:06:51.119029352Z"
-updated: "2026-11-27T02:06:51.119029352Z"
+updated: "2026-11-27T06:25:51.035792509Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - agent
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

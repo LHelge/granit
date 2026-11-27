@@ -1,15 +1,17 @@
 //! Headless window tests of the sidebar panels against a fixture cave:
 //! switching tabs, the todos (opening and toggling), the tags, the search,
-//! the calendar of daily notes, the templates and the favorites.
+//! the calendar of daily notes, the templates, the favorites, and the
+//! agent's skills and tasks.
 
 use std::path::Path;
 
 use gpui::{AppContext as _, Context, Entity, EntityInputHandler as _, TestAppContext, Window};
 
 use super::{
-    CalendarPanel, FavoritesPanel, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel,
+    AgentFilesPanel, CalendarPanel, FavoritesPanel, SearchPanel, SidebarTab, TagsPanel,
+    TemplatesPanel, TodosPanel,
 };
-use crate::events::{CaveEvent, CaveEvents};
+use crate::events::{AgentDocKind, CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::tests::App;
 use granit_core::calendar::{today_slug, Month};
@@ -626,5 +628,215 @@ fn favorites_list_the_starred_notes_and_open_them(cx: &mut TestAppContext) {
     assert_eq!(slugs(cx), ["a", "b"]);
     show(&app, SidebarTab::Favorites, cx);
     assert_eq!(slugs(cx), ["a", "b", "plain"]);
+    app.draw(cx);
+}
+
+fn agent_files(app: &App, cx: &mut TestAppContext) -> Entity<AgentFilesPanel> {
+    cx.read_entity(&app.workspace, |workspace, _| {
+        workspace.agent_files().clone()
+    })
+}
+
+fn open_agent_doc(app: &App, cx: &mut TestAppContext) -> Option<(AgentDocKind, String)> {
+    cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.open_agent_doc_name(cx)
+    })
+}
+
+fn agent_generation(cx: &mut TestAppContext) -> u64 {
+    cx.update(|cx| Host::core(cx).agent_generation())
+}
+
+fn chat_tasks(app: &App, cx: &mut TestAppContext) -> Vec<String> {
+    cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.chat().read(cx).task_names()
+    })
+}
+
+/// A cave with one hand-written skill (with a reference file) and one task.
+fn agent_cave() -> tempfile::TempDir {
+    let dir = panel_cave();
+    let skill = dir.path().join(".granit/agent/skills/pdf");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(
+        skill.join("SKILL.md"),
+        "---\nname: pdf\ndescription: Handle PDFs\n---\n\nRead the PDF.\n",
+    )
+    .unwrap();
+    std::fs::write(skill.join("forms.md"), "reference").unwrap();
+    let tasks = dir.path().join(".granit/agent/tasks");
+    std::fs::create_dir_all(&tasks).unwrap();
+    std::fs::write(
+        tasks.join("summarize.md"),
+        "---\ndescription: Sum up\n---\n\nSummarize {{ input }}\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[gpui::test]
+fn skills_are_created_renamed_opened_and_deleted(cx: &mut TestAppContext) {
+    let dir = agent_cave();
+    let skills = dir.path().join(".granit/agent/skills");
+    let app = App::with_cave(dir.path(), cx);
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx)
+    });
+    show(&app, SidebarTab::Agent, cx);
+    app.draw(cx);
+    let panel = agent_files(&app, cx);
+    let names = |cx: &mut TestAppContext| {
+        cx.read_entity(&panel, |panel, _| panel.names(AgentDocKind::Skill))
+    };
+    assert_eq!(names(cx), ["pdf"]);
+    assert_eq!(
+        cx.read_entity(&panel, |panel, _| panel.descriptions(AgentDocKind::Skill)),
+        ["Handle PDFs"]
+    );
+
+    // A click opens the skill's body; no note is active meanwhile.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.open(AgentDocKind::Skill, "pdf".into(), cx)
+    });
+    assert_eq!(
+        open_agent_doc(&app, cx),
+        Some((AgentDocKind::Skill, "pdf".into()))
+    );
+    assert_eq!(app.shown_body(cx).as_deref(), Some("Read the PDF.\n"));
+    assert_eq!(app.active_note(cx), None);
+    assert_eq!(app.core_active_note(cx), None);
+    app.draw(cx);
+
+    // New: created, opened and named inline; every change resets the agent
+    // (the system prompt lists the skills), as in the Tauri app.
+    let generation = agent_generation(cx);
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.new_doc(AgentDocKind::Skill, window, cx)
+    });
+    assert!(skills.join("untitled-skill/SKILL.md").exists());
+    assert_eq!(agent_generation(cx), generation + 1);
+    assert_eq!(
+        open_agent_doc(&app, cx),
+        Some((AgentDocKind::Skill, "untitled-skill".into()))
+    );
+    let renaming = cx.read_entity(&panel, |panel, cx| panel.renaming(cx));
+    assert_eq!(
+        renaming,
+        Some((
+            AgentDocKind::Skill,
+            "untitled-skill".to_string(),
+            "untitled-skill".into()
+        ))
+    );
+    app.draw(cx);
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.type_and_commit("notes-helper", window, cx)
+    });
+    assert!(!skills.join("untitled-skill").exists());
+    let raw = read(&skills, "notes-helper/SKILL.md");
+    assert!(raw.starts_with("---\nname: notes-helper\n"), "{raw}");
+    assert_eq!(agent_generation(cx), generation + 2);
+    assert_eq!(names(cx), ["notes-helper", "pdf"]);
+    assert_eq!(
+        open_agent_doc(&app, cx),
+        Some((AgentDocKind::Skill, "notes-helper".into())),
+        "the editor follows"
+    );
+
+    // A name taken by another skill, or not a valid skill name, is refused
+    // and shown.
+    for name in ["pdf", "Not Valid"] {
+        update(&app, &panel, cx, |panel, window, cx| {
+            panel.start_rename(AgentDocKind::Skill, "notes-helper".into(), window, cx);
+            panel.type_and_commit(name, window, cx)
+        });
+        assert!(cx.read_entity(&panel, |panel, _| panel.error().is_some()));
+        assert!(skills.join("notes-helper/SKILL.md").exists());
+    }
+
+    // Renaming a skill that is not open moves its whole folder.
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.start_rename(AgentDocKind::Skill, "pdf".into(), window, cx);
+        panel.type_and_commit("pdf-forms", window, cx)
+    });
+    assert_eq!(read(&skills, "pdf-forms/forms.md"), "reference");
+    assert_eq!(
+        read(&skills, "pdf-forms/SKILL.md"),
+        "---\nname: pdf-forms\ndescription: Handle PDFs\n---\n\nRead the PDF.\n"
+    );
+
+    // Deleting the open skill closes it.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.delete(AgentDocKind::Skill, "notes-helper", cx)
+    });
+    assert!(!skills.join("notes-helper").exists());
+    assert_eq!(open_agent_doc(&app, cx), None);
+    assert_eq!(app.shown_body(cx), None);
+    assert_eq!(names(cx), ["pdf-forms"]);
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn tasks_are_created_renamed_and_deleted_and_the_chat_follows(cx: &mut TestAppContext) {
+    let dir = agent_cave();
+    let tasks = dir.path().join(".granit/agent/tasks");
+    let app = App::with_cave(dir.path(), cx);
+    show(&app, SidebarTab::Agent, cx);
+    app.draw(cx);
+    let panel = agent_files(&app, cx);
+    let names = |cx: &mut TestAppContext| {
+        cx.read_entity(&panel, |panel, _| panel.names(AgentDocKind::Task))
+    };
+    assert_eq!(names(cx), ["summarize"]);
+    assert_eq!(chat_tasks(&app, cx), ["summarize"]);
+
+    // Tasks are rendered when sent, so changing one keeps the agent.
+    let generation = agent_generation(cx);
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.new_doc(AgentDocKind::Task, window, cx)
+    });
+    assert!(tasks.join("untitled-task.md").exists());
+    assert_eq!(
+        open_agent_doc(&app, cx),
+        Some((AgentDocKind::Task, "untitled-task".into()))
+    );
+    assert_eq!(chat_tasks(&app, cx), ["summarize", "untitled-task"]);
+    app.draw(cx);
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.type_and_commit("weekly review", window, cx)
+    });
+    assert!(tasks.join("weekly review.md").exists());
+    assert!(!tasks.join("untitled-task.md").exists());
+    assert_eq!(names(cx), ["summarize", "weekly review"]);
+    assert_eq!(chat_tasks(&app, cx), ["summarize", "weekly review"]);
+    assert_eq!(
+        open_agent_doc(&app, cx),
+        Some((AgentDocKind::Task, "weekly review".into())),
+        "the editor follows"
+    );
+
+    // A taken name is refused.
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.start_rename(AgentDocKind::Task, "weekly review".into(), window, cx);
+        panel.type_and_commit("summarize", window, cx)
+    });
+    assert!(cx.read_entity(&panel, |panel, _| panel.error().is_some()));
+
+    // Deleting the open task closes it and drops it from the chat.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.delete(AgentDocKind::Task, "weekly review", cx)
+    });
+    assert!(!tasks.join("weekly review.md").exists());
+    assert_eq!(open_agent_doc(&app, cx), None);
+    assert_eq!(names(cx), ["summarize"]);
+    assert_eq!(chat_tasks(&app, cx), ["summarize"]);
+    assert_eq!(
+        agent_generation(cx),
+        generation,
+        "no task change resets the agent"
+    );
+
+    // The help folds out with the task variables.
+    update(&app, &panel, cx, |panel, _, cx| panel.toggle_help(cx));
     app.draw(cx);
 }

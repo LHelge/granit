@@ -23,7 +23,7 @@ use log::warn;
 use zorite_editor::Diagnostic;
 
 use super::wiki_links::{self, Candidate, CandidateKind};
-use super::{NoteView, NoteViewEvent, Reveal};
+use super::{DocKind, NoteView, NoteViewEvent, Reveal};
 use crate::cave_ops;
 use crate::host::Host;
 
@@ -86,8 +86,9 @@ impl NoteView {
             return;
         };
         // A template's links are filled in when a note is made from it
-        // (`[[{{ yesterday }}]]`), so none of them counts as broken.
-        if self.template_slug().is_some() {
+        // (`[[{{ yesterday }}]]`), a task's when it is sent, so none of
+        // them counts as broken. (Skills are never rendered: theirs are.)
+        if self.links_are_placeholders() {
             editor.update(cx, |editor, cx| editor.set_diagnostics(Vec::new(), cx));
             return;
         }
@@ -113,7 +114,7 @@ impl NoteView {
         let Some(text) = self.text(cx) else {
             return Vec::new();
         };
-        if self.template_slug().is_some() {
+        if self.links_are_placeholders() {
             return Vec::new();
         }
         self.links.broken_ranges(&Markdown::link_spans(text))
@@ -271,10 +272,12 @@ impl NoteView {
 
     /// Ask the workspace to open the note `target` resolves to, at its
     /// heading when it is an anchor. A broken target creates the note (in
-    /// the cave root, as the web app does) and opens it; in a template it
-    /// does nothing, since its targets may be Tera placeholders.
+    /// the cave root, as the web app does) and opens it; in a template or
+    /// task it does nothing, since its targets may be Tera placeholders, and
+    /// neither does it in a skill: a click in an agent file never creates a
+    /// note (its broken links are still marked).
     pub(super) fn navigate_to_link(&mut self, target: &str, cx: &mut Context<Self>) {
-        let in_template = self.template_slug().is_some();
+        let in_template = self.doc().is_some_and(|doc| doc.kind != DocKind::Note);
         let resolved = Host::core(cx).with_cave(|cave| {
             let Some(href) = cave.resolve_link(target) else {
                 return Ok(None);

@@ -12,10 +12,10 @@ use std::path::{Path, PathBuf};
 use gpui::{App, AppContext as _, Task};
 use granit_core::cave::{CaveError, Document, DocumentHeader, DocumentMeta, HeaderEdit};
 use granit_core::open::{prepare_cave, sync_vector_index};
-use granit_types::TodoItem;
+use granit_types::{AgentDocInfo, TodoItem};
 use log::warn;
 
-use crate::events::{CaveEvent, CaveEvents};
+use crate::events::{AgentDocKind, CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::runtime;
 
@@ -226,6 +226,139 @@ pub fn delete_template(slug: &str, cx: &mut App) -> Result<(), CaveError> {
     Host::core(cx).with_cave(|cave| cave.delete_template(slug))?;
     CaveEvents::emit(CaveEvent::TemplateRemoved(slug.to_string()), cx);
     Ok(())
+}
+
+/// The name a new agent document of `kind` starts with; the core numbers
+/// duplicates (`untitled-skill-2`, …).
+pub fn new_agent_doc_name(kind: AgentDocKind) -> &'static str {
+    match kind {
+        AgentDocKind::Skill => "untitled-skill",
+        AgentDocKind::Task => "untitled-task",
+    }
+}
+
+/// The skills or tasks of `.granit/agent/`, sorted by name, with their
+/// descriptions.
+pub fn list_agent_docs(kind: AgentDocKind, cx: &App) -> Result<Vec<AgentDocInfo>, CaveError> {
+    Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.list_skills(),
+        AgentDocKind::Task => cave.list_tasks(),
+    })
+}
+
+/// Read a skill or task: its body (without frontmatter) for the editor,
+/// and its description on the metadata.
+pub fn read_agent_doc(kind: AgentDocKind, name: &str, cx: &App) -> Result<Document, CaveError> {
+    Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.read_skill(name),
+        AgentDocKind::Task => cave.read_task(name),
+    })
+}
+
+/// Create a skill or task named [`new_agent_doc_name`] (numbered when
+/// taken), seeded by the core, and announce [`CaveEvent::AgentDocsChanged`].
+pub fn create_agent_doc(kind: AgentDocKind, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let name = new_agent_doc_name(kind);
+    let meta = Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.create_skill(name),
+        AgentDocKind::Task => cave.create_task(name),
+    })?;
+    agent_doc_changed(kind, cx);
+    CaveEvents::emit(CaveEvent::AgentDocsChanged, cx);
+    Ok(meta)
+}
+
+/// Write the body of a skill or task, keeping its frontmatter byte for
+/// byte. Writes nothing when the body is unchanged. Announces nothing: no
+/// other view shows the body (the chat renders a task when it is sent).
+pub fn save_agent_doc(
+    kind: AgentDocKind,
+    name: &str,
+    body: &str,
+    cx: &mut App,
+) -> Result<(), CaveError> {
+    let changed = Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.save_skill(name, body),
+        AgentDocKind::Task => cave.save_task(name, body),
+    })?;
+    if changed {
+        agent_doc_changed(kind, cx);
+    }
+    Ok(())
+}
+
+/// Set the frontmatter `description` of a skill or task (only that key
+/// changes) and, when it changed, announce [`CaveEvent::AgentDocsChanged`].
+pub fn set_agent_doc_description(
+    kind: AgentDocKind,
+    name: &str,
+    description: &str,
+    cx: &mut App,
+) -> Result<(), CaveError> {
+    let changed = Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.set_skill_description(name, description),
+        AgentDocKind::Task => cave.set_task_description(name, description),
+    })?;
+    if changed {
+        agent_doc_changed(kind, cx);
+        CaveEvents::emit(CaveEvent::AgentDocsChanged, cx);
+    }
+    Ok(())
+}
+
+/// Rename the skill or task `from` to `to` (a skill's directory moves with
+/// everything in it, and its frontmatter `name` follows).
+pub fn rename_agent_doc(
+    kind: AgentDocKind,
+    from: &str,
+    to: &str,
+    cx: &mut App,
+) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.rename_skill(from, to),
+        AgentDocKind::Task => cave.rename_task(from, to),
+    })?;
+    if meta.slug != from {
+        agent_doc_changed(kind, cx);
+        CaveEvents::emit(
+            CaveEvent::AgentDocRenamed {
+                kind,
+                from: from.to_string(),
+                to: meta.slug.clone(),
+            },
+            cx,
+        );
+    }
+    Ok(meta)
+}
+
+/// Delete a skill (its whole directory) or task.
+pub fn delete_agent_doc(kind: AgentDocKind, name: &str, cx: &mut App) -> Result<(), CaveError> {
+    Host::core(cx).with_cave(|cave| match kind {
+        AgentDocKind::Skill => cave.delete_skill(name),
+        AgentDocKind::Task => cave.delete_task(name),
+    })?;
+    agent_doc_changed(kind, cx);
+    CaveEvents::emit(
+        CaveEvent::AgentDocRemoved {
+            kind,
+            name: name.to_string(),
+        },
+        cx,
+    );
+    Ok(())
+}
+
+/// A skill changed on disk: reset the agent, as the Tauri app's skill
+/// commands do, so the system prompt lists the skills anew. No
+/// `ConfigEvent` is emitted, so the visible chat stays (as in the Tauri
+/// app) and a streaming reply runs on; it is just not recorded, through the
+/// chat's generation check. Tasks are rendered when they are sent, so they
+/// reset nothing.
+fn agent_doc_changed(kind: AgentDocKind, cx: &mut App) {
+    if kind == AgentDocKind::Skill {
+        Host::core(cx).reset_agent();
+    }
 }
 
 /// Open the daily note of `date` (`YYYY-MM-DD`; `None`: today), creating it

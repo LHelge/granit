@@ -146,6 +146,30 @@ impl Markdown<'_> {
     }
 }
 
+/// Set the top-level string key `key` of the frontmatter of `raw` to
+/// `value`, rewriting only that key's lines (in the quoting style of the
+/// value it replaces; a new key goes at the end of the block). Every other
+/// byte of the file — other keys, comments, order, line endings, the body —
+/// is kept. A file without a frontmatter block gains one holding just the
+/// key, followed by a blank line. Nothing is compared: the caller decides
+/// whether the value changed.
+pub(crate) fn splice_frontmatter_scalar(raw: &str, key: &str, value: &str) -> String {
+    let Some(span) = locate_frontmatter(raw) else {
+        return format!(
+            "---\n{key}: {}\n---\n\n{raw}",
+            render_scalar(value, Quote::Plain)
+        );
+    };
+    let entry = find_entry(span.yaml, key);
+    let key_text = entry.as_ref().map_or(key, |e| e.key_text);
+    let style = entry
+        .as_ref()
+        .map_or(Quote::Plain, |e| quote_style(e.value));
+    let line = format!("{key_text}: {}{}", render_scalar(value, style), span.eol);
+    let yaml = replace_entry(span.yaml, entry.as_ref(), Some(&line), span.eol);
+    format!("{}{yaml}{}", &raw[..span.yaml_start], &raw[span.yaml_end..])
+}
+
 /// A change to one Granit-owned frontmatter field. `None` removes the key.
 enum FieldEdit {
     Tags(Vec<String>),

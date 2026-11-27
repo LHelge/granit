@@ -1,14 +1,17 @@
 //! User-authored agent documents stored under `.granit/agent/`.
 //!
 //! The editor works on the body; the frontmatter is managed by the app,
-//! which owns only the `name` (skills) and `description` keys. Writes go
-//! through [`rebuild_agent_doc`], a surgical rewrite of a generic YAML
-//! mapping, so keys the app does not know about (`license`, `metadata`,
-//! `allowed-tools`, …) survive untouched — frontmatter comments do not.
+//! which owns only the `name` (skills) and `description` keys. The Tauri
+//! app's `update_*` writes go through [`rebuild_agent_doc`], a rewrite of a
+//! generic YAML mapping, so keys the app does not know about (`license`,
+//! `metadata`, `allowed-tools`, …) survive — frontmatter comments do not.
+//! The GPUI app's `save_*`, `set_*_description` and `rename_*` splice only
+//! the body or the one key they change and keep everything else byte for
+//! byte, comments included.
 
 use super::helpers::{normalize_note_name, validate_name, write_atomic, write_new};
 use super::{Cave, CaveError};
-use crate::markdown::split_frontmatter;
+use crate::markdown::{locate_frontmatter, splice_frontmatter_scalar, split_frontmatter};
 use chrono::Datelike;
 use granit_types::{AgentDocInfo, Document, DocumentMeta};
 use std::collections::HashMap;
@@ -17,8 +20,9 @@ use std::path::{Path, PathBuf};
 /// The frontmatter keys of an agent document (a `SKILL.md` per the Agent
 /// Skills specification at <https://agentskills.io/specification>, or a task
 /// file). Parsed permissively: unknown keys (`license`, `compatibility`,
-/// `metadata`, `allowed-tools`, …) are ignored here and survive on disk
-/// because these files are never rewritten by the app.
+/// `metadata`, `allowed-tools`, …) are ignored here; they survive on disk
+/// because the app's writes only touch the keys it owns (see the module
+/// docs).
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct AgentDocFrontmatter {
@@ -78,8 +82,47 @@ fn parse_agent_doc_frontmatter(raw: &str) -> AgentDocFrontmatter {
 
 /// Strip the frontmatter block and any blank lines that follow it.
 fn agent_doc_body(raw: &str) -> String {
-    let (_, body) = split_frontmatter(raw);
-    body.trim_start_matches(['\n', '\r']).to_string()
+    raw[agent_doc_body_start(raw)..].to_string()
+}
+
+/// Where the body of an agent document starts in `raw`: after the
+/// frontmatter block and the blank lines that follow it.
+fn agent_doc_body_start(raw: &str) -> usize {
+    let start = locate_frontmatter(raw).map_or(0, |span| span.body_start);
+    let rest = &raw[start..];
+    start + rest.len() - rest.trim_start_matches(['\n', '\r']).len()
+}
+
+/// `raw` with its body (as [`agent_doc_body`] reads it) replaced by `body`;
+/// the frontmatter and the blank lines after it are kept byte for byte.
+fn splice_agent_doc_body(raw: &str, body: &str) -> String {
+    format!("{}{body}", &raw[..agent_doc_body_start(raw)])
+}
+
+/// `raw` with the frontmatter key `key` set to `value`, splicing only that
+/// key; unchanged when it already holds `value`.
+fn splice_agent_doc_key(raw: &str, key: &str, value: &str) -> String {
+    let (yaml, _) = split_frontmatter(raw);
+    let current = yaml
+        .and_then(|text| serde_yml::from_str::<serde_yml::Mapping>(&text).ok())
+        .and_then(|map| map.get(key).and_then(|v| v.as_str()).map(str::to_string));
+    if current.as_deref() == Some(value) {
+        return raw.to_string();
+    }
+    splice_frontmatter_scalar(raw, key, value)
+}
+
+/// Apply `update` to the raw content of the agent document at `path` and
+/// write the result; writes nothing (and returns `false`) when `update`
+/// changes nothing.
+fn rewrite_agent_doc(path: &Path, update: impl FnOnce(&str) -> String) -> Result<bool, CaveError> {
+    let raw = std::fs::read_to_string(path)?;
+    let updated = update(&raw);
+    if updated == raw {
+        return Ok(false);
+    }
+    write_atomic(path, updated)?;
+    Ok(true)
 }
 
 /// Rebuild an agent document from its existing raw content: the frontmatter
@@ -332,6 +375,67 @@ impl Cave {
         Ok(())
     }
 
+    /// Write `body` as a skill's instructions, under its frontmatter kept
+    /// byte for byte (with the blank lines after it). Returns whether the
+    /// file changed: an unchanged body writes nothing.
+    pub fn save_skill(&self, name: &str, body: &str) -> Result<bool, CaveError> {
+        rewrite_agent_doc(self.skill_md_path(name)?, |raw| {
+            splice_agent_doc_body(raw, body)
+        })
+    }
+
+    /// Set a skill's frontmatter `description`, splicing only that key (its
+    /// quoting kept); the body and every other key, comment and line stay
+    /// as they are. Returns whether the file changed.
+    pub fn set_skill_description(&self, name: &str, description: &str) -> Result<bool, CaveError> {
+        rewrite_agent_doc(self.skill_md_path(name)?, |raw| {
+            splice_agent_doc_key(raw, "description", description)
+        })
+    }
+
+    /// Rename a skill: move its directory (with everything in it) and set
+    /// the frontmatter `name` to match, splicing only that key. A failed
+    /// write moves the directory back. Renaming to the same name changes
+    /// nothing.
+    pub fn rename_skill(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<DocumentMeta, CaveError> {
+        validate_skill_name(new_name)?;
+        self.skill_md_path(old_name)?;
+        if old_name == new_name {
+            return Ok(self.read_skill(old_name)?.meta);
+        }
+        let old_dir = self.agent_skills_dir().join(old_name);
+        let new_dir = self.agent_skills_dir().join(new_name);
+        if self.skills.contains_key(new_name) || new_dir.exists() {
+            return Err(CaveError::SkillAlreadyExists(new_name.to_string()));
+        }
+        std::fs::rename(&old_dir, &new_dir)?;
+        let new_md = new_dir.join("SKILL.md");
+        if let Err(e) =
+            rewrite_agent_doc(&new_md, |raw| splice_agent_doc_key(raw, "name", new_name))
+        {
+            if let Err(rollback_err) = std::fs::rename(&new_dir, &old_dir) {
+                return Err(CaveError::Io(format!(
+                    "failed to write skill after rename: {e}; rollback also failed: {rollback_err}"
+                )));
+            }
+            return Err(e);
+        }
+        self.skills.remove(old_name);
+        self.skills.insert(new_name.to_string(), new_md);
+        Ok(self.read_skill(new_name)?.meta)
+    }
+
+    /// The cave-relative directory of a skill, which its relative images
+    /// resolve from.
+    pub fn skill_dir(&self, name: &str) -> Result<String, CaveError> {
+        self.skill_md_path(name)?;
+        Ok(self.relative_dir(&self.agent_skills_dir().join(name)))
+    }
+
     // ── Tasks ──────────────────────────────────────────────────────
 
     /// List all tasks sorted by name, with their frontmatter descriptions.
@@ -472,6 +576,57 @@ impl Cave {
         std::fs::remove_file(path)?;
         self.tasks.remove(slug);
         Ok(())
+    }
+
+    /// Write `body` as a task's prompt, under its frontmatter kept byte for
+    /// byte (with the blank lines after it). Returns whether the file
+    /// changed: an unchanged body writes nothing.
+    pub fn save_task(&self, slug: &str, body: &str) -> Result<bool, CaveError> {
+        rewrite_agent_doc(self.task_path(slug)?, |raw| {
+            splice_agent_doc_body(raw, body)
+        })
+    }
+
+    /// Set a task's frontmatter `description`, splicing only that key; the
+    /// body and every other key, comment and line stay as they are. Returns
+    /// whether the file changed.
+    pub fn set_task_description(&self, slug: &str, description: &str) -> Result<bool, CaveError> {
+        rewrite_agent_doc(self.task_path(slug)?, |raw| {
+            splice_agent_doc_key(raw, "description", description)
+        })
+    }
+
+    /// Rename a task file; its content is not touched. Renaming to the same
+    /// name changes nothing.
+    pub fn rename_task(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<DocumentMeta, CaveError> {
+        let new_name = normalize_note_name(new_name);
+        validate_name(new_name)?;
+        let old_path = self.task_path(old_name)?.clone();
+        if old_name == new_name {
+            return Ok(self.read_task(old_name)?.meta);
+        }
+        let new_path = self.agent_tasks_dir().join(format!("{new_name}.md"));
+        // A case-only rename of the same file is allowed (on a
+        // case-insensitive file system the new path "exists" already).
+        let case_only = old_name.eq_ignore_ascii_case(new_name);
+        if self.tasks.contains_key(new_name) || (new_path.exists() && !case_only) {
+            return Err(CaveError::TaskAlreadyExists(new_name.to_string()));
+        }
+        std::fs::rename(&old_path, &new_path)?;
+        self.tasks.remove(old_name);
+        self.tasks.insert(new_name.to_string(), new_path);
+        Ok(self.read_task(new_name)?.meta)
+    }
+
+    /// The cave-relative directory of a task (the tasks directory), which
+    /// its relative images resolve from.
+    pub fn task_dir(&self, slug: &str) -> Result<String, CaveError> {
+        self.task_path(slug)?;
+        Ok(self.relative_dir(&self.agent_tasks_dir()))
     }
 
     /// Render a task's body as the prompt to send to the agent.
@@ -757,5 +912,154 @@ mod tests {
 
         assert!(!dir.path().join(".granit/agent/skills/doomed").exists());
         assert!(cave.list_skills().unwrap().is_empty());
+    }
+
+    const SPEC_SKILL: &str = "---\n# managed by hand\nname: spec-skill\ndescription: 'Old: description'\nlicense: MIT\nmetadata:\n  author: example-org\n---\n\n\nOld body.\n";
+
+    fn spec_skill_cave() -> (tempfile::TempDir, Cave) {
+        let dir = tempfile::tempdir().unwrap();
+        let skill_dir = dir.path().join(".granit/agent/skills/spec-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), SPEC_SKILL).unwrap();
+        std::fs::write(skill_dir.join("reference.md"), "kept").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+        (dir, cave)
+    }
+
+    #[test]
+    fn test_save_skill_splices_the_body_under_the_frontmatter_verbatim() {
+        let (dir, cave) = spec_skill_cave();
+        let path = dir.path().join(".granit/agent/skills/spec-skill/SKILL.md");
+        let body = cave.read_skill("spec-skill").unwrap().content;
+        assert_eq!(body, "Old body.\n");
+
+        // The body as read writes nothing.
+        assert!(!cave.save_skill("spec-skill", &body).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), SPEC_SKILL);
+
+        assert!(cave.save_skill("spec-skill", "New {{ x }} body").unwrap());
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            raw,
+            SPEC_SKILL.replace("Old body.\n", "New {{ x }} body"),
+            "frontmatter, comment and blank lines kept"
+        );
+        assert_eq!(cave.skill_body("spec-skill").unwrap(), "New {{ x }} body");
+    }
+
+    #[test]
+    fn test_set_skill_description_splices_only_that_key() {
+        let (dir, cave) = spec_skill_cave();
+        let path = dir.path().join(".granit/agent/skills/spec-skill/SKILL.md");
+
+        assert!(!cave
+            .set_skill_description("spec-skill", "Old: description")
+            .unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), SPEC_SKILL);
+
+        assert!(cave
+            .set_skill_description("spec-skill", "Handle PDFs: all of them")
+            .unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            SPEC_SKILL.replace("'Old: description'", "'Handle PDFs: all of them'")
+        );
+        let doc = cave.read_skill("spec-skill").unwrap();
+        assert_eq!(
+            doc.meta.description.as_deref(),
+            Some("Handle PDFs: all of them")
+        );
+        assert_eq!(doc.content, "Old body.\n");
+    }
+
+    #[test]
+    fn test_rename_skill_moves_the_directory_and_splices_the_name() {
+        let (dir, mut cave) = spec_skill_cave();
+        cave.create_skill("taken").unwrap();
+        let skills = dir.path().join(".granit/agent/skills");
+
+        let meta = cave.rename_skill("spec-skill", "pdf-tools").unwrap();
+        assert_eq!(meta.slug, "pdf-tools");
+        assert_eq!(meta.description.as_deref(), Some("Old: description"));
+        assert!(!skills.join("spec-skill").exists());
+        assert_eq!(
+            std::fs::read_to_string(skills.join("pdf-tools/reference.md")).unwrap(),
+            "kept"
+        );
+        assert_eq!(
+            std::fs::read_to_string(skills.join("pdf-tools/SKILL.md")).unwrap(),
+            SPEC_SKILL.replace("name: spec-skill", "name: pdf-tools")
+        );
+        assert_eq!(
+            cave.skill_dir("pdf-tools").unwrap(),
+            ".granit/agent/skills/pdf-tools"
+        );
+
+        for (to, expected) in [("taken", "exists"), ("Bad Name", "invalid")] {
+            let err = cave.rename_skill("pdf-tools", to).unwrap_err();
+            match expected {
+                "exists" => assert!(matches!(err, CaveError::SkillAlreadyExists(_)), "{err:?}"),
+                _ => assert!(matches!(err, CaveError::InvalidSkillName(_)), "{err:?}"),
+            }
+        }
+        assert!(skills.join("pdf-tools/SKILL.md").exists());
+        assert!(matches!(
+            cave.rename_skill("missing", "other").unwrap_err(),
+            CaveError::SkillNotFound(_)
+        ));
+    }
+
+    #[test]
+    fn test_task_body_description_and_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let tasks = dir.path().join(".granit/agent/tasks");
+        std::fs::create_dir_all(&tasks).unwrap();
+        let raw = "---\r\ndescription: Sum up\r\nmodel: x\r\n---\r\n\r\nSummarize {{ input }}\r\n";
+        std::fs::write(tasks.join("summarize.md"), raw).unwrap();
+        std::fs::write(tasks.join("other.md"), "plain\n").unwrap();
+        let mut cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let doc = cave.read_task("summarize").unwrap();
+        assert!(!cave.save_task("summarize", &doc.content).unwrap());
+        assert!(!cave.set_task_description("summarize", "Sum up").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(tasks.join("summarize.md")).unwrap(),
+            raw
+        );
+
+        assert!(cave
+            .save_task("summarize", "Shorten {{ input }}\r\n")
+            .unwrap());
+        assert!(cave.set_task_description("summarize", "Shorten").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(tasks.join("summarize.md")).unwrap(),
+            "---\r\ndescription: Shorten\r\nmodel: x\r\n---\r\n\r\nShorten {{ input }}\r\n"
+        );
+
+        // A task without frontmatter gains a block for its description.
+        assert!(cave.set_task_description("other", "Other things").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(tasks.join("other.md")).unwrap(),
+            "---\ndescription: Other things\n---\n\nplain\n"
+        );
+        assert_eq!(cave.read_task("other").unwrap().content, "plain\n");
+
+        let meta = cave.rename_task("summarize", "shorten.md").unwrap();
+        assert_eq!(meta.slug, "shorten");
+        assert_eq!(meta.description.as_deref(), Some("Shorten"));
+        assert!(!tasks.join("summarize.md").exists());
+        assert!(tasks.join("shorten.md").exists());
+        assert_eq!(cave.task_dir("shorten").unwrap(), ".granit/agent/tasks");
+        assert!(matches!(
+            cave.rename_task("shorten", "other").unwrap_err(),
+            CaveError::TaskAlreadyExists(_)
+        ));
+        let names: Vec<_> = cave
+            .list_tasks()
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(names, ["other", "shorten"]);
     }
 }

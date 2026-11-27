@@ -1,19 +1,21 @@
 //! The sidebar panels that browse the cave beside the explorer: full-text
 //! search, the todos of every note, the tags, the favorite notes, the note
-//! templates, and the calendar of daily notes.
+//! templates, the agent's skills and tasks, and the calendar of daily notes.
 //!
 //! The sidebar shows the calendar above a tab bar ([`SidebarTab`]) that
 //! switches between the explorer and the [`SearchPanel`], [`TodosPanel`],
-//! [`TagsPanel`], [`FavoritesPanel`] and [`TemplatesPanel`], as the Tauri
-//! app does. Each panel
+//! [`TagsPanel`], [`FavoritesPanel`], [`TemplatesPanel`] and
+//! [`AgentFilesPanel`], as the Tauri app does. Each panel
 //! asks the workspace to open a note with [`PanelEvent::OpenNote`] (with the
-//! spot to reveal for a search or todo match), or a template with
-//! [`PanelEvent::OpenTemplate`]; the todos panel asks it to toggle a todo with
+//! spot to reveal for a search or todo match), a template with
+//! [`PanelEvent::OpenTemplate`], or a skill or task with
+//! [`PanelEvent::OpenAgentDoc`]; the todos panel asks it to toggle a todo with
 //! [`PanelEvent::ToggleTodo`], so the open note's pending edits are written
 //! first. The queries are the core's; the list panels run them on the
 //! background executor, and only while shown: a cave change marks a hidden
 //! panel stale and it reruns its query once shown again.
 
+pub mod agent_files;
 pub mod calendar;
 pub mod favorites;
 pub mod search;
@@ -29,8 +31,10 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName};
 use granit_types::TodoItem;
 
 use crate::assets::AppIcon;
+use crate::events::AgentDocKind;
 use crate::note_view::Reveal;
 
+pub use agent_files::AgentFilesPanel;
 pub use calendar::CalendarPanel;
 pub use favorites::FavoritesPanel;
 pub use search::SearchPanel;
@@ -50,6 +54,8 @@ pub enum PanelEvent {
     ToggleTodo { item: TodoItem, checked: bool },
     /// Open the note template `slug` in the editor.
     OpenTemplate(String),
+    /// Open the agent skill or task `name` in the editor.
+    OpenAgentDoc { kind: AgentDocKind, name: String },
 }
 
 /// The sidebar's tabs, in tab-bar order.
@@ -63,16 +69,19 @@ pub enum SidebarTab {
     Tags,
     Favorites,
     Templates,
+    /// The agent's skills and tasks.
+    Agent,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 6] = [
+    pub const ALL: [SidebarTab; 7] = [
         SidebarTab::Notes,
         SidebarTab::Search,
         SidebarTab::Todos,
         SidebarTab::Tags,
         SidebarTab::Favorites,
         SidebarTab::Templates,
+        SidebarTab::Agent,
     ];
 
     /// The tab's position in the tab bar.
@@ -88,6 +97,7 @@ impl SidebarTab {
             SidebarTab::Tags => "Tags",
             SidebarTab::Favorites => "Favorites",
             SidebarTab::Templates => "Templates",
+            SidebarTab::Agent => "Agent files",
         }
     }
 
@@ -99,6 +109,7 @@ impl SidebarTab {
             SidebarTab::Tags => Icon::new(AppIcon::Tag),
             SidebarTab::Favorites => Icon::new(IconName::Star),
             SidebarTab::Templates => Icon::new(AppIcon::NotepadTextDashed),
+            SidebarTab::Agent => Icon::new(AppIcon::Bot),
         }
     }
 }

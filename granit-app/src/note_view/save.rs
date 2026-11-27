@@ -14,6 +14,8 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::time::Duration;
 
+use crate::events::AgentDocKind;
+
 /// Quiet period after the last edit before the debounced save runs (the
 /// web frontend's holdoff).
 pub const AUTOSAVE_DELAY: Duration = Duration::from_secs(2);
@@ -100,8 +102,9 @@ fn has_bare_lf(text: &str) -> bool {
         .any(|(ix, &byte)| byte == b'\n' && (ix == 0 || bytes[ix - 1] != b'\r'))
 }
 
-/// What kind of document the editor holds. Notes and templates have
-/// separate slug namespaces, so a slug alone does not name a file.
+/// What kind of document the editor holds. Notes, templates, skills and
+/// tasks have separate slug namespaces, so a slug alone does not name a
+/// file.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DocKind {
     /// A note of the cave.
@@ -109,6 +112,30 @@ pub enum DocKind {
     Note,
     /// A note template in `.granit/templates/`.
     Template,
+    /// An agent skill, `.granit/agent/skills/<name>/SKILL.md`.
+    Skill,
+    /// An agent task, `.granit/agent/tasks/<name>.md`.
+    Task,
+}
+
+impl DocKind {
+    /// The agent-document kind, for a skill or task.
+    pub fn agent(self) -> Option<AgentDocKind> {
+        match self {
+            DocKind::Skill => Some(AgentDocKind::Skill),
+            DocKind::Task => Some(AgentDocKind::Task),
+            DocKind::Note | DocKind::Template => None,
+        }
+    }
+}
+
+impl From<AgentDocKind> for DocKind {
+    fn from(kind: AgentDocKind) -> Self {
+        match kind {
+            AgentDocKind::Skill => DocKind::Skill,
+            AgentDocKind::Task => DocKind::Task,
+        }
+    }
 }
 
 /// What one save writes: the document and its full body, captured when the

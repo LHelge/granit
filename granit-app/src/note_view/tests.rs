@@ -9,6 +9,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseUpEvent, Pixels, PlatformInput, Point, TestAppContext,
     VisualTestContext, Window,
 };
+use granit_core::agent::{AgentStream, AgentStreamItem};
 use granit_core::cave::{DocumentHeader, HeaderEdit};
 use granit_core::markdown::Markdown;
 use zorite_editor::EditorState;
@@ -16,7 +17,7 @@ use zorite_editor::EditorState;
 use super::save::{FlushOutcome, SaveStatus};
 use super::{wiki_links, NoteView, Reveal, AUTOSAVE_DELAY};
 use crate::cave_ops;
-use crate::events::{CaveEvent, CaveEvents};
+use crate::events::{AgentDocKind, CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::tests::{fixture_cave, App};
 
@@ -1173,6 +1174,200 @@ fn a_broken_link_in_a_template_creates_no_note(cx: &mut TestAppContext) {
     // A link to an existing note still opens it.
     update_view(&app, cx, |view, _, cx| view.navigate_to_link("b", cx));
     assert_eq!(app.active_note(cx).as_deref(), Some("b"));
+}
+
+// ── Agent skills and tasks ──────────────────────────────────────────────
+
+const SKILL: &str = "---\n# written by hand\nname: helper\ndescription: \"Old: help\"\nlicense: MIT\n---\n\nUse [[b]] and [[{{ active_note }}]].\n";
+const SKILL_BODY: &str = "Use [[b]] and [[{{ active_note }}]].\n";
+const TASK: &str =
+    "---\ndescription: Sum up\n---\n\nSummarize {{ input }} for [[{{ active_note }}]].\n";
+
+fn agent_cave() -> tempfile::TempDir {
+    let dir = fixture_cave();
+    let skill = dir.path().join(".granit/agent/skills/helper");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), SKILL).unwrap();
+    std::fs::create_dir_all(dir.path().join(".granit/agent/tasks")).unwrap();
+    std::fs::write(dir.path().join(".granit/agent/tasks/summarize.md"), TASK).unwrap();
+    dir
+}
+
+fn open_agent_doc(app: &App, kind: AgentDocKind, name: &str, cx: &mut TestAppContext) {
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_agent_doc(kind, name.to_string(), cx)
+    });
+}
+
+fn description(app: &App, cx: &mut TestAppContext) -> Option<String> {
+    let view = view(app, cx);
+    cx.read_entity(&view, |view, cx| view.description_text(cx))
+}
+
+#[gpui::test]
+async fn a_skill_round_trips_through_the_editor(cx: &mut TestAppContext) {
+    let dir = agent_cave();
+    let path = ".granit/agent/skills/helper/SKILL.md";
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    open_agent_doc(&app, AgentDocKind::Skill, "helper", cx);
+    app.draw(cx);
+
+    assert_eq!(text(&app, cx), SKILL_BODY, "the body, without frontmatter");
+    assert_eq!(app.active_note(cx), None, "no note is active");
+    assert_eq!(description(&app, cx).as_deref(), Some("Old: help"));
+    let view = view(&app, cx);
+    // Skills are never rendered with Tera: an unresolved link is broken,
+    // as in a note.
+    let broken = cx.read_entity(&view, |view, cx| view.broken_links(cx));
+    assert_eq!(broken.len(), 1, "{broken:?}");
+    assert!(
+        SKILL_BODY[broken[0].clone()].contains("{{ active_note }}"),
+        "{broken:?}"
+    );
+
+    // Unedited: switching away and back writes nothing, nor resets the agent.
+    let generation = cx.update(|cx| Host::core(cx).agent_generation());
+    open(&app, "b", cx);
+    open_agent_doc(&app, AgentDocKind::Skill, "helper", cx);
+    cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+    cx.run_until_parked();
+    assert_eq!(read(dir.path(), path), SKILL);
+    assert_eq!(flush(&app, cx), FlushOutcome::Unchanged);
+    assert_eq!(
+        cx.update(|cx| Host::core(cx).agent_generation()),
+        generation
+    );
+
+    // Something in the chat, to see that a skill edit leaves it.
+    let chat = cx.read_entity(&app.workspace, |workspace, _| workspace.chat().clone());
+    let items = vec![
+        Ok(AgentStreamItem::Text("Hello there.".into())),
+        Ok(AgentStreamItem::Done),
+    ];
+    let task = chat.update(cx, |chat, cx| {
+        chat.run_stream(
+            async move { Ok(AgentStream::from_items(items)) },
+            "hi".into(),
+            generation,
+            cx,
+        );
+        chat.take_stream().unwrap()
+    });
+    // The stream is read on the tokio runtime, outside GPUI's test
+    // executor.
+    cx.executor().allow_parking();
+    task.await;
+    cx.run_until_parked();
+    let transcript = cx.read_entity(&chat, |chat, _| chat.transcript().to_string());
+    assert!(transcript.contains("Hello there."), "{transcript}");
+
+    // Edited: autosaved under the frontmatter, kept byte for byte, and the
+    // agent is reset (as the Tauri app's update_skill does), while the chat
+    // keeps its transcript.
+    type_at_end(&app, "Then stop.\n", cx);
+    cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+    cx.run_until_parked();
+    assert_eq!(
+        read(dir.path(), path),
+        format!("{SKILL}Then stop.\n"),
+        "only the body changed"
+    );
+    assert!(cx.update(|cx| Host::core(cx).agent_generation()) > generation);
+    assert_eq!(
+        cx.read_entity(&chat, |chat, _| chat.transcript().to_string()),
+        transcript,
+        "the chat stays"
+    );
+
+    // The description: Enter writes just that key.
+    update_view(&app, cx, |view, window, cx| {
+        view.type_description("  Help with notes: all of them ", window, cx);
+        view.commit_description(cx)
+    });
+    assert_eq!(
+        read(dir.path(), path),
+        format!("{SKILL}Then stop.\n").replace("\"Old: help\"", "\"Help with notes: all of them\"")
+    );
+    let listed = cx.update(|cx| cave_ops::list_agent_docs(AgentDocKind::Skill, cx).unwrap());
+    assert_eq!(listed[0].description, "Help with notes: all of them");
+
+    // A description typed but not committed is written before another
+    // document opens, like pending body edits.
+    update_view(&app, cx, |view, window, cx| {
+        view.type_description("Helps", window, cx)
+    });
+    type_at_end(&app, "!", cx);
+    open(&app, "a", cx);
+    let raw = read(dir.path(), path);
+    assert!(raw.contains("\ndescription: \"Helps\"\n"), "{raw}");
+    assert!(raw.ends_with("Then stop.\n!"), "{raw}");
+    assert_eq!(app.active_note(cx).as_deref(), Some("a"));
+
+    // A broken link in a skill creates no note; one to a note opens it.
+    open_agent_doc(&app, AgentDocKind::Skill, "helper", cx);
+    app.draw(cx);
+    update_view(&app, cx, |view, _, cx| {
+        view.navigate_to_link("{{ active_note }}", cx)
+    });
+    assert!(!dir.path().join("{{ active_note }}.md").exists());
+    update_view(&app, cx, |view, _, cx| view.navigate_to_link("b", cx));
+    assert_eq!(app.active_note(cx).as_deref(), Some("b"));
+}
+
+#[gpui::test]
+fn a_task_is_edited_and_renamed_in_the_editor(cx: &mut TestAppContext) {
+    let dir = agent_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open_agent_doc(&app, AgentDocKind::Task, "summarize", cx);
+    app.draw(cx);
+    assert_eq!(
+        text(&app, cx),
+        "Summarize {{ input }} for [[{{ active_note }}]].\n"
+    );
+    assert_eq!(description(&app, cx).as_deref(), Some("Sum up"));
+    let generation = cx.update(|cx| Host::core(cx).agent_generation());
+
+    // Pending edits follow a rename from the header's title.
+    type_at_end(&app, "Be brief.", cx);
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx);
+        view.type_title("brief", window, cx);
+        view.commit_title(cx);
+    });
+    let tasks = dir.path().join(".granit/agent/tasks");
+    assert!(!tasks.join("summarize.md").exists());
+    let shown = cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.open_agent_doc_name(cx)
+    });
+    assert_eq!(shown, Some((AgentDocKind::Task, "brief".into())));
+    assert_eq!(flush(&app, cx), FlushOutcome::Saved);
+    assert_eq!(read(&tasks, "brief.md"), format!("{TASK}Be brief."));
+
+    update_view(&app, cx, |view, window, cx| {
+        view.type_description("Summarize briefly", window, cx);
+        view.commit_description(cx)
+    });
+    assert_eq!(
+        read(&tasks, "brief.md"),
+        format!("{TASK}Be brief.").replace("Sum up", "Summarize briefly")
+    );
+    assert_eq!(
+        cx.update(|cx| Host::core(cx).agent_generation()),
+        generation,
+        "tasks do not reset the agent"
+    );
+
+    // The rendered prompt is the saved one.
+    let prompt = cx
+        .update(|cx| crate::agent_ops::render_task("brief", "the notes", cx))
+        .unwrap_err();
+    assert!(prompt.contains("active_note"), "no note is open: {prompt}");
+    open(&app, "a", cx);
+    let prompt = cx
+        .update(|cx| crate::agent_ops::render_task("brief", "the notes", cx))
+        .unwrap();
+    assert_eq!(prompt, "Summarize the notes for [[a]].\nBe brief.");
 }
 
 // ── Header ──────────────────────────────────────────────────────────────

@@ -42,10 +42,12 @@ pub enum AppIcon {
     Calendar,
     Pencil,
     CloudUpload,
+    Brain,
+    Zap,
 }
 
 impl AppIcon {
-    const ALL: [AppIcon; 19] = [
+    const ALL: [AppIcon; 21] = [
         AppIcon::FilePlus,
         AppIcon::FolderPlus,
         AppIcon::PanelRight,
@@ -65,6 +67,8 @@ impl AppIcon {
         AppIcon::Calendar,
         AppIcon::Pencil,
         AppIcon::CloudUpload,
+        AppIcon::Brain,
+        AppIcon::Zap,
     ];
 
     fn name(self) -> &'static str {
@@ -88,6 +92,8 @@ impl AppIcon {
             AppIcon::Calendar => "calendar",
             AppIcon::Pencil => "pencil",
             AppIcon::CloudUpload => "cloud-upload",
+            AppIcon::Brain => "brain",
+            AppIcon::Zap => "zap",
         }
     }
 
@@ -112,6 +118,8 @@ impl AppIcon {
             AppIcon::Calendar => icondata_lu::LuCalendar,
             AppIcon::Pencil => icondata_lu::LuPencil,
             AppIcon::CloudUpload => icondata_lu::LuCloudUpload,
+            AppIcon::Brain => icondata_lu::LuBrain,
+            AppIcon::Zap => icondata_lu::LuZap,
         }
     }
 }

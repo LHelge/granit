@@ -6,9 +6,11 @@
 //! (for the selection) and the calendar, and follows renames and deletions
 //! announced as [`CaveEvent`]s. The sidebar shows the [`CalendarPanel`]
 //! above a tab bar of [`SidebarTab`]s: the explorer, [`SearchPanel`],
-//! [`TodosPanel`], [`TagsPanel`], [`FavoritesPanel`] and [`TemplatesPanel`]
-//! ([`Workspace::show_tab`]; the search key jumps to the search box). A note
-//! template opens in the same editor with [`Workspace::open_template`]. A new sidebar panel becomes a field here, a
+//! [`TodosPanel`], [`TagsPanel`], [`FavoritesPanel`], [`TemplatesPanel`] and
+//! [`AgentFilesPanel`] ([`Workspace::show_tab`]; the search key jumps to the
+//! search box). A note template opens in the same editor with
+//! [`Workspace::open_template`], an agent skill or task with
+//! [`Workspace::open_agent_doc`]. A new sidebar panel becomes a field here, a
 //! tab and a child in [`Workspace::render_sidebar`]; the main area is
 //! [`NoteView`], the note editor. Panels open a note with
 //! [`Workspace::open_note`], or at a heading, line or offset with
@@ -50,13 +52,13 @@ use crate::cave_ops;
 use crate::chat::{ChatEvent, ChatPanel};
 use crate::config_ops::{self, ConfigEvent, ConfigEvents};
 use crate::disaster_restore::{DisasterRestore, DisasterRestoreEvent};
-use crate::events::{CaveEvent, CaveEvents};
+use crate::events::{AgentDocKind, CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
 use crate::note_view::{DocKind, DocRef, FlushOutcome, NoteView, NoteViewEvent, Reveal};
 use crate::panels::{
-    CalendarPanel, FavoritesPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel,
-    TodosPanel,
+    AgentFilesPanel, CalendarPanel, FavoritesPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel,
+    TemplatesPanel, TodosPanel,
 };
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
@@ -100,6 +102,7 @@ pub struct Workspace {
     tags: Entity<TagsPanel>,
     favorites: Entity<FavoritesPanel>,
     templates: Entity<TemplatesPanel>,
+    agent_files: Entity<AgentFilesPanel>,
     /// The sidebar's shown tab.
     sidebar_tab: SidebarTab,
     note_view: Entity<NoteView>,
@@ -131,6 +134,7 @@ impl Workspace {
         let tags = cx.new(|cx| TagsPanel::new(window, cx));
         let favorites = cx.new(FavoritesPanel::new);
         let templates = cx.new(TemplatesPanel::new);
+        let agent_files = cx.new(AgentFilesPanel::new);
         let note_view = cx.new(|cx| NoteView::new(window, cx));
         let chat = cx.new(|cx| ChatPanel::new(window, cx));
         let on_panel = |this: &mut Self, event: &PanelEvent, cx: &mut Context<Self>| match event {
@@ -139,6 +143,7 @@ impl Workspace {
             }
             PanelEvent::ToggleTodo { item, checked } => this.toggle_todo(item, *checked, cx),
             PanelEvent::OpenTemplate(slug) => this.open_template(slug.clone(), cx),
+            PanelEvent::OpenAgentDoc { kind, name } => this.open_agent_doc(*kind, name.clone(), cx),
         };
         let subscriptions = vec![
             cx.subscribe(&calendar, move |this, _, event, cx| {
@@ -151,6 +156,9 @@ impl Workspace {
                 on_panel(this, event, cx)
             }),
             cx.subscribe(&templates, move |this, _, event, cx| {
+                on_panel(this, event, cx)
+            }),
+            cx.subscribe(&agent_files, move |this, _, event, cx| {
                 on_panel(this, event, cx)
             }),
             cx.subscribe_in(
@@ -220,6 +228,7 @@ impl Workspace {
             tags,
             favorites,
             templates,
+            agent_files,
             sidebar_tab: SidebarTab::default(),
             note_view,
             chat,
@@ -288,6 +297,11 @@ impl Workspace {
     #[cfg(test)]
     pub fn templates(&self) -> &Entity<TemplatesPanel> {
         &self.templates
+    }
+
+    #[cfg(test)]
+    pub fn agent_files(&self) -> &Entity<AgentFilesPanel> {
+        &self.agent_files
     }
 
     /// The sidebar's shown tab.
@@ -674,12 +688,34 @@ impl Workspace {
         self.note_view.read(cx).template_slug()
     }
 
+    /// Show the agent skill or task `name` in the editor, closing the
+    /// settings, like [`Self::open_template`]: the open document's pending
+    /// edits are written first (if that fails, it stays open), and while a
+    /// skill or task is open no note is active.
+    pub fn open_agent_doc(&mut self, kind: AgentDocKind, name: String, cx: &mut Context<Self>) {
+        self.close_settings(cx);
+        let shown = self.note_view.update(cx, |view, cx| {
+            view.open_doc(Some(DocRef::agent(kind, name)), cx)
+        });
+        let note = shown.and_then(|doc| (doc.kind == DocKind::Note).then_some(doc.slug));
+        self.shown(note, cx);
+    }
+
+    /// The open skill or task.
+    #[cfg(test)]
+    pub fn open_agent_doc_name(&self, cx: &App) -> Option<(AgentDocKind, String)> {
+        self.note_view.read(cx).agent_doc()
+    }
+
     /// The main area now shows the note `shown` (`None`: no note, maybe a
-    /// template): tell the core and the sidebar.
+    /// template, skill or task): tell the core and the sidebar.
     fn shown(&mut self, shown: Option<String>, cx: &mut Context<Self>) {
         let template = self.note_view.read(cx).template_slug();
         self.templates
             .update(cx, |templates, cx| templates.set_active(template, cx));
+        let agent_doc = self.note_view.read(cx).agent_doc();
+        self.agent_files
+            .update(cx, |panel, cx| panel.set_active(agent_doc, cx));
         cave_ops::set_active_note(shown.clone(), cx);
         self.explorer
             .update(cx, |explorer, cx| explorer.set_active(shown.clone(), cx));
@@ -743,6 +779,22 @@ impl Workspace {
             }
             CaveEvent::TemplateRemoved(slug)
                 if self.note_view.read(cx).template_slug().as_deref() == Some(slug.as_str()) =>
+            {
+                self.close_removed_note(cx);
+            }
+            CaveEvent::AgentDocRenamed { kind, from, to }
+                if self.note_view.read(cx).agent_doc() == Some((*kind, from.clone())) =>
+            {
+                // Pending edits follow the skill or task to its new name; a
+                // skill's images resolve from its moved folder.
+                self.note_view.update(cx, |view, cx| {
+                    view.doc_renamed((*kind).into(), from, to, cx);
+                    view.reload(cx);
+                });
+                self.shown(None, cx);
+            }
+            CaveEvent::AgentDocRemoved { kind, name }
+                if self.note_view.read(cx).agent_doc() == Some((*kind, name.clone())) =>
             {
                 self.close_removed_note(cx);
             }
@@ -886,6 +938,7 @@ impl Workspace {
             SidebarTab::Tags => self.tags.clone().into_any_element(),
             SidebarTab::Favorites => self.favorites.clone().into_any_element(),
             SidebarTab::Templates => self.templates.clone().into_any_element(),
+            SidebarTab::Agent => self.agent_files.clone().into_any_element(),
         }
     }
 

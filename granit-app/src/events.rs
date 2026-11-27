@@ -39,6 +39,37 @@ pub enum CaveEvent {
     TemplateRenamed { from: String, to: String },
     /// The note template no longer exists.
     TemplateRemoved(String),
+    /// An agent skill or task was created, or its description changed.
+    /// (Saving its body announces nothing: no other view shows it.)
+    AgentDocsChanged,
+    /// The agent skill or task `from` is now called `to`.
+    AgentDocRenamed {
+        kind: AgentDocKind,
+        from: String,
+        to: String,
+    },
+    /// The agent skill or task no longer exists.
+    AgentDocRemoved { kind: AgentDocKind, name: String },
+}
+
+/// The kinds of agent documents in `.granit/agent/`, each a name namespace
+/// of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AgentDocKind {
+    /// `skills/<name>/SKILL.md`.
+    Skill,
+    /// `tasks/<name>.md`.
+    Task,
+}
+
+impl AgentDocKind {
+    /// The kind's name in messages ("skill", "task").
+    pub fn noun(self) -> &'static str {
+        match self {
+            AgentDocKind::Skill => "skill",
+            AgentDocKind::Task => "task",
+        }
+    }
 }
 
 /// The app-wide emitter of [`CaveEvent`]s.

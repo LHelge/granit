@@ -12,6 +12,12 @@
 //! the body on disk is the editor's. A title edit renames through
 //! `cave_ops::rename_note` / `rename_template`; pending edits follow the
 //! document to its new name.
+//!
+//! A skill or task (whose frontmatter the editor never sees either) shows a
+//! "Skill" / "Task" badge, the title and a description input instead: Enter,
+//! leaving the input, or any flush of the view (a document switch, a cave
+//! switch, quitting) writes the typed description through
+//! `cave_ops::set_agent_doc_description`, which splices only that key.
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Entity, FontWeight,
@@ -33,6 +39,7 @@ use super::save::{NoteSession, SaveStatus};
 use super::{DocKind, DocRef, FlushOutcome, Note, NoteView, NoteViewEvent};
 use crate::assets::note_icon_path;
 use crate::cave_ops;
+use crate::host::Host;
 
 /// The header's state, part of [`NoteView`].
 pub(super) struct Header {
@@ -48,6 +55,11 @@ pub(super) struct Header {
     icon_picker: Option<TextEdit>,
     /// Whether the backlinks section is folded out.
     backlinks_open: bool,
+    /// The description input of a skill or task, created when its editor
+    /// is installed.
+    description: Option<TextEdit>,
+    /// The skill's or task's description on disk.
+    description_saved: Option<String>,
     _tag_events: Subscription,
 }
 
@@ -79,6 +91,8 @@ impl Header {
             tag_input,
             icon_picker: None,
             backlinks_open: false,
+            description: None,
+            description_saved: None,
             _tag_events: events,
         }
     }
@@ -90,6 +104,8 @@ impl Header {
         self.rename = None;
         self.icon_picker = None;
         self.backlinks_open = false;
+        self.description = None;
+        self.description_saved = None;
     }
 
     /// Empty the "Add tag" input (another document was loaded).
@@ -115,10 +131,22 @@ impl NoteView {
 
     /// Re-read what the header shows from the file on disk.
     pub(super) fn refresh_header(&mut self, cx: &mut Context<Self>) {
-        let info = self.loaded_doc().and_then(|doc| {
+        let doc = self.loaded_doc();
+        // A skill or task has a description instead of tags, icon and dates.
+        if let Some((kind, doc)) = doc.as_ref().and_then(|doc| Some((doc.kind.agent()?, doc))) {
+            self.header.info = None;
+            self.header.description_saved = cave_ops::read_agent_doc(kind, &doc.slug, cx)
+                .inspect_err(|err| warn!("Could not read the {} {}: {err}", kind.noun(), doc.slug))
+                .ok()
+                .map(|read| read.meta.description.unwrap_or_default());
+            cx.notify();
+            return;
+        }
+        let info = doc.and_then(|doc| {
             let header = match doc.kind {
                 DocKind::Note => cave_ops::note_header(&doc.slug, cx),
                 DocKind::Template => cave_ops::template_header(&doc.slug, cx),
+                DocKind::Skill | DocKind::Task => return None,
             };
             header
                 .inspect_err(|err| warn!("Could not read the header of {}: {err}", doc.slug))
@@ -126,6 +154,95 @@ impl NoteView {
         });
         self.header.info = info;
         cx.notify();
+    }
+
+    /// Give a loaded skill or task its description input, holding the
+    /// description on disk; other documents have none.
+    pub(super) fn load_description_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let is_agent_doc = self
+            .loaded_doc()
+            .is_some_and(|doc| doc.kind.agent().is_some());
+        if !is_agent_doc {
+            self.header.description = None;
+            return;
+        }
+        let saved = self.header.description_saved.clone().unwrap_or_default();
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Describe what it does and when to use it…")
+                .default_value(saved)
+        });
+        let events = cx.subscribe_in(&input, window, |this, _, event: &InputEvent, _, cx| {
+            if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                this.commit_description(cx);
+            }
+        });
+        self.header.description = Some(TextEdit {
+            input,
+            _events: events,
+        });
+    }
+
+    /// Write the description typed into the open skill's or task's header
+    /// (trimmed), when it differs from the one on disk. Only that
+    /// frontmatter key changes. Refused once another cave is open.
+    pub(super) fn commit_description(&mut self, cx: &mut Context<Self>) -> FlushOutcome {
+        let Some(edit) = &self.header.description else {
+            return FlushOutcome::Unchanged;
+        };
+        let typed = edit.input.read(cx).value().trim().to_string();
+        if self.header.description_saved.as_deref() == Some(typed.as_str()) {
+            return FlushOutcome::Unchanged;
+        }
+        let (Note::Loaded(loaded), Some(doc)) = (&self.note, self.loaded_doc()) else {
+            return FlushOutcome::Unchanged;
+        };
+        let Some(kind) = doc.kind.agent() else {
+            return FlushOutcome::Unchanged;
+        };
+        let result = if Host::cave_path(cx).as_ref() == Some(&loaded.cave) {
+            cave_ops::set_agent_doc_description(kind, &doc.slug, &typed, cx)
+                .map_err(|err| err.to_string())
+        } else {
+            Err(format!("the {}'s cave is no longer open", kind.noun()))
+        };
+        cx.notify();
+        match result {
+            Ok(()) => {
+                self.header.description_saved = Some(typed);
+                self.header.error = None;
+                FlushOutcome::Saved
+            }
+            Err(err) => {
+                warn!("Could not save the description of {}: {err}", doc.slug);
+                self.header.error =
+                    Some(format!("Could not save the description of {}: {err}", doc.slug).into());
+                FlushOutcome::Failed(err)
+            }
+        }
+    }
+
+    /// Type `text` into the description input, for tests (Enter or a blur
+    /// commits it).
+    #[cfg(test)]
+    pub(super) fn type_description(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(edit) = &self.header.description {
+            let text = text.to_string();
+            edit.input
+                .update(cx, |input, cx| input.set_value(text, window, cx));
+        }
+    }
+
+    /// What the description input holds, for tests; `None` without one.
+    #[cfg(test)]
+    pub(super) fn description_text(&self, cx: &gpui::App) -> Option<String> {
+        let edit = self.header.description.as_ref()?;
+        Some(edit.input.read(cx).value().to_string())
     }
 
     /// What the header shows, for tests.
@@ -156,6 +273,8 @@ impl NoteView {
         let result = match doc.kind {
             DocKind::Note => cave_ops::edit_note_header(&doc.slug, edit, cx),
             DocKind::Template => cave_ops::edit_template_header(&doc.slug, edit, cx),
+            // Skills and tasks have no tags or icon.
+            DocKind::Skill | DocKind::Task => return,
         };
         self.header.error = result.err().map(|err| {
             warn!("Could not update {}: {err}", doc.slug);
@@ -262,9 +381,12 @@ impl NoteView {
         if name.is_empty() || name == doc.slug {
             return;
         }
-        let result = match doc.kind {
-            DocKind::Note => cave_ops::rename_note(&doc.slug, &name, cx).map(|_| ()),
-            DocKind::Template => cave_ops::rename_template(&doc.slug, &name, cx).map(|_| ()),
+        let result = match doc.kind.agent() {
+            Some(kind) => cave_ops::rename_agent_doc(kind, &doc.slug, &name, cx),
+            None if doc.kind == DocKind::Template => {
+                cave_ops::rename_template(&doc.slug, &name, cx)
+            }
+            None => cave_ops::rename_note(&doc.slug, &name, cx),
         };
         self.header.error = result.err().map(|err| {
             warn!("Could not rename {}: {err}", doc.slug);
@@ -365,8 +487,14 @@ impl NoteView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_note = session.kind() == DocKind::Note;
+        let is_agent_doc = session.kind().agent().is_some();
         let title_row = self.render_title_row(session, cx);
-        let tags = self.render_tags(cx);
+        // A skill or task shows its description where others have tags.
+        let tags = if is_agent_doc {
+            self.render_description(cx)
+        } else {
+            self.render_tags(cx)
+        };
         let stats = self.render_stats(cx);
         let backlinks = is_note.then(|| self.render_backlinks(cx)).flatten();
         let theme = cx.theme();
@@ -396,7 +524,18 @@ impl NoteView {
     /// input) and the save state.
     fn render_title_row(&self, session: &NoteSession, cx: &mut Context<Self>) -> AnyElement {
         let is_note = session.kind() == DocKind::Note;
-        let icon_picker = self.render_icon_picker(cx);
+        let badge = match session.kind() {
+            DocKind::Note => None,
+            DocKind::Template => Some("Template"),
+            DocKind::Skill => Some("Skill"),
+            DocKind::Task => Some("Task"),
+        };
+        // Skills and tasks have no icon.
+        let icon_picker = session
+            .kind()
+            .agent()
+            .is_none()
+            .then(|| self.render_icon_picker(cx));
         let theme = cx.theme();
         let (status, status_color): (SharedString, _) = match session.status() {
             SaveStatus::Clean => ("".into(), theme.muted_foreground),
@@ -445,19 +584,17 @@ impl NoteView {
         };
         h_flex()
             .gap_2()
-            .when(!is_note, |row| {
-                row.child(
-                    div()
-                        .flex_none()
-                        .px_2()
-                        .rounded(px(4.))
-                        .text_xs()
-                        .bg(theme.muted)
-                        .text_color(theme.muted_foreground)
-                        .child("Template"),
-                )
-            })
-            .child(icon_picker)
+            .children(badge.map(|badge| {
+                div()
+                    .flex_none()
+                    .px_2()
+                    .rounded(px(4.))
+                    .text_xs()
+                    .bg(theme.muted)
+                    .text_color(theme.muted_foreground)
+                    .child(badge)
+            }))
+            .children(icon_picker)
             .children(star)
             .child(title)
             .child(
@@ -616,6 +753,39 @@ impl NoteView {
                 div()
                     .w(px(140.))
                     .child(Input::new(&self.header.tag_input).xsmall()),
+            )
+            .into_any_element()
+    }
+
+    /// A skill's or task's description input, as the Tauri app's agent
+    /// document header has it: the agent (or the `/task` list) shows it.
+    fn render_description(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let Some(edit) = &self.header.description else {
+            // Until the editor is installed, the description on disk.
+            return div()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(SharedString::from(
+                    self.header.description_saved.clone().unwrap_or_default(),
+                ))
+                .into_any_element();
+        };
+        h_flex()
+            .gap_2()
+            .child(
+                div()
+                    .flex_none()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Description"),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .debug_selector(|| "agent-doc-description".into())
+                    .child(Input::new(&edit.input).small()),
             )
             .into_any_element()
     }

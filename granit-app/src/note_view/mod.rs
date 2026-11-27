@@ -1,4 +1,6 @@
 //! The main area: the open note in the live-preview editor (`zorite-editor`).
+//! The editor also holds note templates and the agent's skills and tasks
+//! ([`DocKind`]); the header edits a skill's or task's description.
 //!
 //! The workspace drives the view with [`NoteView::open`] (which writes the
 //! current note's pending edits first), [`NoteView::reveal`] (scroll to a
@@ -50,7 +52,7 @@ use zorite_editor::{EditorEvent, EditorState};
 
 use crate::cave_ops;
 use crate::config_ops::{ConfigEvent, ConfigEvents};
-use crate::events::{CaveEvent, CaveEvents};
+use crate::events::{AgentDocKind, CaveEvent, CaveEvents};
 use crate::host::Host;
 use find::FindBar;
 use granit_core::markdown::Markdown;
@@ -178,6 +180,14 @@ impl DocRef {
         Self {
             kind: DocKind::Template,
             slug: slug.into(),
+        }
+    }
+
+    /// An agent skill or task.
+    pub fn agent(kind: AgentDocKind, name: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            slug: name.into(),
         }
     }
 
@@ -363,6 +373,22 @@ impl NoteView {
             .map(|doc| doc.slug)
     }
 
+    /// The shown agent skill or task, by kind and name.
+    pub fn agent_doc(&self) -> Option<(AgentDocKind, String)> {
+        let doc = self.doc()?;
+        Some((doc.kind.agent()?, doc.slug))
+    }
+
+    /// Whether the shown document's wiki-links may be placeholders that are
+    /// filled in later (a template's `[[{{ yesterday }}]]`, a task's
+    /// `[[{{ active_note }}]]`): then none of them counts as broken. Skills
+    /// are never rendered with Tera, so their links are marked like a
+    /// note's.
+    fn links_are_placeholders(&self) -> bool {
+        self.doc()
+            .is_some_and(|doc| matches!(doc.kind, DocKind::Template | DocKind::Task))
+    }
+
     /// The text of the open note: the editor's, or the loaded body before
     /// the editor is installed.
     pub fn text<'a>(&'a self, cx: &'a App) -> Option<&'a str> {
@@ -532,8 +558,22 @@ impl NoteView {
         }
     }
 
-    /// Write the open note if it has unsaved edits.
+    /// Write the open note if it has unsaved edits, and, for a skill or
+    /// task, a description typed in the header but not yet committed.
     pub fn flush(&mut self, cx: &mut Context<Self>) -> FlushOutcome {
+        let body = self.flush_body(cx);
+        let description = self.commit_description(cx);
+        match (body, description) {
+            (FlushOutcome::Failed(err), _) | (_, FlushOutcome::Failed(err)) => {
+                FlushOutcome::Failed(err)
+            }
+            (FlushOutcome::Saved, _) | (_, FlushOutcome::Saved) => FlushOutcome::Saved,
+            (FlushOutcome::Unchanged, FlushOutcome::Unchanged) => FlushOutcome::Unchanged,
+        }
+    }
+
+    /// Write the open note's body if it has unsaved edits.
+    fn flush_body(&mut self, cx: &mut Context<Self>) -> FlushOutcome {
         self.autosave = None;
         let Note::Loaded(loaded) = &mut self.note else {
             return FlushOutcome::Unchanged;
@@ -560,18 +600,22 @@ impl NoteView {
         outcome
     }
 
-    /// The open note was moved (or its folder renamed or moved): resolve its
-    /// relative images from its new directory.
+    /// The open note was moved (or its folder renamed or moved), or the
+    /// open skill renamed: resolve its relative images from its new
+    /// directory.
     fn follow_note_dir(&mut self, cx: &mut Context<Self>) {
         let Note::Loaded(loaded) = &mut self.note else {
             return;
         };
-        // Templates do not move.
-        if loaded.session.kind() != DocKind::Note {
+        // Templates and tasks share one directory each.
+        if !matches!(loaded.session.kind(), DocKind::Note | DocKind::Skill) {
             return;
         }
-        let slug = loaded.session.slug().to_string();
-        let Ok(note_dir) = Host::core(cx).with_cave(|cave| cave.note_dir(&slug)) else {
+        let doc = DocRef {
+            kind: loaded.session.kind(),
+            slug: loaded.session.slug().to_string(),
+        };
+        let Ok(note_dir) = Host::core(cx).with_cave(|cave| doc_dir(cave, &doc)) else {
             return;
         };
         if note_dir == loaded.images.note_dir {
@@ -679,6 +723,8 @@ impl NoteView {
             DocKind::Template => {
                 "Empty template: write the note body, with {{ slug }} or {{ date }}"
             }
+            DocKind::Skill => "Empty skill: write the instructions the agent loads with use_skill",
+            DocKind::Task => "Empty task: write the prompt, with {{ input }} for the typed text",
         };
         let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder(placeholder));
         editor.update(cx, |editor, _| {
@@ -692,6 +738,7 @@ impl NoteView {
         let restored = editor.update(cx, |editor, cx| load_text(editor, &body, cx));
         self.undo_floor = restored.then_some(body);
         self.header.clear_tag_input(window, cx);
+        self.load_description_input(window, cx);
         self.editor_subscriptions = vec![
             cx.subscribe_in(&editor, window, Self::on_editor_event),
             cx.on_blur(&editor.read(cx).focus_handle(cx), window, |this, _, cx| {
@@ -960,20 +1007,31 @@ impl NoteView {
     }
 }
 
-/// Read `doc` for the editor. A template's relative images resolve from
-/// `.granit/templates/`, as the Tauri app's template preview did.
+/// The cave-relative directory `doc`'s relative images resolve from: a
+/// note's folder, `.granit/templates/` for a template (as the Tauri app's
+/// template preview did), a skill's own directory, or the tasks directory.
+fn doc_dir(
+    cave: &granit_core::cave::Cave,
+    doc: &DocRef,
+) -> Result<String, granit_core::cave::CaveError> {
+    match doc.kind {
+        DocKind::Note => cave.note_dir(&doc.slug),
+        DocKind::Template => Ok(cave.relative_dir(&cave.templates_dir())),
+        DocKind::Skill => cave.skill_dir(&doc.slug),
+        DocKind::Task => cave.task_dir(&doc.slug),
+    }
+}
+
+/// Read `doc` for the editor: its body, without frontmatter.
 fn load_doc(doc: &DocRef, cx: &App) -> Result<Loaded, granit_core::cave::CaveError> {
     Host::core(cx).with_cave(|cave| {
-        let (body, dir) = match doc.kind {
-            DocKind::Note => (
-                cave.read_note(&doc.slug)?.content,
-                cave.note_dir(&doc.slug)?,
-            ),
-            DocKind::Template => (
-                cave.read_template(&doc.slug)?.content,
-                cave.relative_dir(&cave.templates_dir()),
-            ),
+        let body = match doc.kind {
+            DocKind::Note => cave.read_note(&doc.slug)?.content,
+            DocKind::Template => cave.read_template(&doc.slug)?.content,
+            DocKind::Skill => cave.read_skill(&doc.slug)?.content,
+            DocKind::Task => cave.read_task(&doc.slug)?.content,
         };
+        let dir = doc_dir(cave, doc)?;
         Ok(Loaded {
             session: NoteSession::new(doc.slug.clone(), body).of_kind(doc.kind),
             cave: cave.path().to_path_buf(),
@@ -990,6 +1048,12 @@ fn read_body(doc: &DocRef, cx: &App) -> Result<String, granit_core::cave::CaveEr
     match doc.kind {
         DocKind::Note => cave_ops::read_note(&doc.slug, cx).map(|doc| doc.content),
         DocKind::Template => cave_ops::read_template(&doc.slug, cx).map(|doc| doc.content),
+        DocKind::Skill => {
+            cave_ops::read_agent_doc(AgentDocKind::Skill, &doc.slug, cx).map(|doc| doc.content)
+        }
+        DocKind::Task => {
+            cave_ops::read_agent_doc(AgentDocKind::Task, &doc.slug, cx).map(|doc| doc.content)
+        }
     }
 }
 
@@ -1002,6 +1066,12 @@ fn write_snapshot(cave: &PathBuf, snapshot: &SaveSnapshot, cx: &mut App) -> Resu
         DocKind::Note => cave_ops::save_note(&snapshot.slug, &snapshot.text, cx).map(|_| ()),
         DocKind::Template => {
             cave_ops::save_template(&snapshot.slug, &snapshot.text, cx).map(|_| ())
+        }
+        DocKind::Skill => {
+            cave_ops::save_agent_doc(AgentDocKind::Skill, &snapshot.slug, &snapshot.text, cx)
+        }
+        DocKind::Task => {
+            cave_ops::save_agent_doc(AgentDocKind::Task, &snapshot.slug, &snapshot.text, cx)
         }
     }
     .map_err(|err| err.to_string())

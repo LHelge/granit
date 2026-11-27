@@ -235,6 +235,12 @@ impl ChatPanel {
         &self.resize
     }
 
+    /// The names of the `/task` prompts the input offers.
+    #[cfg(test)]
+    pub fn task_names(&self) -> Vec<String> {
+        self.tasks.iter().map(|task| task.name.clone()).collect()
+    }
+
     // ── Attached notes ───────────────────────────────────────────────
 
     /// The notes attached to the messages sent.
