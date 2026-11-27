@@ -1,10 +1,10 @@
 ---
 id: zem.dz
 title: "Settings: handle a failed deferred config save"
-status: open
+status: done
 priority: P2
 created: "2026-11-27T01:51:05.838414673Z"
-updated: "2026-11-27T01:51:05.838414673Z"
+updated: "2026-11-27T06:01:38.526590782Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - settings
 depends_on:
   - zem.2u
+attempts: 1
 ---
 
 ## Summary

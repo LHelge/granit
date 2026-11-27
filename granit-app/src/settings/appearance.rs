@@ -6,6 +6,7 @@ use gpui_kit::component::setting::{
 };
 use granit_types::{AppConfig, FontConfig, ThemeChoice};
 
+use super::fields::number_field;
 use super::{getter, SettingsCtx};
 use crate::assets::AppIcon;
 use crate::theme::{MONO_FONT, SANS_FONT};
@@ -87,7 +88,9 @@ fn font_group(
         ))
         .item(SettingItem::new(
             "Size",
-            SettingField::number_input(
+            number_field(
+                format!("font-size-{title}"),
+                format!("{title} size"),
                 NumberFieldOptions {
                     min: FONT_SIZES.0,
                     max: FONT_SIZES.1,

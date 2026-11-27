@@ -233,6 +233,7 @@ fn an_opened_cave_is_remembered(cx: &mut TestAppContext) {
     let options = HostOptions {
         last_cave: Some(store.clone()),
         embedding_models: None,
+        list_models: false,
     };
     let _app = App::start(options, StartupCave::Open(dir.path().to_path_buf()), cx);
     assert_eq!(store.load().unwrap(), Some(dir.path().to_path_buf()));
@@ -246,6 +247,7 @@ fn first_run_asks_for_a_cave_and_opens_the_picked_folder(cx: &mut TestAppContext
     let options = HostOptions {
         last_cave: Some(store.clone()),
         embedding_models: None,
+        list_models: false,
     };
     let startup = cx.update(|cx| {
         gpui_kit::init(cx);
@@ -283,6 +285,7 @@ fn a_remembered_cave_that_is_gone_is_forgotten(cx: &mut TestAppContext) {
     let options = HostOptions {
         last_cave: Some(store.clone()),
         embedding_models: None,
+        list_models: false,
     };
     let startup = cx.update(|cx| {
         Host::init(options, cx);
@@ -303,6 +306,7 @@ fn a_cave_that_fails_to_open_is_reported_and_not_remembered(cx: &mut TestAppCont
     let options = HostOptions {
         last_cave: Some(store.clone()),
         embedding_models: None,
+        list_models: false,
     };
 
     let app = App::start(options, StartupCave::Open(dir.path().to_path_buf()), cx);

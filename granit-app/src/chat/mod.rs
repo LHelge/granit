@@ -507,7 +507,8 @@ impl ChatPanel {
         self.models_error = None;
         let provider = agent_ops::selected_provider(cx);
         self.models_for = provider.clone();
-        let Some(provider) = provider else {
+        // Without model listing (tests) the provider is never asked.
+        let Some(provider) = provider.filter(|_| Host::lists_models(cx)) else {
             self.models_loading = false;
             self.models_task = None;
             cx.notify();

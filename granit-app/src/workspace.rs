@@ -48,7 +48,7 @@ use crate::assets::AppIcon;
 use crate::backup_ops::{self, BackupEvent, BackupOps, RestoreOutcome, Running};
 use crate::cave_ops;
 use crate::chat::{ChatEvent, ChatPanel};
-use crate::config_ops::{ConfigEvent, ConfigEvents};
+use crate::config_ops::{self, ConfigEvent, ConfigEvents};
 use crate::disaster_restore::{DisasterRestore, DisasterRestoreEvent};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
@@ -410,8 +410,12 @@ impl Workspace {
     /// Show the note again in the main area.
     fn close_settings(&mut self, cx: &mut Context<Self>) {
         if let Some((view, _)) = self.settings.take() {
-            // Edits still waiting for a typing pause are written now.
-            view.update(cx, |view, cx| view.flush(cx));
+            // Edits still waiting for a typing pause are written now. Field
+            // edits that cannot be stay pending, and a cave switch refuses
+            // until they are written.
+            if let Err(err) = view.update(cx, |view, cx| view.flush(cx)) {
+                warn!("Could not save the settings: {err}");
+            }
             cx.notify();
         }
     }
@@ -426,11 +430,15 @@ impl Workspace {
     }
 
     /// Write what is pending for the open cave: settings edits waiting for a
-    /// typing pause, and the open note's edits.
+    /// typing pause, or field edits and a system prompt that failed to save
+    /// (kept in `config_ops` once the settings are closed), and the open
+    /// note's edits.
     fn save_before_switch(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
-        if let Some((settings, _)) = &self.settings {
-            settings.update(cx, |settings, cx| settings.flush(cx));
+        match &self.settings {
+            Some((settings, _)) => settings.update(cx, |settings, cx| settings.flush(cx)),
+            None => config_ops::flush_all(cx),
         }
+        .map_err(|err| format!("the settings could not be saved: {err}"))?;
         self.note_view
             .update(cx, |view, cx| view.save_before_leaving(cx))
     }
@@ -478,6 +486,8 @@ impl Workspace {
         // core swaps caves.
         let note_view = self.note_view.downgrade();
         let before_install = move |cx: &mut App| {
+            config_ops::flush_all(cx)
+                .map_err(|err| format!("the settings could not be saved: {err}"))?;
             note_view
                 .update(cx, |view, cx| view.save_before_leaving(cx))
                 .unwrap_or(Ok(()))

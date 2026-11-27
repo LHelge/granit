@@ -112,10 +112,13 @@ impl SettingsView {
                         cx.background_executor()
                             .timer(config_ops::COMMIT_DELAY)
                             .await;
-                        this.update(cx, |this, cx| this.flush_prompt(cx)).ok();
+                        // A failure shows above the pages.
+                        let _ = this.update(cx, |this, cx| this.flush_prompt(cx));
                     }));
                 }
-                InputEvent::Blur => this.flush_prompt(cx),
+                InputEvent::Blur => {
+                    let _ = this.flush_prompt(cx);
+                }
                 _ => {}
             }),
             // Re-read every field after any change, including one made
@@ -129,7 +132,9 @@ impl SettingsView {
             ),
             cx.on_release(|this, cx| this.flush_on_release(cx)),
             cx.on_app_quit(|this, cx| {
-                this.flush(cx);
+                if let Err(err) = this.flush(cx) {
+                    log::warn!("Could not save the settings on quit: {err}");
+                }
                 async {}
             }),
         ];
@@ -173,25 +178,39 @@ impl SettingsView {
 
     /// Commit what is still pending: field edits ([`config_ops::flush_config`])
     /// and the system prompt. Nothing is written once another cave is open.
-    pub fn flush(&mut self, cx: &mut Context<Self>) {
-        let result = config_ops::flush_config(cx).map(|_| ());
-        if result.is_err() {
-            self.report(result, cx);
+    /// A failure is shown and returned (the first, when both fail); what
+    /// could not be written stays pending for the next flush.
+    pub fn flush(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
+        let config = config_ops::flush_config(cx).map(|_| ());
+        let prompt = if self.prompt_commit.is_some() {
+            self.flush_prompt(cx)
+        } else {
+            // A prompt typed earlier that could not be written.
+            let result = config_ops::flush_system_prompt(cx);
+            self.report(result.clone(), cx);
+            result
+        };
+        if config.is_err() {
+            self.report(config.clone(), cx);
         }
-        self.flush_prompt(cx);
+        config.and(prompt)
     }
 
-    /// Write the system prompt if an edit is pending.
-    fn flush_prompt(&mut self, cx: &mut Context<Self>) {
+    /// Write the system prompt if an edit is pending. A failure is shown
+    /// and returned; the text stays pending in [`config_ops`], so it is
+    /// written (or a cave switch refused) after the view is gone.
+    fn flush_prompt(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
         if self.prompt_commit.take().is_none() || Host::cave_path(cx) != self.cave {
-            return;
+            return Ok(());
         }
         let text = self.prompt.read(cx).value().to_string();
         let result = config_ops::write_system_prompt(&text, cx);
-        self.report(result, cx);
+        self.report(result.clone(), cx);
+        result
     }
 
     /// [`Self::flush`] for a view being dropped, which has only the app.
+    /// What cannot be written stays pending in [`config_ops`].
     fn flush_on_release(&mut self, cx: &mut App) {
         if let Err(err) = config_ops::flush_config(cx) {
             log::warn!("Could not save the settings: {err}");
@@ -205,8 +224,15 @@ impl SettingsView {
         }
     }
 
+    /// Show a failed write; a successful one clears the error only once
+    /// nothing waits to be saved (an earlier failure still pending stays
+    /// shown).
     fn report(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        self.error = result.err().map(SharedString::from);
+        match result {
+            Err(err) => self.error = Some(err.into()),
+            Ok(()) if !config_ops::has_unsaved(cx) => self.error = None,
+            Ok(()) => {}
+        }
         cx.notify();
     }
 

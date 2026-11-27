@@ -18,11 +18,15 @@
 //! pauses ([`COMMIT_DELAY`]), on Enter or blur, when the settings close,
 //! before another cave opens, or before any [`update_config`]
 //! ([`flush_config`]). A failed deferred save is announced as
-//! [`ConfigSaveFailed`].
+//! [`ConfigSaveFailed`]; its edits stay pending for the next flush, and a
+//! cave switch is refused while they cannot be saved.
 //!
 //! The agent's system prompt is a cave file, not config:
 //! [`read_system_prompt`] / [`write_system_prompt`] (the latter resets the
-//! agent and announces it too).
+//! agent and announces it too; a prompt it cannot write stays pending, here
+//! rather than in the settings view, until [`flush_system_prompt`] writes
+//! it). [`flush_all`] writes both kinds of pending change before a cave
+//! switch.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -90,8 +94,9 @@ struct PendingEdits {
     baseline: AppConfig,
     /// The cave they were made in.
     cave: Option<PathBuf>,
-    /// Commits them after [`COMMIT_DELAY`]; replaced by every edit.
-    _commit: Task<()>,
+    /// Commits them after [`COMMIT_DELAY`]; replaced by every edit. `None`
+    /// once a commit failed: the edits wait for the next save.
+    _commit: Option<Task<()>>,
 }
 
 #[derive(Default)]
@@ -101,8 +106,9 @@ impl Global for GlobalPendingEdits {}
 
 /// Change the config with `f`, save it to the open cave and apply it.
 /// Edits pending from [`edit_config`] are committed first. Returns whether
-/// anything changed; on an error (the config file could not be written)
-/// nothing changes.
+/// anything changed. On an error (the config file could not be written)
+/// `f` is not applied; edits pending from [`edit_config`] stay in memory,
+/// shown by the settings, and are saved by the next flush that succeeds.
 pub fn update_config(cx: &mut App, f: impl FnOnce(&mut AppConfig)) -> Result<bool, String> {
     flush_config(cx)?;
     let core = Host::core(cx);
@@ -129,23 +135,21 @@ pub fn edit_config(cx: &mut App, f: impl FnOnce(&mut AppConfig)) {
         .map_or(before, |pending| pending.baseline);
     let commit = cx.spawn(async move |cx| {
         cx.background_executor().timer(COMMIT_DELAY).await;
-        cx.update(|cx| {
-            if let Err(err) = flush_config(cx) {
-                warn!("Could not save the settings: {err}");
-                ConfigEvents::entity(cx).update(cx, |_, cx| cx.emit(ConfigSaveFailed(err)));
-            }
-        });
+        cx.update(commit_edits);
     });
     cx.default_global::<GlobalPendingEdits>().0 = Some(PendingEdits {
         baseline,
         cave: core.active_cave_path(),
-        _commit: commit,
+        _commit: Some(commit),
     });
 }
 
 /// Commit the edits [`edit_config`] holds, now. Edits made in a cave that
 /// is no longer open are dropped (that cave's config is gone from memory).
-/// Returns whether anything changed.
+/// Returns whether anything changed. When the config cannot be saved, the
+/// edits stay pending against the config before them, so the next flush
+/// (a later edit, [`update_config`], a cave switch) saves them and still
+/// resets the agent when its config changed.
 pub fn flush_config(cx: &mut App) -> Result<bool, String> {
     let Some(pending) = cx.default_global::<GlobalPendingEdits>().0.take() else {
         return Ok(false);
@@ -155,10 +159,26 @@ pub fn flush_config(cx: &mut App) -> Result<bool, String> {
         return Ok(false);
     }
     let current = core.lock_config().clone();
-    let change = core
-        .commit_config(&pending.baseline, current)
-        .map_err(|err| err.to_string())?;
-    Ok(apply(change, cx))
+    match core.commit_config(&pending.baseline, current) {
+        Ok(change) => Ok(apply(change, cx)),
+        Err(err) => {
+            cx.default_global::<GlobalPendingEdits>().0 = Some(PendingEdits {
+                _commit: None,
+                ..pending
+            });
+            Err(err.to_string())
+        }
+    }
+}
+
+/// [`flush_config`] where nobody waits for the outcome (a typing pause,
+/// Enter or blur in a field): a failure is announced as
+/// [`ConfigSaveFailed`].
+pub fn commit_edits(cx: &mut App) {
+    if let Err(err) = flush_config(cx) {
+        warn!("Could not save the settings: {err}");
+        ConfigEvents::entity(cx).update(cx, |_, cx| cx.emit(ConfigSaveFailed(err)));
+    }
 }
 
 /// Apply a saved change: the RAG index, and the views through
@@ -202,11 +222,26 @@ pub fn read_system_prompt(cx: &App) -> Result<String, String> {
         .map_err(|err| err.to_string())
 }
 
+/// A system prompt [`write_system_prompt`] could not write, kept to be
+/// written by [`flush_system_prompt`] (the settings may be closed by then).
+struct PendingPrompt {
+    text: String,
+    /// The cave it was typed in.
+    cave: Option<PathBuf>,
+}
+
+#[derive(Default)]
+struct GlobalPendingPrompt(Option<PendingPrompt>);
+
+impl Global for GlobalPendingPrompt {}
+
 /// Write the open cave's system prompt and reset the agent, so the next
 /// message uses it. An unchanged prompt writes nothing and keeps the agent.
+/// A prompt that cannot be written stays pending for [`flush_system_prompt`]
+/// (a later write replaces it).
 pub fn write_system_prompt(content: &str, cx: &mut App) -> Result<(), String> {
     let core = Host::core(cx);
-    let written = core
+    let result = core
         .with_cave(|cave| {
             if cave.read_system_prompt_raw()?.as_deref() == Some(content) {
                 return Ok(false);
@@ -214,8 +249,12 @@ pub fn write_system_prompt(content: &str, cx: &mut App) -> Result<(), String> {
             cave.write_system_prompt(content)?;
             Ok(true)
         })
-        .map_err(|err| err.to_string())?;
-    if !written {
+        .map_err(|err| err.to_string());
+    cx.default_global::<GlobalPendingPrompt>().0 = result.is_err().then(|| PendingPrompt {
+        text: content.to_string(),
+        cave: core.active_cave_path(),
+    });
+    if !result? {
         return Ok(());
     }
     core.reset_agent();
@@ -227,4 +266,37 @@ pub fn write_system_prompt(content: &str, cx: &mut App) -> Result<(), String> {
         cx,
     );
     Ok(())
+}
+
+/// Write the system prompt a failed [`write_system_prompt`] left pending,
+/// if it was typed in the open cave (one typed in a cave no longer open is
+/// dropped). On a failure it stays pending.
+pub fn flush_system_prompt(cx: &mut App) -> Result<(), String> {
+    let Some(pending) = cx.default_global::<GlobalPendingPrompt>().0.take() else {
+        return Ok(());
+    };
+    if pending.cave != Host::cave_path(cx) {
+        return Ok(());
+    }
+    write_system_prompt(&pending.text, cx)
+}
+
+/// Write everything the settings left pending: field edits
+/// ([`flush_config`]) and a system prompt that could not be written
+/// ([`flush_system_prompt`]). Both are tried; the first failure is
+/// returned. Called before another cave opens.
+pub fn flush_all(cx: &mut App) -> Result<(), String> {
+    let config = flush_config(cx).map(|_| ());
+    let prompt = flush_system_prompt(cx);
+    config.and(prompt)
+}
+
+/// Whether settings changes wait to be saved: field edits or a system
+/// prompt that could not be written.
+pub fn has_unsaved(cx: &App) -> bool {
+    cx.try_global::<GlobalPendingEdits>()
+        .is_some_and(|pending| pending.0.is_some())
+        || cx
+            .try_global::<GlobalPendingPrompt>()
+            .is_some_and(|pending| pending.0.is_some())
 }

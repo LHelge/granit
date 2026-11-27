@@ -1,6 +1,6 @@
 //! Headless window tests of the settings view and of applying settings live.
 
-use gpui::{AppContext as _, Entity, TestAppContext};
+use gpui::{AppContext as _, Entity, Focusable as _, TestAppContext};
 use gpui_kit::component::ActiveTheme as _;
 use granit_types::{ProviderConfig, ProviderEntry, ThemeChoice};
 
@@ -234,6 +234,249 @@ fn closing_the_settings_commits_a_pending_edit(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     assert!(saved_config(&dir).contains("name: Box"));
+}
+
+/// Makes a directory of the cave read-only while alive, so the files in it
+/// cannot be written (they are replaced atomically, through a file beside
+/// them): `.granit` for `config.yml`, `.granit/agent` for the system prompt.
+#[cfg(unix)]
+struct ReadOnlyConfig(std::path::PathBuf);
+
+#[cfg(unix)]
+impl ReadOnlyConfig {
+    fn new(dir: &tempfile::TempDir) -> Self {
+        Self::dir(dir, ".granit")
+    }
+
+    fn dir(dir: &tempfile::TempDir, relative: &str) -> Self {
+        let path = dir.path().join(relative);
+        Self::set_mode(&path, 0o555);
+        Self(path)
+    }
+
+    fn set_mode(path: &std::path::Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ReadOnlyConfig {
+    fn drop(&mut self) {
+        Self::set_mode(&self.0, 0o755);
+    }
+}
+
+#[cfg(unix)]
+#[gpui::test]
+fn a_failed_save_refuses_a_cave_switch_and_keeps_the_edit(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let other = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    let view = open_settings(&app, 3, cx);
+    let name = probe::input("provider-0-name").expect("the name field is drawn");
+    let generation = agent_generation(cx);
+
+    let read_only = ReadOnlyConfig::new(&dir);
+    type_into(&app, &name, &["Box"], cx);
+    pause(cx);
+    assert!(
+        cx.read_entity(&view, |view, _| view.error().is_some()),
+        "the failed save is shown"
+    );
+    assert!(!saved_config(&dir).contains("name: Box"));
+    assert_eq!(agent_generation(cx), generation, "nothing was applied");
+    assert!(
+        cx.update(|cx| config_ops::has_unsaved(cx)),
+        "the edit is kept"
+    );
+
+    // Another cave does not open while the edit cannot be saved.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(dir.path().to_path_buf())
+    );
+    let failure = cx.read_entity(&app.workspace, |workspace, _| workspace.failure());
+    assert!(
+        failure.is_some_and(|message| message.contains("settings could not be saved")),
+        "the refusal says why"
+    );
+    assert!(
+        cx.read_entity(&app.workspace, |workspace, _| workspace
+            .settings()
+            .is_some()),
+        "the settings stay open"
+    );
+
+    // Closing the settings keeps the edit pending too: the switch still refuses.
+    cx.update_window(app.window, |_, window, cx| {
+        app.workspace
+            .update(cx, |workspace, cx| workspace.toggle_settings(window, cx))
+    })
+    .unwrap();
+    cx.run_until_parked();
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(dir.path().to_path_buf())
+    );
+
+    // Once the config can be written, the next save writes the edit and,
+    // as it changed the agent config, resets the agent.
+    drop(read_only);
+    update(cx, |config| config.daily_note_folder = "Journal".into());
+    let yaml = saved_config(&dir);
+    assert!(yaml.contains("name: Box"), "{yaml}");
+    assert!(yaml.contains("Journal"), "{yaml}");
+    assert_eq!(agent_generation(cx), generation + 1);
+
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(other.path().to_path_buf())
+    );
+}
+
+#[cfg(unix)]
+#[gpui::test]
+fn a_system_prompt_that_cannot_be_written_outlives_the_settings(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let other = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    let view = open_settings(&app, 2, cx);
+    let generation = agent_generation(cx);
+    let prompt_path = dir.path().join(".granit/agent/system.md");
+    let original = std::fs::read_to_string(&prompt_path).unwrap();
+
+    let read_only = ReadOnlyConfig::dir(&dir, ".granit/agent");
+    let prompt = cx.read_entity(&view, |view, _| view.prompt().clone());
+    cx.update_window(app.window, |_, window, cx| {
+        prompt.update(cx, |prompt, cx| prompt.replace_all("Be brief.", window, cx))
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    // Closed before the typing pause: the write fails, and the view is gone.
+    cx.update_window(app.window, |_, window, cx| {
+        app.workspace
+            .update(cx, |workspace, cx| workspace.toggle_settings(window, cx))
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert!(cx.read_entity(&app.workspace, |workspace, _| workspace
+        .settings()
+        .is_none()));
+    assert_eq!(std::fs::read_to_string(&prompt_path).unwrap(), original);
+    assert!(
+        cx.update(|cx| config_ops::has_unsaved(cx)),
+        "the prompt is kept"
+    );
+
+    // Another cave does not open while it cannot be written.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(dir.path().to_path_buf())
+    );
+    let failure = cx.read_entity(&app.workspace, |workspace, _| workspace.failure());
+    assert!(failure.is_some_and(|message| message.contains("settings could not be saved")));
+    assert_eq!(agent_generation(cx), generation);
+
+    // Once it can be, the switch writes it (resetting the agent) and opens.
+    drop(read_only);
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    assert_eq!(std::fs::read_to_string(&prompt_path).unwrap(), "Be brief.");
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(other.path().to_path_buf())
+    );
+    assert!(!cx.update(|cx| config_ops::has_unsaved(cx)));
+}
+
+#[cfg(unix)]
+#[gpui::test]
+fn a_successful_write_keeps_a_pending_failure_shown(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    let view = open_settings(&app, 3, cx);
+    let name = probe::input("provider-0-name").expect("the name field is drawn");
+
+    let _read_only = ReadOnlyConfig::new(&dir);
+    type_into(&app, &name, &["Box"], cx);
+    pause(cx);
+    assert!(cx.read_entity(&view, |view, _| view.error().is_some()));
+
+    // The system prompt lives in `.granit/agent/`, which is still writable.
+    let prompt = cx.read_entity(&view, |view, _| view.prompt().clone());
+    cx.update_window(app.window, |_, window, cx| {
+        prompt.update(cx, |prompt, cx| prompt.replace_all("Be brief.", window, cx))
+    })
+    .unwrap();
+    pause(cx);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".granit/agent/system.md")).unwrap(),
+        "Be brief."
+    );
+    assert!(
+        cx.read_entity(&view, |view, _| view.error().is_some()),
+        "the unsaved name is still reported"
+    );
+}
+
+#[gpui::test]
+fn number_fields_commit_on_enter_and_blur(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open_settings(&app, 2, cx);
+    let field = probe::input("max-history").expect("the max history field is drawn");
+    let generation = agent_generation(cx);
+
+    // Focus events reach only an active window.
+    cx.update_window(app.window, |_, window, cx| {
+        window.activate_window();
+        field.update(cx, |input, cx| input.focus(window, cx))
+    })
+    .unwrap();
+    app.draw(cx);
+    type_into(&app, &field, &["4", "42"], cx);
+    assert_eq!(
+        cx.update(|cx| Host::core(cx).lock_config().agent.max_history),
+        42
+    );
+    assert!(
+        !saved_config(&dir).contains("max_history: 42"),
+        "not saved yet"
+    );
+
+    // Enter commits at once, without the typing pause.
+    cx.simulate_keystrokes(app.window, "enter");
+    cx.run_until_parked();
+    assert!(saved_config(&dir).contains("max_history: 42"));
+    assert_eq!(agent_generation(cx), generation + 1);
+
+    // So does leaving the field.
+    type_into(&app, &field, &["43"], cx);
+    cx.update_window(app.window, |_, window, cx| {
+        app.workspace.update(cx, |workspace, cx| {
+            window.focus(&workspace.focus_handle(cx), cx)
+        })
+    })
+    .unwrap();
+    app.draw(cx);
+    cx.run_until_parked();
+    assert!(saved_config(&dir).contains("max_history: 43"));
+    assert_eq!(agent_generation(cx), generation + 2);
 }
 
 #[gpui::test]

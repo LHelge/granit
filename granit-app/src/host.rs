@@ -27,7 +27,8 @@ pub const APP_ID: &str = "se.lhelge.granit";
 pub const PRODUCT_NAME: &str = "Granit";
 
 /// How the host is set up; [`HostOptions::from_environment`] for the app,
-/// [`HostOptions::default`] (no persistence, no RAG index) for tests.
+/// [`HostOptions::default`] (no persistence, no RAG index, no model
+/// listing) for tests.
 #[derive(Clone, Debug, Default)]
 pub struct HostOptions {
     /// Where the last-open cave is remembered. `None` neither reads nor
@@ -37,6 +38,12 @@ pub struct HostOptions {
     /// Where the RAG embedding model lives. `None` skips building the
     /// vector index.
     pub embedding_models: Option<EmbeddingModelDirs>,
+    /// Whether the chat asks the selected provider for its models when it
+    /// is shown (the network call the app makes without being asked).
+    /// `false` lists none, so nothing can be sent either: tests never reach
+    /// a provider, such as the default config's local Ollama, whose answer
+    /// on a tokio thread GPUI's deterministic test scheduler refuses.
+    pub list_models: bool,
 }
 
 impl HostOptions {
@@ -46,6 +53,7 @@ impl HostOptions {
         Self {
             last_cave: remember_cave.then(LastCaveStore::in_config_dir).flatten(),
             embedding_models: default_embedding_models(),
+            list_models: true,
         }
     }
 }
@@ -99,6 +107,12 @@ impl Host {
     /// Where the RAG embedding model lives, when the index is built.
     pub fn embedding_models(cx: &App) -> Option<EmbeddingModelDirs> {
         Self::get(cx).options.embedding_models.clone()
+    }
+
+    /// Whether the chat lists the selected provider's models
+    /// ([`HostOptions::list_models`]).
+    pub fn lists_models(cx: &App) -> bool {
+        Self::get(cx).options.list_models
     }
 
     /// The path of the open cave.

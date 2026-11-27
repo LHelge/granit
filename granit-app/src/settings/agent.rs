@@ -15,7 +15,7 @@ use granit_types::{
     EMBEDDING_MODELS,
 };
 
-use super::fields::{text_field, TextFieldOptions};
+use super::fields::{number_field, text_field, TextFieldOptions};
 use super::{getter, SettingsCtx};
 use crate::assets::AppIcon;
 use crate::config_ops;
@@ -64,7 +64,9 @@ fn conversation_group(ctx: &SettingsCtx) -> SettingGroup {
         .item(
             SettingItem::new(
                 "Max history",
-                SettingField::number_input(
+                number_field(
+                    "max-history",
+                    "Max history",
                     number(1., 10_000., 1.),
                     getter(|config| config.agent.max_history as f64),
                     ctx.typed_setter(|config, value: f64| {
@@ -77,7 +79,9 @@ fn conversation_group(ctx: &SettingsCtx) -> SettingGroup {
         .item(
             SettingItem::new(
                 "Max turns",
-                SettingField::number_input(
+                number_field(
+                    "max-turns",
+                    "Max turns",
                     number(1., 100., 1.),
                     getter(|config| config.agent.max_turns as f64),
                     ctx.typed_setter(|config, value: f64| config.agent.max_turns = value as usize),
@@ -143,7 +147,9 @@ fn rag_group(ctx: &SettingsCtx, config: &AppConfig) -> SettingGroup {
         .item(
             SettingItem::new(
                 "Notes per message",
-                SettingField::number_input(
+                number_field(
+                    "rag-top-n",
+                    "Notes per message",
                     number(1., 20., 1.),
                     getter(|config| config.agent.rag.top_n as f64),
                     ctx.typed_setter(|config, value: f64| config.agent.rag.top_n = value as usize),
@@ -238,7 +244,9 @@ fn tools_group(ctx: &SettingsCtx, config: &AppConfig, tools: &[ToolInfo]) -> Set
                     .item(
                         SettingItem::new(
                             "Max search results",
-                            SettingField::number_input(
+                            number_field(
+                                "web-search-max-results",
+                                "Max search results",
                                 number(1., 20., 1.),
                                 getter(|config| {
                                     config.agent.tool_config.web_search.max_results as f64
@@ -256,7 +264,9 @@ fn tools_group(ctx: &SettingsCtx, config: &AppConfig, tools: &[ToolInfo]) -> Set
                 group = group.item(
                     SettingItem::new(
                         "Max fetched characters",
-                        SettingField::number_input(
+                        number_field(
+                            "web-fetch-max-chars",
+                            "Max fetched characters",
                             number(1_000., 1_000_000., 1_000.),
                             getter(|config| {
                                 config.agent.tool_config.web_fetch.max_output_chars as f64
