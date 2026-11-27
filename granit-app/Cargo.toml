@@ -17,7 +17,18 @@ path = "src/main.rs"
 [dependencies]
 # One gpui-pre for every GPUI crate: gpui-kit 0.10 pins =0.3.12.
 gpui = { package = "gpui-pre", version = "=0.3.12" }
-gpui-kit = "0.10"
+gpui-kit = { version = "0.10", features = [
+    "tree-sitter-bash",
+    "tree-sitter-javascript",
+    "tree-sitter-python",
+    "tree-sitter-rust",
+    "tree-sitter-toml",
+    "tree-sitter-typescript",
+    "tree-sitter-yaml",
+] }
+# The live-preview note editor. Patched to the fork with the stale-layout
+# input fix in the workspace `Cargo.toml` until a release carries it.
+zorite-editor = "0.11"
 granit-core = { path = "../granit-core" }
 granit-types = { path = "../granit-types" }
 icondata_core = "0.1.0"

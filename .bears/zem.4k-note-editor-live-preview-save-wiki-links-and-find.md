@@ -1,10 +1,10 @@
 ---
 id: zem.4k
 title: "Note editor: live preview, save, wiki-links and find"
-status: open
+status: done
 priority: P1
 created: "2026-11-26T21:09:38.830001Z"
-updated: "2026-11-26T21:09:38.830001Z"
+updated: "2026-11-27T01:05:54.282383766Z"
 tags:
   - gpui
   - port
@@ -13,6 +13,7 @@ tags:
 depends_on:
   - zem.4b
   - zem.ry
+attempts: 1
 ---
 
 ## Summary

@@ -12,7 +12,7 @@
 //! - [`runtime`]: the tokio runtime and its bridge to GPUI tasks.
 //! - [`workspace`]: the root view (sidebar and main area).
 //! - [`explorer`]: the sidebar's note tree.
-//! - [`note_view`]: the main area's placeholder for the open note.
+//! - [`note_view`]: the main area, the open note in the live-preview editor.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`last_cave`]: the remembered last-open cave path.
 

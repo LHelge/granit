@@ -4,6 +4,7 @@ mod presentation;
 mod render;
 
 pub use frontmatter::split_frontmatter;
+pub use render::cave_image_path;
 
 use std::cell::OnceCell;
 

@@ -104,7 +104,7 @@ impl App {
     /// The body the main area shows.
     pub fn shown_body(&self, cx: &mut TestAppContext) -> Option<String> {
         cx.read_entity(&self.workspace, |workspace, cx| {
-            workspace.note_view().read(cx).body().map(str::to_string)
+            workspace.note_view().read(cx).text(cx).map(str::to_string)
         })
     }
 

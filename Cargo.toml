@@ -44,6 +44,12 @@ wasm-bindgen-test = "0.3"
 [workspace]
 members = ["src-tauri", "granit-core", "granit-app", "granit-types", "granit-api", "backend"]
 
+# zorite-editor with the stale-layout input fix (Bears baa.ac), from the fork
+# branch behind packetThrower/zorite-editor#5. Drop this once a release
+# carries the fix (Bears zem.vs).
+[patch.crates-io]
+zorite-editor = { git = "https://github.com/LHelge/zorite-editor", branch = "fix/stale-layout-input" }
+
 [workspace.package]
 version = "0.10.1"
 license = "MIT OR Apache-2.0"

@@ -5,8 +5,9 @@
 //! tells the core (for the agent's tools) and the explorer (for the
 //! selection), and follows renames and deletions announced as
 //! [`CaveEvent`]s. A new sidebar panel becomes a field here and a child in
-//! [`Workspace::render_sidebar`]; the main area is [`NoteView`], which the
-//! editor replaces.
+//! [`Workspace::render_sidebar`]; the main area is [`NoteView`], the note
+//! editor. Other panels open a note with [`Workspace::open_note`], or at a
+//! heading, line or offset with [`Workspace::open_note_at`].
 
 use std::path::PathBuf;
 
@@ -25,7 +26,7 @@ use crate::cave_ops;
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
-use crate::note_view::NoteView;
+use crate::note_view::{NoteView, NoteViewEvent, Reveal};
 use crate::theme;
 
 gpui_kit::actions!(granit, [OpenCave]);
@@ -71,8 +72,16 @@ impl Workspace {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
         let explorer = cx.new(Explorer::new);
-        let note_view = cx.new(|_| NoteView::new());
+        let note_view = cx.new(|cx| NoteView::new(window, cx));
         let subscriptions = vec![
+            cx.subscribe(
+                &note_view,
+                |this, _, event: &NoteViewEvent, cx| match event {
+                    NoteViewEvent::OpenNote { slug, reveal } => {
+                        this.open_note_at(slug.clone(), reveal.clone(), cx)
+                    }
+                },
+            ),
             cx.observe_window_appearance(window, |_, window, cx| theme::sync(window, cx)),
             cx.subscribe(
                 &explorer,
@@ -125,9 +134,28 @@ impl Workspace {
 
     /// Open the cave at `path`, replacing the open one when it succeeds.
     pub fn open_cave(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        // Pending edits go to the cave they were made in. If they cannot be
+        // written, the cave is not switched (like a note switch).
+        if let Err(err) = self
+            .note_view
+            .update(cx, |view, cx| view.save_before_leaving(cx))
+        {
+            warn!("Not opening {}: {err}", path.display());
+            self.open_error = Some(format!("Could not open {}: {err}", path.display()).into());
+            cx.notify();
+            return;
+        }
         self.status = CaveStatus::Opening(path.clone());
         cx.notify();
-        let task = cave_ops::open_cave(path.clone(), cx);
+        // Edits made while the cave is prepared are written right before the
+        // core swaps caves.
+        let note_view = self.note_view.downgrade();
+        let before_install = move |cx: &mut App| {
+            note_view
+                .update(cx, |view, cx| view.save_before_leaving(cx))
+                .unwrap_or(Ok(()))
+        };
+        let task = cave_ops::open_cave(path.clone(), before_install, cx);
         cx.spawn(async move |this, cx| {
             let result = task.await;
             this.update(cx, |this, cx| {
@@ -174,25 +202,51 @@ impl Workspace {
     }
 
     /// Show `slug` in the main area (`None`: nothing) and make it the
-    /// active note.
+    /// active note. The open note's pending edits are written first; if
+    /// that fails, it stays open (and active).
     pub fn open_note(&mut self, slug: Option<String>, cx: &mut Context<Self>) {
-        cave_ops::set_active_note(slug.clone(), cx);
-        self.note_view
+        let shown = self
+            .note_view
             .update(cx, |view, cx| view.open(slug.as_deref(), cx));
+        cave_ops::set_active_note(shown.clone(), cx);
         self.explorer
-            .update(cx, |explorer, cx| explorer.set_active(slug.clone(), cx));
-        self.active = slug;
+            .update(cx, |explorer, cx| explorer.set_active(shown.clone(), cx));
+        self.active = shown;
         cx.notify();
+    }
+
+    /// Open `slug` and put the caret at `reveal` in it (a heading anchor, a
+    /// line or an offset), scrolled to the top: for following links and
+    /// opening search or todo matches.
+    pub fn open_note_at(&mut self, slug: String, reveal: Option<Reveal>, cx: &mut Context<Self>) {
+        self.open_note(Some(slug.clone()), cx);
+        if let Some(reveal) = reveal {
+            if self.active.as_deref() == Some(slug.as_str()) {
+                self.note_view
+                    .update(cx, |view, cx| view.reveal(reveal, cx));
+            }
+        }
+    }
+
+    /// Close the open note without writing it (it no longer exists).
+    fn close_removed_note(&mut self, cx: &mut Context<Self>) {
+        self.note_view.update(cx, |view, cx| view.forget(cx));
+        self.open_note(None, cx);
     }
 
     fn on_cave_event(&mut self, event: &CaveEvent, cx: &mut Context<Self>) {
         match event {
             CaveEvent::Opened => {
                 self.status = Host::cave_path(cx).map_or(CaveStatus::Closed, CaveStatus::Open);
-                self.open_note(None, cx);
+                // The previous cave's note was written before the switch.
+                self.close_removed_note(cx);
             }
             CaveEvent::NoteRenamed { from, to } if self.active.as_deref() == Some(from) => {
+                // Pending edits follow the note to its new name.
+                self.note_view
+                    .update(cx, |view, cx| view.note_renamed(from, to, cx));
                 self.open_note(Some(to.clone()), cx);
+                self.note_view.update(cx, |view, cx| view.reload(cx));
             }
             CaveEvent::NotesRemoved(slugs)
                 if self
@@ -200,7 +254,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|active| slugs.contains(active)) =>
             {
-                self.open_note(None, cx);
+                self.close_removed_note(cx);
             }
             _ => {
                 // The active note may have been removed or changed by
@@ -210,7 +264,7 @@ impl Workspace {
                     .as_deref()
                     .is_some_and(|slug| cave_ops::read_note(slug, cx).is_ok());
                 if self.active.is_some() && !exists {
-                    self.open_note(None, cx);
+                    self.close_removed_note(cx);
                 } else {
                     self.note_view.update(cx, |view, cx| view.reload(cx));
                 }
@@ -354,6 +408,7 @@ impl Focusable for Workspace {
 /// Bind the workspace's keys. Call once at startup.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([gpui::KeyBinding::new(OPEN_CAVE_KEY, OpenCave, None)]);
+    crate::note_view::bind_keys(cx);
 }
 
 // `KeyBinding::new` rejects GPUI's `secondary-` prefix, so the platform's

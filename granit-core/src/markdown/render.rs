@@ -481,15 +481,22 @@ pub(super) fn escape_html(text: &str) -> String {
     out
 }
 
-/// Rewrite a relative image source to its `granit://` cave URL.
+/// Rewrite a relative image source to its `granit://` cave URL, following
+/// [`cave_image_path`].
+pub(super) fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
+    cave_image_path(base, src).map(|path| crate::urls::cave_file_url(&path))
+}
+
+/// The cave-relative path (forward slashes) a note's image source points at.
 ///
 /// `base` is the cave-relative directory of the document (forward slashes,
 /// `""` for the root). A source with a scheme (`https:`, `data:`, …), a
-/// protocol-relative `//host` or a bare `#fragment` is left alone and yields
-/// `None`. A leading `/` resolves from the cave root; anything else from
-/// `base`. `.` and `..` segments are folded lexically; a path that would
-/// climb above the cave root yields `None` (it could never be served).
-pub(super) fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
+/// protocol-relative `//host` or a bare `#fragment` is not a cave file and
+/// yields `None`. Percent-encoding (`my%20img.png`) is decoded. A leading
+/// `/` resolves from the cave root; anything else from `base`. `.` and `..`
+/// segments are folded lexically; a path that would climb above the cave
+/// root yields `None`.
+pub fn cave_image_path(base: &str, src: &str) -> Option<String> {
     if src.is_empty() || src.starts_with('#') || src.starts_with("//") || has_url_scheme(src) {
         return None;
     }
@@ -518,7 +525,7 @@ pub(super) fn rewrite_image_src(base: &str, src: &str) -> Option<String> {
     if segments.is_empty() {
         return None;
     }
-    Some(crate::urls::cave_file_url(&segments.join("/")))
+    Some(segments.join("/"))
 }
 
 /// Whether `src` starts with a URL scheme (`scheme:` per RFC 3986).
@@ -898,6 +905,23 @@ mod tests {
         );
         assert!(html.contains(r#"src="//cdn/c.png""#), "got: {html}");
         assert!(!html.contains("granit"), "got: {html}");
+    }
+
+    #[test]
+    fn test_cave_image_path_resolves_against_the_note_dir() {
+        use super::cave_image_path;
+        assert_eq!(
+            cave_image_path("sub/deep", "img/a%20b.png").as_deref(),
+            Some("sub/deep/img/a b.png")
+        );
+        assert_eq!(cave_image_path("sub", "../x.png").as_deref(), Some("x.png"));
+        assert_eq!(
+            cave_image_path("sub", "/root.png").as_deref(),
+            Some("root.png")
+        );
+        assert_eq!(cave_image_path("", "../x.png"), None);
+        assert_eq!(cave_image_path("sub", "https://x/y.png"), None);
+        assert_eq!(cave_image_path("sub", ""), None);
     }
 
     #[test]

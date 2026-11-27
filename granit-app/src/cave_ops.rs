@@ -24,11 +24,29 @@ pub const NEW_NOTE_NAME: &str = "untitled";
 /// The name new folders start with.
 pub const NEW_FOLDER_NAME: &str = "new-folder";
 
+/// Why a cave did not open.
+#[derive(Debug, thiserror::Error)]
+pub enum OpenCaveError {
+    #[error(transparent)]
+    Cave(#[from] CaveError),
+    /// `before_install` refused the switch (unsaved edits could not be
+    /// written).
+    #[error("{0}")]
+    Refused(String),
+}
+
 /// Open the cave at `path` and make it the app's cave: prepare and seed it
 /// off the UI thread, install it into the core, remember it as the last-open
 /// cave (when the host remembers one), start the RAG index, and announce
-/// [`CaveEvent::Opened`]. On failure the previous cave stays open.
-pub fn open_cave(path: PathBuf, cx: &mut App) -> Task<Result<(), CaveError>> {
+/// [`CaveEvent::Opened`]. `before_install` runs on the foreground right
+/// before the core swaps caves (to write pending edits to the old one); an
+/// error from it cancels the switch. On failure the previous cave stays
+/// open.
+pub fn open_cave(
+    path: PathBuf,
+    before_install: impl FnOnce(&mut App) -> Result<(), String> + 'static,
+    cx: &mut App,
+) -> Task<Result<(), OpenCaveError>> {
     cx.spawn(async move |cx| {
         let prepared = cx
             .background_spawn({
@@ -37,6 +55,7 @@ pub fn open_cave(path: PathBuf, cx: &mut App) -> Task<Result<(), CaveError>> {
             })
             .await?;
         cx.update(|cx| {
+            before_install(cx).map_err(OpenCaveError::Refused)?;
             let core = Host::core(cx);
             core.install_cave(prepared);
             if let Some(store) = Host::last_cave(cx) {
@@ -50,8 +69,8 @@ pub fn open_cave(path: PathBuf, cx: &mut App) -> Task<Result<(), CaveError>> {
                 None => core.set_vector_index(None),
             }
             CaveEvents::emit(CaveEvent::Opened, cx);
-        });
-        Ok(())
+            Ok(())
+        })
     })
 }
 
@@ -79,6 +98,24 @@ pub fn set_active_note(slug: Option<String>, cx: &App) {
 pub fn create_note(folder: Option<&str>, cx: &mut App) -> Result<DocumentMeta, CaveError> {
     let meta = Host::core(cx)
         .with_cave(|cave| cave.create_note(NEW_NOTE_NAME, folder.map(Path::new), None))?;
+    schedule_index_update(meta.slug.clone(), cx);
+    CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    Ok(meta)
+}
+
+/// Create the note a broken wiki-link points at, named after its target, in
+/// the cave root.
+pub fn create_linked_note(name: &str, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.create_note(name, None, None))?;
+    schedule_index_update(meta.slug.clone(), cx);
+    CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    Ok(meta)
+}
+
+/// Write the body of the note `slug`, keeping its frontmatter. Writes
+/// nothing when the body is unchanged.
+pub fn save_note(slug: &str, body: &str, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.save_note(slug, body))?;
     schedule_index_update(meta.slug.clone(), cx);
     CaveEvents::emit(CaveEvent::NotesChanged, cx);
     Ok(meta)
