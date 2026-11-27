@@ -129,7 +129,7 @@ pub fn toggle_tasks(text: &str, selection: Range<usize>, caret: usize) -> Edit {
 
 impl NoteView {
     /// The editor's selection as a byte range, and its caret.
-    fn selection(
+    pub(super) fn selection(
         &self,
         window: &mut Window,
         cx: &mut Context<Self>,

@@ -4,13 +4,16 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui::{AppContext as _, Entity, TestAppContext};
+use gpui::{
+    point, px, AppContext as _, Entity, Modifiers, MouseButton, TestAppContext, VisualTestContext,
+};
 use gpui_kit::base::text::Link;
 use granit_core::agent::{AgentError, AgentStream, AgentStreamItem};
 use granit_core::cave::Cave;
 use granit_types::{AgentMode, AppConfig, ToolCallInfo};
 
-use super::{ChatEvent, ChatPanel};
+use super::{selection_preview, ChatEvent, ChatPanel};
+use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::CaveEvents;
 use crate::host::Host;
 use crate::tests::{fixture_cave, App};
@@ -241,6 +244,160 @@ fn re_picking_the_current_mode_keeps_the_conversation(cx: &mut TestAppContext) {
         cx.update(|cx| Host::core(cx).agent_generation()),
         generation,
         "the agent is kept"
+    );
+}
+
+#[gpui::test]
+fn the_open_note_and_its_selection_reach_the_prompt(cx: &mut TestAppContext) {
+    let (_dir, app, chat) = start(cx);
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx)
+    });
+    app.draw(cx);
+    // The open note is offered, nothing is attached yet.
+    assert!(cx.read_entity(&chat, |chat, _| chat.attached().is_empty()));
+    chat.update(cx, |chat, cx| chat.submit("Plain".into(), cx));
+    assert_eq!(
+        cx.read_entity(&chat, |chat, _| chat.last_prompt().map(str::to_string)),
+        Some("Plain".to_string()),
+        "the open note is not attached by default"
+    );
+
+    // Select from "Alpha" to the end of its line in the editor.
+    let note_view = cx.read_entity(&app.workspace, |workspace, _| workspace.note_view().clone());
+    let editor = cx
+        .read_entity(&note_view, |view, _| view.editor().cloned())
+        .expect("the editor is installed");
+    let body = "# A\n\nAlpha links [[b]].\n";
+    cx.update_window(app.window, |_, window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_cursor(body.find("Alpha").unwrap(), cx);
+            editor.focus(window, cx);
+        })
+    })
+    .unwrap();
+    app.draw(cx);
+    cx.simulate_keystrokes(app.window, "shift-end");
+    cx.run_until_parked();
+
+    // The attach button asks the workspace, which reads the editor.
+    chat.update(cx, |_, cx| cx.emit(ChatEvent::AttachActiveNote));
+    cx.run_until_parked();
+    app.draw(cx);
+    let attached = cx.read_entity(&chat, |chat, _| chat.attached().to_vec());
+    assert_eq!(attached.len(), 1);
+    assert_eq!(attached[0].slug, "a");
+    assert_eq!(attached[0].content, body);
+    assert_eq!(attached[0].selected.as_deref(), Some("Alpha links [[b]]."));
+
+    // Attaching it again keeps the one attachment.
+    chat.update(cx, |_, cx| cx.emit(ChatEvent::AttachActiveNote));
+    cx.run_until_parked();
+    assert_eq!(cx.read_entity(&chat, |chat, _| chat.attached().len()), 1);
+
+    chat.update(cx, |chat, cx| chat.submit("Summarize it".into(), cx));
+    let prompt = cx
+        .read_entity(&chat, |chat, _| chat.last_prompt().map(str::to_string))
+        .unwrap();
+    for expected in [
+        "<attached_note>\n<slug>a</slug>\n",
+        "<selected_text>\nAlpha links [[b]].\n</selected_text>\n",
+        "<content>\n# A\n\nAlpha links [[b]].\n\n</content>\n",
+        "<user_request>\nSummarize it\n</user_request>",
+    ] {
+        assert!(prompt.contains(expected), "{expected:?} in {prompt:?}");
+    }
+    // The chat shows what was typed, not the attachments.
+    let source = cx.read_entity(&chat, |chat, _| chat.transcript().to_string());
+    assert!(!source.contains("attached_note"), "{source}");
+
+    // A removed attachment is no longer sent.
+    chat.update(cx, |chat, cx| chat.detach("a", cx));
+    chat.update(cx, |chat, cx| chat.submit("Again".into(), cx));
+    assert_eq!(
+        cx.read_entity(&chat, |chat, _| chat.last_prompt().map(str::to_string)),
+        Some("Again".to_string())
+    );
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn a_template_is_not_offered_for_attaching(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/meeting.md"),
+        "# Meeting\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    let chat = cx.read_entity(&app.workspace, |workspace, _| workspace.chat().clone());
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx);
+        workspace.open_template("meeting".into(), cx)
+    });
+    assert_eq!(
+        cx.read_entity(&app.workspace, |workspace, cx| workspace
+            .open_template_slug(cx)),
+        Some("meeting".to_string())
+    );
+    chat.update(cx, |_, cx| cx.emit(ChatEvent::AttachActiveNote));
+    cx.run_until_parked();
+    assert!(cx.read_entity(&chat, |chat, _| chat.attached().is_empty()));
+}
+
+#[test]
+fn a_long_selection_is_shortened_to_one_line() {
+    assert_eq!(selection_preview("  two\n words "), "two words");
+    assert_eq!(
+        selection_preview("a selection that is longer than the chip"),
+        "a selection that is longer t…"
+    );
+}
+
+#[gpui::test]
+fn dragging_the_edge_resizes_the_panel_and_saves_the_width_once(cx: &mut TestAppContext) {
+    let (dir, app, chat) = start(cx);
+    assert_eq!(saved_config(&dir).agent_panel.width, 320);
+    app.draw(cx);
+    let mut window = VisualTestContext::from_window(app.window, cx);
+    let viewport = window.update(|window, _| window.viewport_size());
+    let edge = viewport.width - px(320.);
+    let y = viewport.height / 2.;
+    let saves = Rc::new(Cell::new(0));
+    let _counting = window.update(|_, cx| {
+        let saves = saves.clone();
+        cx.subscribe(&ConfigEvents::entity(cx), move |_, _: &ConfigEvent, _| {
+            saves.set(saves.get() + 1)
+        })
+    });
+
+    window.simulate_mouse_move(point(edge + px(2.), y), None, Modifiers::default());
+    window.simulate_mouse_down(
+        point(edge + px(2.), y),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    for x in [edge - px(20.), edge - px(80.)] {
+        window.simulate_mouse_move(point(x, y), MouseButton::Left, Modifiers::default());
+        app.draw(&mut window);
+    }
+    assert!(cx.read_entity(&chat, |chat, _| chat.resize().is_dragging()));
+    assert_eq!(saves.get(), 0, "nothing is saved while dragging");
+    assert_eq!(saved_config(&dir).agent_panel.width, 320);
+
+    window.simulate_mouse_up(
+        point(edge - px(80.), y),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    app.draw(&mut window);
+    assert!(!cx.read_entity(&chat, |chat, _| chat.resize().is_dragging()));
+    assert_eq!(saves.get(), 1, "the width is saved once");
+    assert_eq!(saved_config(&dir).agent_panel.width, 400);
+    assert_eq!(
+        cx.update(|cx| Host::core(cx).lock_config().agent_panel.width),
+        400
     );
 }
 

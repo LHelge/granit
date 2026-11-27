@@ -1,10 +1,10 @@
 ---
 id: zem.ru
 title: "Chat panel: attach notes and resize the panel"
-status: open
+status: done
 priority: P2
 created: "2026-11-27T01:03:35.685882225Z"
-updated: "2026-11-27T01:03:35.685882225Z"
+updated: "2026-11-27T06:05:22.004788927Z"
 tags:
   - gpui
   - port
@@ -13,6 +13,7 @@ tags:
 depends_on:
   - zem.up
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

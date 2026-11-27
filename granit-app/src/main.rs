@@ -19,6 +19,7 @@
 //! - [`backup_ops`]: backups and restores of the UI
 //!   ([`backup_ops::BackupOps`]); [`disaster_restore`]: restoring a cave with
 //!   none open.
+//! - [`resize`]: side panels resized by dragging their edge.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`last_cave`]: the remembered last-open cave path.
 
@@ -35,6 +36,7 @@ mod host;
 mod last_cave;
 mod note_view;
 mod panels;
+mod resize;
 mod runtime;
 mod settings;
 mod theme;

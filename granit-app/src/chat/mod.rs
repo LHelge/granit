@@ -34,18 +34,23 @@ use gpui_kit::component::{
     h_flex,
     input::{InputEvent, MoveDown, MoveUp, Textarea, TextareaState},
     menu::{DropdownMenu, PopupMenuItem},
+    resizable::HandleEdge,
     text::{MarkdownExtensions, TextView, TextViewState},
-    v_flex, ActiveTheme, Disableable, Icon, Sizable,
+    v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable,
 };
 use granit_core::agent::{build_agent_prompt, AgentError, AgentStream, AgentStreamItem};
-use granit_types::{AgentDocInfo, AgentMode, ModelInfo, ProviderConfig, ToolCallInfo};
+use granit_types::{
+    AgentDocInfo, AgentMode, AttachedNote, ModelInfo, ProviderConfig, ToolCallInfo,
+};
 use log::warn;
 
 use crate::agent_ops;
-use crate::assets::AppIcon;
-use crate::config_ops::{ConfigEvent, ConfigEvents};
+use crate::assets::{note_icon_path, AppIcon};
+use crate::cave_ops;
+use crate::config_ops::{self, ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
+use crate::resize::PanelResize;
 use crate::runtime;
 use links::{classify, LinkTarget, LinkTargets};
 use tasks::{matching_tasks, parse_task_invocation};
@@ -60,11 +65,22 @@ pub enum ChatEvent {
         slug: String,
         anchor: Option<String>,
     },
+    /// The user asked to attach the open note, with the editor's selected
+    /// text: the workspace answers with [`ChatPanel::attach`].
+    AttachActiveNote,
 }
 
 /// The narrowest and widest the panel gets, whatever the config says.
 const MIN_WIDTH: f32 = 240.;
 const MAX_WIDTH: f32 = 640.;
+
+/// The note open in the main area, offered as an attachment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ActiveNote {
+    slug: String,
+    /// Its frontmatter icon id.
+    icon: Option<String>,
+}
 
 pub struct ChatPanel {
     /// The rendered conversation.
@@ -87,6 +103,15 @@ pub struct ChatPanel {
     models_for: Option<ProviderConfig>,
     /// The running reply; dropping it cancels the stream.
     stream: Option<Task<()>>,
+    /// The note open in the main area.
+    active_note: Option<ActiveNote>,
+    /// Notes attached to every message sent, as they were when attached.
+    attached: Vec<AttachedNote>,
+    /// The panel's width follows a drag of its left edge.
+    resize: PanelResize,
+    /// The prompt last handed to the agent, for tests.
+    #[cfg(test)]
+    last_prompt: Option<String>,
     /// The font the panel was last drawn with, for tests.
     #[cfg(test)]
     drawn_font: Option<(SharedString, gpui::Pixels)>,
@@ -141,6 +166,11 @@ impl ChatPanel {
             models_task: None,
             models_for: None,
             stream: None,
+            active_note: None,
+            attached: Vec::new(),
+            resize: PanelResize::new("chat-panel-edge", HandleEdge::Leading, MIN_WIDTH, MAX_WIDTH),
+            #[cfg(test)]
+            last_prompt: None,
             #[cfg(test)]
             drawn_font: None,
             #[cfg(test)]
@@ -193,6 +223,65 @@ impl ChatPanel {
         &self.links
     }
 
+    /// The prompt last handed to the agent, for tests.
+    #[cfg(test)]
+    pub fn last_prompt(&self) -> Option<&str> {
+        self.last_prompt.as_deref()
+    }
+
+    /// The panel's resizing, for tests.
+    #[cfg(test)]
+    pub fn resize(&self) -> &PanelResize {
+        &self.resize
+    }
+
+    // ── Attached notes ───────────────────────────────────────────────
+
+    /// The notes attached to the messages sent.
+    #[cfg(test)]
+    pub fn attached(&self) -> &[AttachedNote] {
+        &self.attached
+    }
+
+    /// The note `slug` is open in the main area (`None`: no note): it is
+    /// offered for attaching.
+    pub fn set_active_note(&mut self, slug: Option<String>, cx: &mut Context<Self>) {
+        self.active_note = slug.map(|slug| {
+            let icon = cave_ops::read_note(&slug, cx)
+                .ok()
+                .and_then(|note| note.meta.icon);
+            ActiveNote { slug, icon }
+        });
+        cx.notify();
+    }
+
+    /// Attach `note` to the messages sent from now on, as it is now. A note
+    /// attached already stays as it was attached.
+    pub fn attach(&mut self, note: AttachedNote, cx: &mut Context<Self>) {
+        if !self.is_attached(&note.slug) {
+            self.attached.push(note);
+            cx.notify();
+        }
+    }
+
+    /// Stop attaching the note `slug`.
+    pub fn detach(&mut self, slug: &str, cx: &mut Context<Self>) {
+        self.attached.retain(|note| note.slug != slug);
+        cx.notify();
+    }
+
+    fn is_attached(&self, slug: &str) -> bool {
+        self.attached.iter().any(|note| note.slug == slug)
+    }
+
+    /// Save the width the panel's edge was dragged to.
+    fn resized(&mut self, width: f32, cx: &mut Context<Self>) {
+        let width = width.round() as u16;
+        if let Err(err) = config_ops::update_config(cx, |config| config.agent_panel.width = width) {
+            warn!("Could not save the chat panel's width: {err}");
+        }
+    }
+
     /// The panel was shown (or a cave opened while it is): list the models
     /// if they are not listed for the selected provider yet. Listing asks
     /// the provider, so it waits until the panel is shown.
@@ -216,8 +305,13 @@ impl ChatPanel {
             // A new cave brings its own config; its agent starts empty.
             // The workspace calls `shown` next when the panel is shown.
             self.stream = None;
+            self.attached.clear();
             self.clear(cx);
         } else {
+            // The open note's icon may have changed.
+            if let Some(active) = self.active_note.take() {
+                self.set_active_note(Some(active.slug), cx);
+            }
             // A note may have appeared or gone: links follow.
             let core = Host::core(cx);
             let _ = core.with_cave(|cave| {
@@ -296,6 +390,12 @@ impl ChatPanel {
             },
             None => raw,
         };
+        // The attached notes go with every message, as in the Tauri app.
+        let prompt = build_agent_prompt(&message, &self.attached);
+        #[cfg(test)]
+        {
+            self.last_prompt = Some(prompt.clone());
+        }
         let core = Host::core(cx);
         let built = {
             // Provider clients may expect to be built inside the runtime.
@@ -310,7 +410,6 @@ impl ChatPanel {
         else {
             return self.show_error(&AgentError::NotInitialized.to_string(), cx);
         };
-        let prompt = build_agent_prompt(&message, &[]);
         let open = async move { agent.stream_with_history(&prompt, history).await };
         self.run_stream(open, message, generation, cx);
     }
@@ -774,8 +873,109 @@ impl ChatPanel {
         )
     }
 
-    fn render_input(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The attached notes, each with a remove button, and the open note with
+    /// an attach button while it is not attached; `None` when there is
+    /// neither.
+    fn render_attachments(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let offered = self
+            .active_note
+            .as_ref()
+            .filter(|active| !self.is_attached(&active.slug));
+        if self.attached.is_empty() && offered.is_none() {
+            return None;
+        }
         let theme = cx.theme();
+        let streaming = self.is_streaming();
+        let chip = |id: SharedString| {
+            h_flex()
+                .id(id)
+                .max_w_full()
+                .min_w_0()
+                .gap_1()
+                .pl_1p5()
+                .rounded_md()
+                .border_1()
+                .text_xs()
+        };
+        let attached = self.attached.iter().enumerate().map(|(ix, note)| {
+            let slug = note.slug.clone();
+            chip(format!("chat-attached-{ix}").into())
+                .border_color(theme.primary)
+                .bg(theme.secondary)
+                .child(
+                    Icon::new(IconName::FileText)
+                        .xsmall()
+                        .text_color(theme.primary),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child(SharedString::from(note.slug.clone())),
+                )
+                .when_some(note.selected.as_deref(), |chip, selected| {
+                    chip.child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .italic()
+                            .text_color(theme.muted_foreground)
+                            .child(SharedString::from(format!(
+                                "\"{}\"",
+                                selection_preview(selected)
+                            ))),
+                    )
+                })
+                .child(
+                    Button::new(SharedString::from(format!("chat-detach-{ix}")))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip("Remove attached note")
+                        .disabled(streaming)
+                        .on_click(cx.listener(move |this, _, _, cx| this.detach(&slug, cx))),
+                )
+        });
+        let offered = offered.map(|active| {
+            chip("chat-offered".into())
+                .border_color(theme.border)
+                .text_color(theme.muted_foreground)
+                .child(
+                    Icon::default()
+                        .path(note_icon_path(active.icon.as_deref()))
+                        .xsmall()
+                        .text_color(theme.primary),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child(SharedString::from(active.slug.clone())),
+                )
+                .child(
+                    Button::new("chat-attach")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Plus)
+                        .tooltip("Attach current note")
+                        .disabled(streaming)
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(ChatEvent::AttachActiveNote))),
+                )
+        });
+        Some(
+            h_flex()
+                .flex_wrap()
+                .gap_1p5()
+                .px_2()
+                .pt_2()
+                .children(attached)
+                .children(offered),
+        )
+    }
+
+    fn render_input(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let core = Host::core(cx);
         let (selected_model, mode) = {
             let config = core.lock_config();
@@ -854,6 +1054,8 @@ impl ChatPanel {
             .loading(self.is_streaming())
             .disabled(!self.can_send(cx))
             .on_click(cx.listener(|this, _, window, cx| this.send(window, cx)));
+        let attachments = self.render_attachments(cx);
+        let theme = cx.theme();
         v_flex()
             .flex_none()
             .mx_3()
@@ -862,6 +1064,7 @@ impl ChatPanel {
             .border_1()
             .border_color(theme.input)
             .bg(theme.background)
+            .children(attachments)
             .child(
                 Textarea::new(&self.input)
                     .appearance(false)
@@ -888,7 +1091,7 @@ impl Render for ChatPanel {
             let core = Host::core(cx);
             let config = core.lock_config();
             (
-                f32::from(config.agent_panel.width).clamp(MIN_WIDTH, MAX_WIDTH),
+                self.resize.width(f32::from(config.agent_panel.width)),
                 config.agent_font.clone(),
             )
         };
@@ -897,21 +1100,18 @@ impl Render for ChatPanel {
         {
             self.drawn_font = Some((font_family.clone(), font_size));
         }
-        let (sidebar, sidebar_foreground, sidebar_border) = (
-            theme.sidebar,
-            theme.sidebar_foreground,
-            theme.sidebar_border,
-        );
-        v_flex()
+        let (sidebar, sidebar_foreground) = (theme.sidebar, theme.sidebar_foreground);
+        // The resize handle on the left edge draws the border line.
+        let panel = v_flex()
             .id("chat-panel")
             .w(px(width))
             .h_full()
             .flex_none()
             .overflow_hidden()
             .bg(sidebar)
-            .text_color(sidebar_foreground)
-            .border_l_1()
-            .border_color(sidebar_border)
+            .text_color(sidebar_foreground);
+        self.resize
+            .attach(panel, |this: &mut Self| &mut this.resize, Self::resized, cx)
             .font_family(font_family)
             .text_size(font_size)
             // While the task list is open, the arrow keys move through it.
@@ -938,7 +1138,19 @@ impl Render for ChatPanel {
             .child(self.render_conversation(cx))
             .children(task_list)
             .child(self.render_input(cx))
+            .child(self.resize.handle())
     }
+}
+
+/// A selected text shortened to one line for its attachment chip.
+fn selection_preview(selected: &str) -> String {
+    const MAX_CHARS: usize = 28;
+    let collapsed = selected.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= MAX_CHARS {
+        return collapsed;
+    }
+    let truncated: String = collapsed.chars().take(MAX_CHARS).collect();
+    format!("{truncated}…")
 }
 
 /// Add the URL of every link in `node` to `found`.

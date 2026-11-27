@@ -54,6 +54,7 @@ use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use find::FindBar;
 use granit_core::markdown::Markdown;
+use granit_types::AttachedNote;
 use images::{ImageBase, ImageCache};
 use links::LinkCompletion;
 #[cfg(test)]
@@ -371,6 +372,26 @@ impl NoteView {
         Some(match &self.editor {
             Some(editor) => editor.read(cx).text(),
             None => loaded.session.saved(),
+        })
+    }
+
+    /// The open note as an attachment to a chat message: its slug, the
+    /// editor's text (pending edits included) and the selected text, trimmed
+    /// (`None` when nothing but whitespace is selected). `None` while no
+    /// note (or a template) is open.
+    pub fn attachment(&self, window: &mut Window, cx: &mut Context<Self>) -> Option<AttachedNote> {
+        let slug = self.slug()?.to_string();
+        let selection = self.selection(window, cx).map(|(range, _)| range);
+        let content = self.text(cx)?;
+        let selected = selection
+            .and_then(|range| content.get(range))
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string);
+        Some(AttachedNote {
+            slug,
+            content: content.to_string(),
+            selected,
         })
     }
 

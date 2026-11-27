@@ -153,12 +153,17 @@ impl Workspace {
             cx.subscribe(&templates, move |this, _, event, cx| {
                 on_panel(this, event, cx)
             }),
-            cx.subscribe(&chat, |this, _, event: &ChatEvent, cx| match event {
-                ChatEvent::OpenNote { slug, anchor } => {
-                    let reveal = anchor.clone().map(Reveal::Anchor);
-                    this.open_note_at(slug.clone(), reveal, cx)
-                }
-            }),
+            cx.subscribe_in(
+                &chat,
+                window,
+                |this, _, event: &ChatEvent, window, cx| match event {
+                    ChatEvent::OpenNote { slug, anchor } => {
+                        let reveal = anchor.clone().map(Reveal::Anchor);
+                        this.open_note_at(slug.clone(), reveal, cx)
+                    }
+                    ChatEvent::AttachActiveNote => this.attach_active_note(window, cx),
+                },
+            ),
             cx.subscribe(
                 &note_view,
                 |this, _, event: &NoteViewEvent, cx| match event {
@@ -371,6 +376,18 @@ impl Workspace {
             self.chat.update(cx, |chat, cx| chat.shown(cx));
         }
         cx.notify();
+    }
+
+    /// Attach the open note to the chat's messages: its text as the editor
+    /// has it, and the editor's selected text.
+    pub fn attach_active_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(note) = self
+            .note_view
+            .update(cx, |view, cx| view.attachment(window, cx))
+        else {
+            return;
+        };
+        self.chat.update(cx, |chat, cx| chat.attach(note, cx));
     }
 
     fn on_toggle_chat(&mut self, _: &ToggleChat, _: &mut Window, cx: &mut Context<Self>) {
@@ -670,6 +687,8 @@ impl Workspace {
             .update(cx, |calendar, cx| calendar.set_active(shown.clone(), cx));
         self.favorites
             .update(cx, |favorites, cx| favorites.set_active(shown.clone(), cx));
+        self.chat
+            .update(cx, |chat, cx| chat.set_active_note(shown.clone(), cx));
         self.active = shown;
         cx.notify();
     }
