@@ -1,12 +1,13 @@
 //! The sidebar panels that browse the cave beside the explorer: full-text
-//! search, the todos of every note, the tags, and the calendar of daily
-//! notes.
+//! search, the todos of every note, the tags, the note templates, and the
+//! calendar of daily notes.
 //!
 //! The sidebar shows the calendar above a tab bar ([`SidebarTab`]) that
-//! switches between the explorer and the [`SearchPanel`], [`TodosPanel`] and
-//! [`TagsPanel`], as the Tauri app does. Each panel asks the workspace to
-//! open a note with [`PanelEvent::OpenNote`] (with the spot to reveal for a
-//! search or todo match); the todos panel asks it to toggle a todo with
+//! switches between the explorer and the [`SearchPanel`], [`TodosPanel`],
+//! [`TagsPanel`] and [`TemplatesPanel`], as the Tauri app does. Each panel
+//! asks the workspace to open a note with [`PanelEvent::OpenNote`] (with the
+//! spot to reveal for a search or todo match), or a template with
+//! [`PanelEvent::OpenTemplate`]; the todos panel asks it to toggle a todo with
 //! [`PanelEvent::ToggleTodo`], so the open note's pending edits are written
 //! first. The queries are the core's; the list panels run them on the
 //! background executor, and only while shown: a cave change marks a hidden
@@ -15,6 +16,7 @@
 pub mod calendar;
 pub mod search;
 pub mod tags;
+pub mod templates;
 pub mod todos;
 
 #[cfg(test)]
@@ -30,6 +32,7 @@ use crate::note_view::Reveal;
 pub use calendar::CalendarPanel;
 pub use search::SearchPanel;
 pub use tags::TagsPanel;
+pub use templates::TemplatesPanel;
 pub use todos::TodosPanel;
 
 /// What a panel asks of the workspace.
@@ -42,6 +45,8 @@ pub enum PanelEvent {
     },
     /// Toggle this todo in its note; `checked` is its state as listed.
     ToggleTodo { item: TodoItem, checked: bool },
+    /// Open the note template `slug` in the editor.
+    OpenTemplate(String),
 }
 
 /// The sidebar's tabs, in tab-bar order.
@@ -53,14 +58,16 @@ pub enum SidebarTab {
     Search,
     Todos,
     Tags,
+    Templates,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 4] = [
+    pub const ALL: [SidebarTab; 5] = [
         SidebarTab::Notes,
         SidebarTab::Search,
         SidebarTab::Todos,
         SidebarTab::Tags,
+        SidebarTab::Templates,
     ];
 
     /// The tab's position in the tab bar.
@@ -74,6 +81,7 @@ impl SidebarTab {
             SidebarTab::Search => "Search",
             SidebarTab::Todos => "Todos",
             SidebarTab::Tags => "Tags",
+            SidebarTab::Templates => "Templates",
         }
     }
 
@@ -83,6 +91,7 @@ impl SidebarTab {
             SidebarTab::Search => Icon::new(IconName::Search),
             SidebarTab::Todos => Icon::new(AppIcon::ListTodo),
             SidebarTab::Tags => Icon::new(AppIcon::Tag),
+            SidebarTab::Templates => Icon::new(AppIcon::NotepadTextDashed),
         }
     }
 }

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use gpui::{AppContext as _, Context, Entity, EntityInputHandler as _, TestAppContext, Window};
 
-use super::{CalendarPanel, SearchPanel, SidebarTab, TagsPanel, TodosPanel};
+use super::{CalendarPanel, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::tests::App;
@@ -428,4 +428,149 @@ fn todays_daily_note_comes_from_the_template(cx: &mut TestAppContext) {
     let panel = calendar(&app, cx);
     let marked = cx.read_entity(&panel, |panel, _| panel.marked_days());
     assert!(marked.contains(&today), "{marked:?}");
+}
+
+#[gpui::test]
+fn the_daily_note_button_opens_todays_note_creating_it_once(cx: &mut TestAppContext) {
+    let dir = panel_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/day.md"),
+        "---\ntags: [journal]\n---\n# {{ date }}\n\n{% if day %}Back to [[{{ slug }}]]{% endif %}\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    cx.update(|cx| {
+        crate::config_ops::update_config(cx, |config| {
+            config.daily_note_template_slug = Some("day".into())
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let panel = calendar(&app, cx);
+    // The calendar shows another month; the button comes back to this one.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.show_month(Month::new(2001, 1).unwrap(), cx)
+    });
+    app.draw(cx);
+
+    update(&app, &panel, cx, |panel, _, cx| panel.open_today(cx));
+
+    let today = today_slug();
+    assert_eq!(app.active_note(cx).as_deref(), Some(today.as_str()));
+    assert_eq!(app.core_active_note(cx).as_deref(), Some(today.as_str()));
+    let file = format!("Daily/{today}.md");
+    let raw = read(dir.path(), &file);
+    assert!(
+        raw.contains("journal"),
+        "the template's tags are copied: {raw}"
+    );
+    assert_eq!(
+        app.shown_body(cx),
+        Some(format!("# {today}\n\nBack to [[{today}]]\n")),
+        "the body is the rendered template"
+    );
+    let shown = cx.read_entity(&panel, |panel, _| panel.month());
+    assert_eq!(shown, Month::current());
+    assert!(cx
+        .read_entity(&panel, |panel, _| panel.marked_days())
+        .contains(&today));
+    app.draw(cx);
+
+    // An existing day's note is opened as it is, never re-rendered.
+    std::fs::write(dir.path().join(&file), "# kept\n").unwrap();
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx)
+    });
+    cx.update(|cx| CaveEvents::emit(CaveEvent::NotesChanged, cx));
+    cx.run_until_parked();
+    update(&app, &panel, cx, |panel, _, cx| panel.open_today(cx));
+    assert_eq!(app.active_note(cx).as_deref(), Some(today.as_str()));
+    assert_eq!(app.shown_body(cx).as_deref(), Some("# kept\n"));
+    assert_eq!(read(dir.path(), &file), "# kept\n");
+}
+
+fn templates(app: &App, cx: &mut TestAppContext) -> Entity<TemplatesPanel> {
+    cx.read_entity(&app.workspace, |workspace, _| workspace.templates().clone())
+}
+
+fn open_template(app: &App, cx: &mut TestAppContext) -> Option<String> {
+    cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.open_template_slug(cx)
+    })
+}
+
+#[gpui::test]
+fn templates_are_created_renamed_opened_and_deleted(cx: &mut TestAppContext) {
+    let dir = panel_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/meeting.md"),
+        "# Meeting\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx)
+    });
+    show(&app, SidebarTab::Templates, cx);
+    app.draw(cx);
+    let panel = templates(&app, cx);
+    assert_eq!(
+        cx.read_entity(&panel, |panel, _| panel.slugs()),
+        ["meeting"]
+    );
+
+    // A click opens the template; no note is active meanwhile.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.open("meeting".into(), cx)
+    });
+    assert_eq!(open_template(&app, cx).as_deref(), Some("meeting"));
+    assert_eq!(app.shown_body(cx).as_deref(), Some("# Meeting\n"));
+    assert_eq!(app.active_note(cx), None);
+    assert_eq!(app.core_active_note(cx), None);
+    app.draw(cx);
+
+    // New: created, opened and named inline.
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.new_template(window, cx)
+    });
+    assert!(dir.path().join(".granit/templates/untitled.md").exists());
+    assert_eq!(open_template(&app, cx).as_deref(), Some("untitled"));
+    let renaming = cx.read_entity(&panel, |panel, cx| panel.renaming(cx));
+    assert_eq!(renaming, Some(("untitled".to_string(), "untitled".into())));
+    app.draw(cx);
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.type_and_commit("standup", window, cx)
+    });
+    assert!(dir.path().join(".granit/templates/standup.md").exists());
+    assert!(!dir.path().join(".granit/templates/untitled.md").exists());
+    assert_eq!(
+        cx.read_entity(&panel, |panel, _| panel.slugs()),
+        ["meeting", "standup"]
+    );
+    assert_eq!(
+        open_template(&app, cx).as_deref(),
+        Some("standup"),
+        "the editor follows"
+    );
+
+    // A name taken by another template is refused and shown.
+    update(&app, &panel, cx, |panel, window, cx| {
+        panel.start_rename("standup".into(), window, cx);
+        panel.type_and_commit("meeting", window, cx)
+    });
+    assert!(cx.read_entity(&panel, |panel, _| panel.error().is_some()));
+    assert!(dir.path().join(".granit/templates/standup.md").exists());
+
+    // Deleting the open template closes it.
+    update(&app, &panel, cx, |panel, _, cx| panel.delete("standup", cx));
+    assert!(!dir.path().join(".granit/templates/standup.md").exists());
+    assert_eq!(open_template(&app, cx), None);
+    assert_eq!(app.shown_body(cx), None);
+    assert_eq!(
+        cx.read_entity(&panel, |panel, _| panel.slugs()),
+        ["meeting"]
+    );
+    app.draw(cx);
 }

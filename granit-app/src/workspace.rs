@@ -6,8 +6,9 @@
 //! (for the selection) and the calendar, and follows renames and deletions
 //! announced as [`CaveEvent`]s. The sidebar shows the [`CalendarPanel`]
 //! above a tab bar of [`SidebarTab`]s: the explorer, [`SearchPanel`],
-//! [`TodosPanel`] and [`TagsPanel`] ([`Workspace::show_tab`]; the search key
-//! jumps to the search box). A new sidebar panel becomes a field here, a
+//! [`TodosPanel`], [`TagsPanel`] and [`TemplatesPanel`]
+//! ([`Workspace::show_tab`]; the search key jumps to the search box). A note
+//! template opens in the same editor with [`Workspace::open_template`]. A new sidebar panel becomes a field here, a
 //! tab and a child in [`Workspace::render_sidebar`]; the main area is
 //! [`NoteView`], the note editor. Panels open a note with
 //! [`Workspace::open_note`], or at a heading, line or offset with
@@ -44,8 +45,10 @@ use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
-use crate::note_view::{FlushOutcome, NoteView, NoteViewEvent, Reveal};
-use crate::panels::{CalendarPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TodosPanel};
+use crate::note_view::{DocKind, DocRef, FlushOutcome, NoteView, NoteViewEvent, Reveal};
+use crate::panels::{
+    CalendarPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel,
+};
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
 
@@ -82,6 +85,7 @@ pub struct Workspace {
     search: Entity<SearchPanel>,
     todos: Entity<TodosPanel>,
     tags: Entity<TagsPanel>,
+    templates: Entity<TemplatesPanel>,
     /// The sidebar's shown tab.
     sidebar_tab: SidebarTab,
     note_view: Entity<NoteView>,
@@ -108,6 +112,7 @@ impl Workspace {
         let search = cx.new(|cx| SearchPanel::new(window, cx));
         let todos = cx.new(|cx| TodosPanel::new(window, cx));
         let tags = cx.new(|cx| TagsPanel::new(window, cx));
+        let templates = cx.new(TemplatesPanel::new);
         let note_view = cx.new(|cx| NoteView::new(window, cx));
         let chat = cx.new(|cx| ChatPanel::new(window, cx));
         let on_panel = |this: &mut Self, event: &PanelEvent, cx: &mut Context<Self>| match event {
@@ -115,6 +120,7 @@ impl Workspace {
                 this.open_note_at(slug.clone(), reveal.clone(), cx)
             }
             PanelEvent::ToggleTodo { item, checked } => this.toggle_todo(item, *checked, cx),
+            PanelEvent::OpenTemplate(slug) => this.open_template(slug.clone(), cx),
         };
         let subscriptions = vec![
             cx.subscribe(&calendar, move |this, _, event, cx| {
@@ -123,6 +129,9 @@ impl Workspace {
             cx.subscribe(&search, move |this, _, event, cx| on_panel(this, event, cx)),
             cx.subscribe(&todos, move |this, _, event, cx| on_panel(this, event, cx)),
             cx.subscribe(&tags, move |this, _, event, cx| on_panel(this, event, cx)),
+            cx.subscribe(&templates, move |this, _, event, cx| {
+                on_panel(this, event, cx)
+            }),
             cx.subscribe(&chat, |this, _, event: &ChatEvent, cx| match event {
                 ChatEvent::OpenNote { slug, anchor } => {
                     let reveal = anchor.clone().map(Reveal::Anchor);
@@ -178,6 +187,7 @@ impl Workspace {
             search,
             todos,
             tags,
+            templates,
             sidebar_tab: SidebarTab::default(),
             note_view,
             chat,
@@ -235,6 +245,11 @@ impl Workspace {
     #[cfg(test)]
     pub fn tags(&self) -> &Entity<TagsPanel> {
         &self.tags
+    }
+
+    #[cfg(test)]
+    pub fn templates(&self) -> &Entity<TemplatesPanel> {
+        &self.templates
     }
 
     /// The sidebar's shown tab.
@@ -454,6 +469,34 @@ impl Workspace {
         let shown = self
             .note_view
             .update(cx, |view, cx| view.open(slug.as_deref(), cx));
+        self.shown(shown, cx);
+    }
+
+    /// Show the note template `slug` in the editor, closing the settings.
+    /// The open note's (or template's) pending edits are written first; if
+    /// that fails, it stays open. While a template is open no note is
+    /// active: the core, the explorer and the calendar see none.
+    pub fn open_template(&mut self, slug: String, cx: &mut Context<Self>) {
+        self.close_settings(cx);
+        let shown = self.note_view.update(cx, |view, cx| {
+            view.open_doc(Some(DocRef::template(slug)), cx)
+        });
+        let note = shown.and_then(|doc| (doc.kind == DocKind::Note).then_some(doc.slug));
+        self.shown(note, cx);
+    }
+
+    /// The open template.
+    #[cfg(test)]
+    pub fn open_template_slug(&self, cx: &App) -> Option<String> {
+        self.note_view.read(cx).template_slug()
+    }
+
+    /// The main area now shows the note `shown` (`None`: no note, maybe a
+    /// template): tell the core and the sidebar.
+    fn shown(&mut self, shown: Option<String>, cx: &mut Context<Self>) {
+        let template = self.note_view.read(cx).template_slug();
+        self.templates
+            .update(cx, |templates, cx| templates.set_active(template, cx));
         cave_ops::set_active_note(shown.clone(), cx);
         self.explorer
             .update(cx, |explorer, cx| explorer.set_active(shown.clone(), cx));
@@ -500,6 +543,20 @@ impl Workspace {
                     .update(cx, |view, cx| view.note_renamed(from, to, cx));
                 self.open_note(Some(to.clone()), cx);
                 self.note_view.update(cx, |view, cx| view.reload(cx));
+            }
+            CaveEvent::TemplateRenamed { from, to }
+                if self.note_view.read(cx).template_slug().as_deref() == Some(from.as_str()) =>
+            {
+                // Pending edits follow the template to its new name.
+                self.note_view.update(cx, |view, cx| {
+                    view.doc_renamed(DocKind::Template, from, to, cx)
+                });
+                self.shown(None, cx);
+            }
+            CaveEvent::TemplateRemoved(slug)
+                if self.note_view.read(cx).template_slug().as_deref() == Some(slug.as_str()) =>
+            {
+                self.close_removed_note(cx);
             }
             CaveEvent::NotesRemoved(slugs)
                 if self
@@ -639,6 +696,7 @@ impl Workspace {
             SidebarTab::Search => self.search.clone().into_any_element(),
             SidebarTab::Todos => self.todos.clone().into_any_element(),
             SidebarTab::Tags => self.tags.clone().into_any_element(),
+            SidebarTab::Templates => self.templates.clone().into_any_element(),
         }
     }
 

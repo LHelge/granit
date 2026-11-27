@@ -37,10 +37,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
-    div, px, AnyWindowHandle, App, AppContext as _, Context, Entity, EventEmitter, Focusable,
-    FontWeight, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Pixels, Point, Render, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled,
-    Subscription, Task, Window,
+    div, prelude::FluentBuilder as _, px, AnyWindowHandle, App, AppContext as _, Context, Entity,
+    EventEmitter, Focusable, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled, Subscription, Task, Window,
 };
 use gpui_kit::component::{ActiveTheme, Theme};
 use log::warn;
@@ -53,7 +53,7 @@ use crate::host::Host;
 use find::FindBar;
 use images::{ImageBase, ImageCache};
 use links::LinkCompletion;
-pub use save::{FlushOutcome, AUTOSAVE_DELAY};
+pub use save::{DocKind, FlushOutcome, AUTOSAVE_DELAY};
 use save::{NoteSession, SaveSnapshot, SaveStatus};
 use style::CodeHighlighter;
 use wiki_links::LinkIndex;
@@ -153,7 +153,35 @@ pub enum NoteViewEvent {
     },
 }
 
-/// The open note.
+/// A document the editor can open: a note or a note template, by slug.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocRef {
+    pub kind: DocKind,
+    pub slug: String,
+}
+
+impl DocRef {
+    pub fn note(slug: impl Into<String>) -> Self {
+        Self {
+            kind: DocKind::Note,
+            slug: slug.into(),
+        }
+    }
+
+    pub fn template(slug: impl Into<String>) -> Self {
+        Self {
+            kind: DocKind::Template,
+            slug: slug.into(),
+        }
+    }
+
+    /// The slug, when this is a note.
+    fn note_slug(&self) -> Option<&str> {
+        (self.kind == DocKind::Note).then_some(self.slug.as_str())
+    }
+}
+
+/// The open note (or template).
 struct Loaded {
     session: NoteSession,
     /// The cave the note belongs to; a save is refused once another cave is
@@ -169,7 +197,7 @@ enum Note {
     Loaded(Loaded),
     /// The note could not be read.
     Failed {
-        slug: String,
+        doc: DocRef,
         message: SharedString,
     },
 }
@@ -288,13 +316,35 @@ impl NoteView {
         }
     }
 
-    /// The slug of the shown note.
+    /// The slug of the shown note; `None` while a template (or nothing) is
+    /// shown.
     pub fn slug(&self) -> Option<&str> {
         match &self.note {
             Note::Empty => None,
-            Note::Loaded(loaded) => Some(loaded.session.slug()),
-            Note::Failed { slug, .. } => Some(slug),
+            Note::Loaded(loaded) => {
+                (loaded.session.kind() == DocKind::Note).then(|| loaded.session.slug())
+            }
+            Note::Failed { doc, .. } => doc.note_slug(),
         }
+    }
+
+    /// The shown document, note or template.
+    pub fn doc(&self) -> Option<DocRef> {
+        match &self.note {
+            Note::Empty => None,
+            Note::Loaded(loaded) => Some(DocRef {
+                kind: loaded.session.kind(),
+                slug: loaded.session.slug().to_string(),
+            }),
+            Note::Failed { doc, .. } => Some(doc.clone()),
+        }
+    }
+
+    /// The slug of the shown template.
+    pub fn template_slug(&self) -> Option<String> {
+        self.doc()
+            .filter(|doc| doc.kind == DocKind::Template)
+            .map(|doc| doc.slug)
     }
 
     /// The text of the open note: the editor's, or the loaded body before
@@ -343,14 +393,23 @@ impl NoteView {
     /// not be written, the current note stays open (with the error shown)
     /// and its slug is returned instead.
     pub fn open(&mut self, slug: Option<&str>, cx: &mut Context<Self>) -> Option<String> {
-        if self.slug() == slug {
-            return slug.map(str::to_string);
+        self.open_doc(slug.map(DocRef::note), cx)
+            .and_then(|doc| doc.note_slug().map(str::to_string))
+    }
+
+    /// Show the document `doc` (a note or a template), or nothing, writing
+    /// the current one's pending edits first. Returns the document shown
+    /// afterwards, which is the current one if its edits could not be
+    /// written.
+    pub fn open_doc(&mut self, doc: Option<DocRef>, cx: &mut Context<Self>) -> Option<DocRef> {
+        if self.doc() == doc {
+            return doc;
         }
         if let FlushOutcome::Failed(_) = self.flush(cx) {
-            return self.slug().map(str::to_string);
+            return self.doc();
         }
-        self.load(slug, cx);
-        slug.map(str::to_string)
+        self.load(doc.clone(), cx);
+        doc
     }
 
     /// Close the open note without writing it (it was deleted).
@@ -372,8 +431,14 @@ impl NoteView {
     /// The note `from` was renamed to `to`: keep it open (and its pending
     /// edits) under the new name.
     pub fn note_renamed(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
+        self.doc_renamed(DocKind::Note, from, to, cx);
+    }
+
+    /// The document of `kind` named `from` was renamed to `to`: keep it
+    /// open (and its pending edits) under the new name.
+    pub fn doc_renamed(&mut self, kind: DocKind, from: &str, to: &str, cx: &mut Context<Self>) {
         if let Note::Loaded(loaded) = &mut self.note {
-            if loaded.session.slug() == from {
+            if loaded.session.kind() == kind && loaded.session.slug() == from {
                 loaded.session.retarget(to);
                 cx.notify();
             }
@@ -392,15 +457,18 @@ impl NoteView {
         if loaded.session.is_dirty() {
             return;
         }
-        let slug = loaded.session.slug().to_string();
-        let changed = match cave_ops::read_note(&slug, cx) {
-            Ok(doc) => doc.content != loaded.session.saved(),
+        let doc = DocRef {
+            kind: loaded.session.kind(),
+            slug: loaded.session.slug().to_string(),
+        };
+        let changed = match read_body(&doc, cx) {
+            Ok(body) => body != loaded.session.saved(),
             // Gone or unreadable: the workspace decides what to show.
             Err(_) => false,
         };
         if changed {
             let caret = self.editor.as_ref().map(|editor| editor.read(cx).cursor());
-            self.load(Some(&slug), cx);
+            self.load(Some(doc), cx);
             // Stay where the reader was.
             self.pending_restore = Some((caret.unwrap_or(0), self.scroll.offset()));
         }
@@ -437,6 +505,10 @@ impl NoteView {
         let Note::Loaded(loaded) = &mut self.note else {
             return;
         };
+        // Templates do not move.
+        if loaded.session.kind() != DocKind::Note {
+            return;
+        }
         let slug = loaded.session.slug().to_string();
         let Ok(note_dir) = Host::core(cx).with_cave(|cave| cave.note_dir(&slug)) else {
             return;
@@ -461,7 +533,7 @@ impl NoteView {
         match self.flush(cx) {
             FlushOutcome::Failed(err) => Err(format!(
                 "the edits to {} could not be saved: {err}",
-                self.slug().unwrap_or_default()
+                self.doc().map(|doc| doc.slug).unwrap_or_default()
             )),
             FlushOutcome::Saved | FlushOutcome::Unchanged => Ok(()),
         }
@@ -470,7 +542,7 @@ impl NoteView {
     /// Replace the shown note with `slug` (or nothing), dropping the current
     /// one without writing it. The editor is created once the window is
     /// free (see [`Self::install_editor`]).
-    fn load(&mut self, slug: Option<&str>, cx: &mut Context<Self>) {
+    fn load(&mut self, doc: Option<DocRef>, cx: &mut Context<Self>) {
         self.autosave = None;
         self.completion = None;
         self.dismissed_link = None;
@@ -490,13 +562,13 @@ impl NoteView {
             self.retiring_editor = Some(editor);
         }
         self.load_generation += 1;
-        self.note = match slug {
+        self.note = match doc {
             None => Note::Empty,
-            Some(slug) => match load_note(slug, cx) {
+            Some(doc) => match load_doc(&doc, cx) {
                 Ok(loaded) => Note::Loaded(loaded),
                 Err(err) => Note::Failed {
-                    slug: slug.to_string(),
-                    message: format!("Could not open {slug}: {err}").into(),
+                    message: format!("Could not open {}: {err}", doc.slug).into(),
+                    doc,
                 },
             },
         };
@@ -539,7 +611,13 @@ impl NoteView {
             .take()
             .is_some_and(|editor| editor.read(cx).focus_handle(cx).is_focused(window));
 
-        let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder("Empty note"));
+        let placeholder = match loaded.session.kind() {
+            DocKind::Note => "Empty note",
+            DocKind::Template => {
+                "Empty template: write the note body, with {{ slug }} or {{ date }}"
+            }
+        };
+        let editor = cx.new(|cx| EditorState::new(window, cx).with_placeholder(placeholder));
         editor.update(cx, |editor, _| {
             editor.set_block_image_provider(provider);
             // An always-firing, empty auto-replace rule: without one, the
@@ -784,6 +862,18 @@ impl NoteView {
             .py_2()
             .border_b_1()
             .border_color(theme.border)
+            .when(session.kind() == DocKind::Template, |header| {
+                header.child(
+                    div()
+                        .flex_none()
+                        .px_2()
+                        .rounded(px(4.))
+                        .text_xs()
+                        .bg(theme.muted)
+                        .text_color(theme.muted_foreground)
+                        .child("Template"),
+                )
+            })
             .child(
                 div()
                     .flex_1()
@@ -847,19 +937,37 @@ impl NoteView {
     }
 }
 
-/// Read `slug` for the editor.
-fn load_note(slug: &str, cx: &App) -> Result<Loaded, granit_core::cave::CaveError> {
+/// Read `doc` for the editor. A template's relative images resolve from
+/// `.granit/templates/`, as the Tauri app's template preview did.
+fn load_doc(doc: &DocRef, cx: &App) -> Result<Loaded, granit_core::cave::CaveError> {
     Host::core(cx).with_cave(|cave| {
-        let doc = cave.read_note(slug)?;
+        let (body, dir) = match doc.kind {
+            DocKind::Note => (
+                cave.read_note(&doc.slug)?.content,
+                cave.note_dir(&doc.slug)?,
+            ),
+            DocKind::Template => (
+                cave.read_template(&doc.slug)?.content,
+                cave.relative_dir(&cave.templates_dir()),
+            ),
+        };
         Ok(Loaded {
-            session: NoteSession::new(slug, doc.content),
+            session: NoteSession::new(doc.slug.clone(), body).of_kind(doc.kind),
             cave: cave.path().to_path_buf(),
             images: ImageBase {
                 cave: cave.path().to_path_buf(),
-                note_dir: cave.note_dir(slug)?,
+                note_dir: dir,
             },
         })
     })
+}
+
+/// The body of `doc` on disk, without frontmatter.
+fn read_body(doc: &DocRef, cx: &App) -> Result<String, granit_core::cave::CaveError> {
+    match doc.kind {
+        DocKind::Note => cave_ops::read_note(&doc.slug, cx).map(|doc| doc.content),
+        DocKind::Template => cave_ops::read_template(&doc.slug, cx).map(|doc| doc.content),
+    }
 }
 
 /// Write `snapshot` to the cave it was taken in.
@@ -867,9 +975,13 @@ fn write_snapshot(cave: &PathBuf, snapshot: &SaveSnapshot, cx: &mut App) -> Resu
     if Host::cave_path(cx).as_ref() != Some(cave) {
         return Err("the note's cave is no longer open".into());
     }
-    cave_ops::save_note(&snapshot.slug, &snapshot.text, cx)
-        .map(|_| ())
-        .map_err(|err| err.to_string())
+    match snapshot.kind {
+        DocKind::Note => cave_ops::save_note(&snapshot.slug, &snapshot.text, cx).map(|_| ()),
+        DocKind::Template => {
+            cave_ops::save_template(&snapshot.slug, &snapshot.text, cx).map(|_| ())
+        }
+    }
+    .map_err(|err| err.to_string())
 }
 
 /// Load `body` into a fresh `editor` so that `text()` reads it back byte for

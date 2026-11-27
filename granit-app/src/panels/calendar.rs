@@ -3,7 +3,8 @@
 //! have a daily note are marked, today is outlined and the open note's day
 //! is filled. A click on a day opens that day's note, creating it from the
 //! daily-note template when it does not exist yet
-//! ([`crate::cave_ops::open_daily_note`]).
+//! ([`crate::cave_ops::open_daily_note`]); the daily-note button beside the
+//! month does the same for today ([`CalendarPanel::open_today`]).
 //!
 //! The month grid is the core's ([`granit_core::calendar::Month`]); the
 //! marked days are the core's [`granit_core::cave::Cave::daily_note_slugs`],
@@ -25,6 +26,7 @@ use granit_core::cave::CaveError;
 use log::warn;
 
 use super::{error_line, PanelEvent};
+use crate::assets::AppIcon;
 use crate::cave_ops;
 use crate::events::{CaveEvent, CaveEvents};
 
@@ -136,6 +138,13 @@ impl CalendarPanel {
         cx.notify();
     }
 
+    /// Open today's daily note, creating it from the daily-note template
+    /// when missing, and show this month (the daily-note button).
+    pub fn open_today(&mut self, cx: &mut Context<Self>) {
+        self.month = Month::current();
+        self.open_day(&today_slug(), cx);
+    }
+
     fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         h_flex()
             .gap_1()
@@ -172,6 +181,14 @@ impl CalendarPanel {
                         let month = this.month.next();
                         this.show_month(month, cx)
                     })),
+            )
+            .child(
+                Button::new("daily-note")
+                    .ghost()
+                    .xsmall()
+                    .icon(AppIcon::Calendar)
+                    .tooltip("Open today's daily note")
+                    .on_click(cx.listener(|this, _, _, cx| this.open_today(cx))),
             )
     }
 

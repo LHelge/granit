@@ -1039,3 +1039,111 @@ fn enter_in_a_crlf_note_writes_crlf(cx: &mut TestAppContext) {
         "# CRLF\r\n\r\nfirst\r\nx\r\nsecond\r\n"
     );
 }
+
+const TEMPLATE: &str = "---\nicon: Star\n# keep me\ntags: [day]\n---\n# {{ weekday }} {{ date }}\n\n{% if day == 1 %}New month!{% endif %}\n\n[[{{ yesterday }}]] · [[b]]\n";
+const TEMPLATE_BODY: &str =
+    "# {{ weekday }} {{ date }}\n\n{% if day == 1 %}New month!{% endif %}\n\n[[{{ yesterday }}]] · [[b]]\n";
+
+fn template_cave() -> tempfile::TempDir {
+    let dir = fixture_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(dir.path().join(".granit/templates/day.md"), TEMPLATE).unwrap();
+    // A note of the same name is another document.
+    std::fs::write(dir.path().join("day.md"), "# The note\n").unwrap();
+    dir
+}
+
+fn open_template(app: &App, slug: &str, cx: &mut TestAppContext) {
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_template(slug.to_string(), cx)
+    });
+}
+
+#[gpui::test]
+fn a_template_round_trips_through_the_editor(cx: &mut TestAppContext) {
+    let dir = template_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    open_template(&app, "day", cx);
+    app.draw(cx);
+
+    assert_eq!(
+        text(&app, cx),
+        TEMPLATE_BODY,
+        "Tera syntax loads as written"
+    );
+    assert_eq!(app.active_note(cx), None, "no note is active");
+    let view = view(&app, cx);
+    let broken = cx.read_entity(&view, |view, cx| view.broken_links(cx));
+    assert!(
+        broken.is_empty(),
+        "placeholder links are not broken: {broken:?}"
+    );
+
+    // Unedited: switching away and back writes nothing.
+    open(&app, "day", cx);
+    assert_eq!(text(&app, cx), "# The note\n", "the note of that name");
+    open_template(&app, "day", cx);
+    cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+    cx.run_until_parked();
+    assert_eq!(read(dir.path(), ".granit/templates/day.md"), TEMPLATE);
+    assert_eq!(flush(&app, cx), FlushOutcome::Unchanged);
+    let shown = text(&app, cx);
+    cx.update(|cx| cave_ops::save_template("day", &shown, cx))
+        .unwrap();
+    assert_eq!(read(dir.path(), ".granit/templates/day.md"), TEMPLATE);
+
+    // Edited: autosaved to the template, frontmatter kept, the note of the
+    // same name untouched.
+    type_at_end(&app, "{{ slug }}", cx);
+    cx.executor().advance_clock(AUTOSAVE_DELAY * 2);
+    cx.run_until_parked();
+    // (The core stamps `modified_at`, as for notes and in the Tauri app.)
+    let raw = read(dir.path(), ".granit/templates/day.md");
+    assert!(
+        raw.starts_with("---\nicon: Star\n# keep me\ntags: [day]\nmodified_at: "),
+        "{raw}"
+    );
+    assert!(
+        raw.ends_with(&format!("---\n{TEMPLATE_BODY}{{{{ slug }}}}")),
+        "{raw}"
+    );
+    assert_eq!(read(dir.path(), "day.md"), "# The note\n");
+
+    // Pending edits are written before a note opens.
+    type_at_end(&app, "!", cx);
+    open(&app, "b", cx);
+    assert!(read(dir.path(), ".granit/templates/day.md").ends_with("{{ slug }}!"));
+    assert_eq!(read(dir.path(), "day.md"), "# The note\n");
+
+    // A note made from it is rendered from the saved template.
+    let body = cx
+        .update(|cx| {
+            Host::core(cx).with_cave(|cave| cave.render_note_template("day", "2026-12-01"))
+        })
+        .unwrap();
+    assert_eq!(
+        body,
+        "# Tuesday 2026-12-01\n\nNew month!\n\n[[2026-11-30]] · [[b]]\n2026-12-01!"
+    );
+}
+
+#[gpui::test]
+fn a_broken_link_in_a_template_creates_no_note(cx: &mut TestAppContext) {
+    let dir = template_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open_template(&app, "day", cx);
+    app.draw(cx);
+    update_view(&app, cx, |view, _, cx| {
+        view.navigate_to_link("{{ yesterday }}", cx)
+    });
+    assert!(!dir.path().join("{{ yesterday }}.md").exists());
+    let shown = cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.open_template_slug(cx)
+    });
+    assert_eq!(shown.as_deref(), Some("day"));
+
+    // A link to an existing note still opens it.
+    update_view(&app, cx, |view, _, cx| view.navigate_to_link("b", cx));
+    assert_eq!(app.active_note(cx).as_deref(), Some("b"));
+}

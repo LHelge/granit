@@ -82,6 +82,60 @@ fn a_new_note_in_a_folder_lands_there(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_new_note_from_a_template_is_rendered_through_the_core(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/meeting.md"),
+        "---\nicon: Star\ntags: [meeting]\n---\n# {{ slug }}\n\n## Notes\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/day.md"),
+        "# {{ date }}\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    cx.update(|cx| {
+        crate::config_ops::update_config(cx, |config| {
+            config.daily_note_template_slug = Some("day".into())
+        })
+    })
+    .unwrap();
+
+    // The daily-note template is not offered for other notes.
+    let offered = cx.update(|cx| crate::cave_ops::templates_for_new_notes(cx).unwrap());
+    let offered: Vec<&str> = offered.iter().map(|meta| meta.slug.as_str()).collect();
+    assert_eq!(offered, ["meeting"]);
+
+    app.update_explorer(cx, |explorer, window, cx| {
+        explorer.new_note_from(Some("sub".into()), Some("meeting".into()), window, cx)
+    });
+
+    let raw = std::fs::read_to_string(dir.path().join("sub/untitled.md")).unwrap();
+    assert!(raw.contains("icon: Star"), "{raw}");
+    assert!(raw.contains("meeting"), "the tags are copied: {raw}");
+    assert_eq!(app.active_note(cx).as_deref(), Some("untitled"));
+    assert_eq!(
+        app.shown_body(cx).as_deref(),
+        Some("# untitled\n\n## Notes\n")
+    );
+    assert_eq!(
+        renaming(&app, cx),
+        Some((Entry::Note("untitled".into()), "untitled".into()))
+    );
+    assert_eq!(app.rows(cx), vec!["empty", "sub", "  b", "  untitled", "a"]);
+    app.draw(cx);
+
+    // A missing template is reported and creates nothing.
+    app.update_explorer(cx, |explorer, window, cx| {
+        explorer.new_note_from(None, Some("gone".into()), window, cx)
+    });
+    assert!(error(&app, cx).is_some());
+    assert!(!dir.path().join("untitled.md").exists());
+}
+
+#[gpui::test]
 fn renaming_a_note_rewrites_links_and_follows_the_open_note(cx: &mut TestAppContext) {
     let dir = fixture_cave();
     let app = App::with_cave(dir.path(), cx);

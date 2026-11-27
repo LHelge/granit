@@ -80,6 +80,12 @@ impl NoteView {
         let Some(editor) = &self.editor else {
             return;
         };
+        // A template's links are filled in when a note is made from it
+        // (`[[{{ yesterday }}]]`), so none of them counts as broken.
+        if self.template_slug().is_some() {
+            editor.update(cx, |editor, cx| editor.set_diagnostics(Vec::new(), cx));
+            return;
+        }
         let text = editor.read(cx).text();
         let diagnostics = wiki_links::broken_link_ranges(&wiki_links::wiki_links(text), |target| {
             self.links.is_resolved(target)
@@ -96,6 +102,9 @@ impl NoteView {
         let Some(text) = self.text(cx) else {
             return Vec::new();
         };
+        if self.template_slug().is_some() {
+            return Vec::new();
+        }
         wiki_links::broken_link_ranges(&wiki_links::wiki_links(text), |target| {
             self.links.is_resolved(target)
         })
@@ -248,8 +257,10 @@ impl NoteView {
 
     /// Ask the workspace to open the note `target` resolves to, at its
     /// heading when it is an anchor. A broken target creates the note (in
-    /// the cave root, as the web app does) and opens it.
+    /// the cave root, as the web app does) and opens it; in a template it
+    /// does nothing, since its targets may be Tera placeholders.
     pub(super) fn navigate_to_link(&mut self, target: &str, cx: &mut Context<Self>) {
+        let in_template = self.template_slug().is_some();
         let resolved = Host::core(cx).with_cave(|cave| {
             let Some(href) = cave.resolve_link(target) else {
                 return Ok(None);
@@ -266,6 +277,7 @@ impl NoteView {
         });
         let (slug, anchor) = match resolved {
             Ok(Some(found)) => found,
+            Ok(None) if in_template => return,
             Ok(None) => match cave_ops::create_linked_note(target, cx) {
                 Ok(meta) => (meta.slug, None),
                 Err(err) => {

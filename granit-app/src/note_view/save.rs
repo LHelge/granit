@@ -100,17 +100,30 @@ fn has_bare_lf(text: &str) -> bool {
         .any(|(ix, &byte)| byte == b'\n' && (ix == 0 || bytes[ix - 1] != b'\r'))
 }
 
-/// What one save writes: the note and its full body, captured when the save
-/// was requested.
+/// What kind of document the editor holds. Notes and templates have
+/// separate slug namespaces, so a slug alone does not name a file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DocKind {
+    /// A note of the cave.
+    #[default]
+    Note,
+    /// A note template in `.granit/templates/`.
+    Template,
+}
+
+/// What one save writes: the document and its full body, captured when the
+/// save was requested.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SaveSnapshot {
+    pub kind: DocKind,
     pub slug: String,
     pub text: String,
 }
 
-/// Save state of one open note.
+/// Save state of one open note (or template).
 #[derive(Debug)]
 pub struct NoteSession {
+    kind: DocKind,
     slug: String,
     /// The body as last read from or written to disk.
     saved: String,
@@ -128,6 +141,7 @@ impl NoteSession {
     pub fn new(slug: impl Into<String>, body: impl Into<String>) -> Self {
         let saved = body.into();
         Self {
+            kind: DocKind::Note,
             slug: slug.into(),
             line_ending: LineEnding::of(&saved),
             saved,
@@ -137,8 +151,24 @@ impl NoteSession {
         }
     }
 
+    /// The session as one for a document of `kind` (a note by default).
+    pub fn of_kind(mut self, kind: DocKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    pub fn kind(&self) -> DocKind {
+        self.kind
+    }
+
     pub fn slug(&self) -> &str {
         &self.slug
+    }
+
+    /// Whether `snapshot` was taken of this document (under its current
+    /// name).
+    fn is_for(&self, snapshot: &SaveSnapshot) -> bool {
+        snapshot.kind == self.kind && snapshot.slug == self.slug
     }
 
     /// The body as last read from or written to disk.
@@ -189,6 +219,7 @@ impl NoteSession {
             return None;
         }
         Some(SaveSnapshot {
+            kind: self.kind,
             slug: self.slug.clone(),
             text: text.into_owned(),
         })
@@ -204,7 +235,7 @@ impl NoteSession {
     ) -> FlushOutcome {
         match result {
             Ok(()) => {
-                if snapshot.slug == self.slug {
+                if self.is_for(snapshot) {
                     self.saved.clone_from(&snapshot.text);
                     self.dirty = false;
                     self.status = SaveStatus::Clean;
@@ -213,7 +244,7 @@ impl NoteSession {
             }
             Err(err) => {
                 let message = err.to_string();
-                if snapshot.slug == self.slug {
+                if self.is_for(snapshot) {
                     self.status = SaveStatus::Failed(message.clone());
                 }
                 FlushOutcome::Failed(message)
@@ -364,6 +395,25 @@ mod tests {
         );
         assert!(session.is_dirty(), "the write was for the old name");
         assert_eq!(session.snapshot("two").unwrap().slug, "b");
+    }
+
+    #[test]
+    fn a_snapshot_names_its_kind_and_only_finishes_that_document() {
+        let mut template = NoteSession::new("day", "# {{ date }}").of_kind(DocKind::Template);
+        template.mark_edited();
+        let snapshot = template.snapshot("# {{ date }}!").unwrap();
+        assert_eq!(snapshot.kind, DocKind::Template);
+
+        // A note of the same name is another file.
+        let mut note = NoteSession::new("day", "x");
+        note.mark_edited();
+        note.finish(&snapshot, Ok::<(), String>(()));
+        assert!(note.is_dirty(), "the write was the template's");
+        assert_eq!(
+            template.finish(&snapshot, Ok::<(), String>(())),
+            FlushOutcome::Saved
+        );
+        assert!(!template.is_dirty());
     }
 
     #[test]

@@ -20,14 +20,14 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{InputEvent, InputState},
-    menu::{PopupMenu, PopupMenuItem},
+    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
     tree::{tree, TreeEntry, TreeEvent, TreeState},
-    ActiveTheme, Sizable,
+    ActiveTheme, Icon, Sizable,
 };
 use granit_core::cave::{CaveError, DocumentMeta};
 use log::warn;
 
-use crate::assets::AppIcon;
+use crate::assets::{note_icon_path, AppIcon};
 use crate::cave_ops;
 use crate::events::{CaveEvent, CaveEvents};
 use tree_model::{ancestor_folders, build_tree, item_kind, note_item_id, to_tree_items, ItemKind};
@@ -273,7 +273,19 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let result = cave_ops::create_note(folder.as_deref(), cx);
+        self.new_note_from(folder, None, window, cx);
+    }
+
+    /// Create a note in `folder` (`None`: the cave root) from the note
+    /// template `template` (`None`: empty), open it and start renaming it.
+    pub fn new_note_from(
+        &mut self,
+        folder: Option<String>,
+        template: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let result = cave_ops::create_note(folder.as_deref(), template.as_deref(), cx);
         if let Some(meta) = self.report("Creating the note", result) {
             self.expanded.extend(ancestor_folders(&meta.relative_path));
             cx.emit(ExplorerEvent::OpenNote(meta.slug.clone()));
@@ -404,8 +416,50 @@ impl Explorer {
         self.refresh(cx);
     }
 
+    /// The items of a "New note from template" menu: one per template
+    /// offered for new notes ([`cave_ops::templates_for_new_notes`]), each
+    /// creating a note from it in `folder` (`None`: the cave root).
+    fn template_items(
+        this: gpui::WeakEntity<Self>,
+        folder: Option<String>,
+        menu: PopupMenu,
+        cx: &App,
+    ) -> PopupMenu {
+        let templates = match cave_ops::templates_for_new_notes(cx) {
+            Ok(templates) => templates,
+            Err(err) => {
+                warn!("Could not list the templates: {err}");
+                Vec::new()
+            }
+        };
+        if templates.is_empty() {
+            return menu.item(PopupMenuItem::new("No templates yet").disabled(true));
+        }
+        templates.into_iter().fold(menu, |menu, template| {
+            let this = this.clone();
+            let folder = folder.clone();
+            let slug = template.slug.clone();
+            menu.item(
+                PopupMenuItem::new(template.slug)
+                    .icon(Icon::default().path(note_icon_path(template.icon.as_deref())))
+                    .on_click(move |_, window, cx| {
+                        this.update(cx, |this, cx| {
+                            this.new_note_from(folder.clone(), Some(slug.clone()), window, cx)
+                        })
+                        .ok();
+                    }),
+            )
+        })
+    }
+
     /// The context menu of a tree entry.
-    fn context_menu(this: gpui::WeakEntity<Self>, entry: &TreeEntry, menu: PopupMenu) -> PopupMenu {
+    fn context_menu(
+        this: gpui::WeakEntity<Self>,
+        entry: &TreeEntry,
+        menu: PopupMenu,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> PopupMenu {
         let Some(target) = Entry::from_item_id(&entry.item().id) else {
             return menu;
         };
@@ -425,7 +479,7 @@ impl Explorer {
                 PopupMenuItem::new("Delete note")
                     .on_click(action(|this, entry, _, cx| this.delete(entry, cx))),
             ),
-            Entry::Folder(_) => menu
+            Entry::Folder(path) => menu
                 .item(PopupMenuItem::new("New note here").on_click(action(
                     |this, entry, window, cx| {
                         if let Entry::Folder(path) = entry {
@@ -433,6 +487,13 @@ impl Explorer {
                         }
                     },
                 )))
+                .item(PopupMenuItem::submenu("New note here from template", {
+                    let folder = Some(path.clone());
+                    let this = this.clone();
+                    PopupMenu::build(window, cx, move |menu, _, cx| {
+                        Self::template_items(this.clone(), folder.clone(), menu, cx)
+                    })
+                }))
                 .item(PopupMenuItem::new("New folder here").on_click(action(
                     |this, entry, window, cx| {
                         if let Entry::Folder(path) = entry {
@@ -472,6 +533,17 @@ impl Explorer {
                     .tooltip("New note")
                     .on_click(cx.listener(|this, _, window, cx| this.new_note(None, window, cx))),
             )
+            .child({
+                let this = cx.entity().downgrade();
+                Button::new("new-note-from-template")
+                    .ghost()
+                    .xsmall()
+                    .icon(AppIcon::NotepadTextDashed)
+                    .tooltip("New note from template")
+                    .dropdown_menu(move |menu, _, cx| {
+                        Self::template_items(this.clone(), None, menu, cx)
+                    })
+            })
             .child(
                 Button::new("new-folder")
                     .ghost()
@@ -493,8 +565,8 @@ impl Render for Explorer {
         let danger = theme.danger;
         let this = cx.entity().downgrade();
         let render_row = row::renderer(this.clone());
-        let tree = tree(&self.tree, render_row).context_menu(move |_, entry, menu, _, _| {
-            Self::context_menu(this.clone(), entry, menu)
+        let tree = tree(&self.tree, render_row).context_menu(move |_, entry, menu, window, cx| {
+            Self::context_menu(this.clone(), entry, menu, window, cx)
         });
         let body = if self.notes.is_empty() && self.tree.read(cx).entry(0).is_none() {
             div()

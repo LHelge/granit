@@ -95,11 +95,17 @@ pub fn set_active_note(slug: Option<String>, cx: &App) {
     });
 }
 
-/// Create an empty note named [`NEW_NOTE_NAME`] in `folder` (`None`: the
-/// cave root).
-pub fn create_note(folder: Option<&str>, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+/// Create a note named [`NEW_NOTE_NAME`] in `folder` (`None`: the cave
+/// root): empty, or rendered from the note template `template` (its body
+/// through Tera, its tags, icon and presentation copied), as the Tauri
+/// app's `create_note` does.
+pub fn create_note(
+    folder: Option<&str>,
+    template: Option<&str>,
+    cx: &mut App,
+) -> Result<DocumentMeta, CaveError> {
     let meta = Host::core(cx)
-        .with_cave(|cave| cave.create_note(NEW_NOTE_NAME, folder.map(Path::new), None))?;
+        .with_cave(|cave| cave.create_note(NEW_NOTE_NAME, folder.map(Path::new), template))?;
     schedule_index_update(meta.slug.clone(), cx);
     CaveEvents::emit(CaveEvent::NotesChanged, cx);
     Ok(meta)
@@ -121,6 +127,66 @@ pub fn save_note(slug: &str, body: &str, cx: &mut App) -> Result<DocumentMeta, C
     schedule_index_update(meta.slug.clone(), cx);
     CaveEvents::emit(CaveEvent::NotesChanged, cx);
     Ok(meta)
+}
+
+/// The note templates in `.granit/templates/`, sorted by slug.
+pub fn list_templates(cx: &App) -> Result<Vec<DocumentMeta>, CaveError> {
+    Host::core(cx).with_cave(|cave| cave.list_templates())
+}
+
+/// The templates offered for a new note: every template except the
+/// daily-note one, which daily notes use on their own (as in the Tauri
+/// app's "New note from template" menu).
+pub fn templates_for_new_notes(cx: &App) -> Result<Vec<DocumentMeta>, CaveError> {
+    let daily = Host::core(cx)
+        .lock_config()
+        .daily_note_template_slug
+        .clone();
+    let mut templates = list_templates(cx)?;
+    templates.retain(|template| daily.as_deref() != Some(template.slug.as_str()));
+    Ok(templates)
+}
+
+/// Read a template: its body (without frontmatter), for the editor.
+pub fn read_template(slug: &str, cx: &App) -> Result<Document, CaveError> {
+    Host::core(cx).with_cave(|cave| cave.read_template(slug))
+}
+
+/// Create an empty template named [`NEW_NOTE_NAME`] (numbered when taken)
+/// and announce [`CaveEvent::TemplatesChanged`].
+pub fn create_template(cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.create_template(NEW_NOTE_NAME))?;
+    CaveEvents::emit(CaveEvent::TemplatesChanged, cx);
+    Ok(meta)
+}
+
+/// Write the body of the template `slug`, keeping its frontmatter. Writes
+/// nothing when the body is unchanged. Announces nothing: no other view
+/// shows a template's body.
+pub fn save_template(slug: &str, body: &str, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    Host::core(cx).with_cave(|cave| cave.save_template(slug, body))
+}
+
+/// Rename the template `from` to `to`. Notes made from it are not touched;
+/// a daily-note template setting naming it is not followed (as in the
+/// Tauri app).
+pub fn rename_template(from: &str, to: &str, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.rename_template(from, to))?;
+    CaveEvents::emit(
+        CaveEvent::TemplateRenamed {
+            from: from.to_string(),
+            to: meta.slug.clone(),
+        },
+        cx,
+    );
+    Ok(meta)
+}
+
+/// Delete the template `slug`.
+pub fn delete_template(slug: &str, cx: &mut App) -> Result<(), CaveError> {
+    Host::core(cx).with_cave(|cave| cave.delete_template(slug))?;
+    CaveEvents::emit(CaveEvent::TemplateRemoved(slug.to_string()), cx);
+    Ok(())
 }
 
 /// Open the daily note of `date` (`YYYY-MM-DD`; `None`: today), creating it
