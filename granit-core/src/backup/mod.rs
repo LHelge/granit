@@ -7,16 +7,27 @@
 //! the derived key is cached in `.granit/backup.key` so routine backups
 //! never prompt. The passphrase itself is never stored and never leaves
 //! the machine.
+//!
+//! The flows a host runs (back up the open cave, restore a snapshot, list
+//! and delete snapshots, set the passphrase) are in [`run`], with the
+//! [`OperationGuard`] that keeps backups and restores from overlapping.
 
 mod archive;
 mod client;
 mod crypto;
 mod restore;
+pub mod run;
 
 pub use archive::pack_cave;
-pub use client::BackupApiClient;
+pub use client::{BackupApi, BackupApiClient};
 pub use crypto::{encrypt, has_key_file, load_key, set_passphrase};
+pub use granit_api::{BackupInfo, BackupState};
 pub use restore::{restore_in_place, restore_to_new_dir, verify_and_decrypt};
+pub use run::{
+    backup_cave, backup_now, cave_has_key, delete_backup, list_backups, restore_backup,
+    restore_with, set_cave_passphrase, OperationGuard, OperationTicket, RestoreFailure,
+    RestoreRequest, Restored,
+};
 
 /// Errors from packing, encrypting, or uploading a backup.
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +50,8 @@ pub enum BackupError {
     TargetNotEmpty,
     #[error("Snapshot not found on the backend")]
     SnapshotNotFound,
+    #[error("Another cave was opened during the restore — nothing was replaced")]
+    CaveChanged,
     #[error("Restore finished, but opening the restored cave failed: {0}")]
     OpenRestored(String),
     #[error("Invalid backup key file: {0}")]

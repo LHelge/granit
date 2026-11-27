@@ -26,7 +26,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new(config))
         .manage(UpdateCheckGuard::default())
-        .manage(OperationGuard::default())
         // Serves cave files (note images, presentation templates and their
         // assets) to every webview of the app; see `scheme.rs`.
         .register_uri_scheme_protocol(scheme::SCHEME, |ctx, request| {

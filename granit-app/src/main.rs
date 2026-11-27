@@ -16,14 +16,19 @@
 //! - [`chat`]: the agent chat panel; [`agent_ops`]: its agent settings.
 //! - [`settings`]: the settings view; [`config_ops`]: config changes and
 //!   their notifications ([`config_ops::ConfigEvents`]).
+//! - [`backup_ops`]: backups and restores of the UI
+//!   ([`backup_ops::BackupOps`]); [`disaster_restore`]: restoring a cave with
+//!   none open.
 //! - [`theme`], [`assets`]: Catppuccin themes; icons.
 //! - [`last_cave`]: the remembered last-open cave path.
 
 mod agent_ops;
 mod assets;
+mod backup_ops;
 mod cave_ops;
 mod chat;
 mod config_ops;
+mod disaster_restore;
 mod events;
 mod explorer;
 mod host;
@@ -103,5 +108,7 @@ fn startup_cave(cave_arg: Option<PathBuf>, cx: &App) -> StartupCave {
     }
 }
 
+#[cfg(test)]
+mod backup_tests;
 #[cfg(test)]
 mod tests;

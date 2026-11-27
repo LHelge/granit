@@ -19,10 +19,14 @@
 //! Not here, by design: theme choices beyond Catppuccin light and dark,
 //! `markdown_font` (the Tauri app's raw-source editor font; the live-preview
 //! editor uses `reading_font`, shown as the note font), presentation and Mermaid settings
-//! (dropped from this app), and the backup settings (their own task).
+//! (dropped from this app).
+//!
+//! The Backup page ([`backup`]) keeps its own state (passphrase inputs,
+//! snapshots, a restore flow) in a [`backup::BackupPanel`] the view owns.
 
 mod agent;
 mod appearance;
+pub mod backup;
 pub mod fields;
 mod notes;
 #[cfg(test)]
@@ -64,6 +68,8 @@ pub struct SettingsView {
     prompt: Entity<TextareaState>,
     /// Writes the prompt after a typing pause; replaced by every edit.
     prompt_commit: Option<Task<()>>,
+    /// The Backup page's state.
+    backup: Entity<backup::BackupPanel>,
     /// The cave these settings belong to.
     cave: Option<PathBuf>,
     /// The page shown when the view opens.
@@ -95,7 +101,9 @@ impl SettingsView {
                 .auto_grow(8, 24)
                 .default_value(prompt_text)
         });
+        let backup = cx.new(|cx| backup::BackupPanel::new(window, cx));
         let subscriptions = vec![
+            cx.observe(&backup, |_, _, cx| cx.notify()),
             // The prompt is written once typing pauses, on blur, or when
             // the view closes: one edit, one agent reset.
             cx.subscribe(&prompt, |this, _, event: &InputEvent, cx| match event {
@@ -130,6 +138,7 @@ impl SettingsView {
             fonts,
             prompt,
             prompt_commit: None,
+            backup,
             cave: Host::cave_path(cx),
             start_page: 0,
             focus_handle: cx.focus_handle(),
@@ -154,6 +163,12 @@ impl SettingsView {
     #[cfg(test)]
     pub fn prompt(&self) -> &Entity<TextareaState> {
         &self.prompt
+    }
+
+    /// The Backup page's state.
+    #[cfg(test)]
+    pub fn backup(&self) -> &Entity<backup::BackupPanel> {
+        &self.backup
     }
 
     /// Commit what is still pending: field edits ([`config_ops::flush_config`])
@@ -205,6 +220,7 @@ impl SettingsView {
             notes::page(&ctx, cx),
             agent::page(&ctx, &self.prompt, cx),
             agent::providers_page(&ctx, cx),
+            backup::page(&ctx, &self.backup),
         ]
     }
 }

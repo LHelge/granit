@@ -1,5 +1,8 @@
-//! HTTP client for the backup backend (`granit-server`).
+//! HTTP client for the backup backend (`granit-server`), and the
+//! [`BackupApi`] seam the backup and restore flows talk to it through.
 
+use std::collections::BTreeMap;
+use std::future::Future;
 use std::time::Duration;
 
 use granit_api::{
@@ -13,6 +16,48 @@ use super::BackupError;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Generous overall timeout: covers uploading a whole archive on a slow link.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
+/// The backup backend as the backup and restore flows ([`super::run`]) use
+/// it: [`BackupApiClient`] in the app, an in-memory fake in tests.
+pub trait BackupApi: Send + Sync {
+    /// Announce a snapshot; the answer carries the presigned upload URL.
+    fn create_backup(
+        &self,
+        request: &CreateBackupRequest,
+    ) -> impl Future<Output = Result<CreateBackupResponse, BackupError>> + Send;
+
+    /// Upload the encrypted archive to a presigned URL.
+    fn upload(
+        &self,
+        presigned_url: &str,
+        headers: &BTreeMap<String, String>,
+        body: Vec<u8>,
+    ) -> impl Future<Output = Result<(), BackupError>> + Send;
+
+    /// Have the backend verify the upload and mark the snapshot complete.
+    fn complete_backup(
+        &self,
+        id: Uuid,
+    ) -> impl Future<Output = Result<BackupInfo, BackupError>> + Send;
+
+    /// Every snapshot of the API key, newest first.
+    fn list_backups(&self) -> impl Future<Output = Result<Vec<BackupInfo>, BackupError>> + Send;
+
+    /// Delete a snapshot (object and record).
+    fn delete_backup(&self, id: Uuid) -> impl Future<Output = Result<(), BackupError>> + Send;
+
+    /// A presigned download URL for a complete snapshot.
+    fn download_backup(
+        &self,
+        id: Uuid,
+    ) -> impl Future<Output = Result<DownloadBackupResponse, BackupError>> + Send;
+
+    /// Fetch the encrypted archive from a presigned URL.
+    fn download(
+        &self,
+        presigned_url: &str,
+    ) -> impl Future<Output = Result<Vec<u8>, BackupError>> + Send;
+}
 
 pub struct BackupApiClient {
     base_url: String,
@@ -58,8 +103,10 @@ impl BackupApiClient {
             message,
         })
     }
+}
 
-    pub async fn create_backup(
+impl BackupApi for BackupApiClient {
+    async fn create_backup(
         &self,
         request: &CreateBackupRequest,
     ) -> Result<CreateBackupResponse, BackupError> {
@@ -73,7 +120,7 @@ impl BackupApiClient {
         Ok(Self::expect_success(response).await?.json().await?)
     }
 
-    pub async fn complete_backup(&self, id: Uuid) -> Result<BackupInfo, BackupError> {
+    async fn complete_backup(&self, id: Uuid) -> Result<BackupInfo, BackupError> {
         let response = self
             .http
             .post(format!("{}/api/v1/backups/{id}/complete", self.base_url))
@@ -83,7 +130,7 @@ impl BackupApiClient {
         Ok(Self::expect_success(response).await?.json().await?)
     }
 
-    pub async fn list_backups(&self) -> Result<Vec<BackupInfo>, BackupError> {
+    async fn list_backups(&self) -> Result<Vec<BackupInfo>, BackupError> {
         let response = self
             .http
             .get(format!("{}/api/v1/backups", self.base_url))
@@ -94,7 +141,7 @@ impl BackupApiClient {
         Ok(listed.backups)
     }
 
-    pub async fn delete_backup(&self, id: Uuid) -> Result<(), BackupError> {
+    async fn delete_backup(&self, id: Uuid) -> Result<(), BackupError> {
         let response = self
             .http
             .delete(format!("{}/api/v1/backups/{id}", self.base_url))
@@ -105,7 +152,7 @@ impl BackupApiClient {
         Ok(())
     }
 
-    pub async fn download_backup(&self, id: Uuid) -> Result<DownloadBackupResponse, BackupError> {
+    async fn download_backup(&self, id: Uuid) -> Result<DownloadBackupResponse, BackupError> {
         let response = self
             .http
             .get(format!("{}/api/v1/backups/{id}/download", self.base_url))
@@ -115,9 +162,9 @@ impl BackupApiClient {
         Ok(Self::expect_success(response).await?.json().await?)
     }
 
-    /// Fetch the encrypted archive from the presigned URL. Like `upload`,
-    /// a plain request with no auth header — the signature is in the URL.
-    pub async fn download(&self, presigned_url: &str) -> Result<Vec<u8>, BackupError> {
+    /// Like `upload`, a plain request with no auth header — the signature
+    /// is in the URL.
+    async fn download(&self, presigned_url: &str) -> Result<Vec<u8>, BackupError> {
         let response = self.http.get(presigned_url).send().await?;
         let status = response.status();
         if !status.is_success() {
@@ -129,12 +176,12 @@ impl BackupApiClient {
         Ok(response.bytes().await?.to_vec())
     }
 
-    /// Upload the encrypted archive to the presigned URL. Deliberately a
-    /// plain PUT with no auth header — the signature is in the URL.
-    pub async fn upload(
+    /// Deliberately a plain PUT with no auth header — the signature is in
+    /// the URL.
+    async fn upload(
         &self,
         presigned_url: &str,
-        headers: &std::collections::BTreeMap<String, String>,
+        headers: &BTreeMap<String, String>,
         body: Vec<u8>,
     ) -> Result<(), BackupError> {
         let mut request = self.http.put(presigned_url).body(body);

@@ -20,6 +20,11 @@
 //! (`agent_panel.visible`). The settings ([`SettingsView`],
 //! [`ToggleSettings`]) replace the note in the main area while they are
 //! open; opening a note or another cave closes them.
+//!
+//! Restores from a backup run here ([`Workspace::restore_backup`], asked for
+//! with [`backup_ops::request_restore`] by the settings' Backup page or the
+//! [`DisasterRestore`] view the no-cave screen offers), because they end
+//! with opening the restored cave.
 
 use std::path::PathBuf;
 
@@ -34,14 +39,17 @@ use gpui_kit::component::{
     tab::{Tab, TabBar},
     ActiveTheme, Disableable as _, IconName, Sizable,
 };
-use granit_types::TodoItem;
+use granit_core::backup::RestoreRequest;
+use granit_types::{RestoreTarget, TodoItem};
 use log::warn;
 
 use crate::agent_ops;
 use crate::assets::AppIcon;
+use crate::backup_ops::{self, BackupEvent, BackupOps, RestoreOutcome, Running};
 use crate::cave_ops;
 use crate::chat::{ChatEvent, ChatPanel};
 use crate::config_ops::{ConfigEvent, ConfigEvents};
+use crate::disaster_restore::{DisasterRestore, DisasterRestoreEvent};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
@@ -53,6 +61,10 @@ use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
 
 gpui_kit::actions!(granit, [OpenCave, ToggleChat, ToggleSettings, SearchNotes]);
+
+/// Why the editor is locked while a restore replaces the open cave.
+pub const RESTORE_LOCK_REASON: &str =
+    "The cave is being restored from a backup. Editing resumes when the restore is done.";
 
 /// Which cave to open when the window opens.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -95,6 +107,9 @@ pub struct Workspace {
     /// The settings view, while it replaces the note in the main area, and
     /// its close subscription.
     settings: Option<(Entity<SettingsView>, Subscription)>,
+    /// The disaster-restore view, while it replaces the no-cave screen, and
+    /// its close subscription.
+    disaster: Option<(Entity<DisasterRestore>, Subscription)>,
     /// The open note.
     active: Option<String>,
     /// Keeps the workspace on the key-dispatch path while nothing inside it
@@ -178,6 +193,11 @@ impl Workspace {
             cx.subscribe(&CaveEvents::entity(cx), |this, _, event, cx| {
                 this.on_cave_event(event, cx)
             }),
+            cx.subscribe(&BackupOps::entity(cx), |this, _, event, cx| {
+                if let BackupEvent::RestoreRequested(request) = event {
+                    this.restore_backup(request.clone(), cx);
+                }
+            }),
         ];
         let mut this = Self {
             status: CaveStatus::Closed,
@@ -193,6 +213,7 @@ impl Workspace {
             chat,
             chat_visible: false,
             settings: None,
+            disaster: None,
             active: None,
             focus_handle,
             _subscriptions: subscriptions,
@@ -389,18 +410,48 @@ impl Workspace {
         self.toggle_settings(window, cx);
     }
 
-    /// Open the cave at `path`, replacing the open one when it succeeds.
-    pub fn open_cave(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        // Settings edits waiting for a typing pause belong to this cave.
+    /// Write what is pending for the open cave: settings edits waiting for a
+    /// typing pause, and the open note's edits.
+    fn save_before_switch(&mut self, cx: &mut Context<Self>) -> Result<(), String> {
         if let Some((settings, _)) = &self.settings {
             settings.update(cx, |settings, cx| settings.flush(cx));
         }
+        self.note_view
+            .update(cx, |view, cx| view.save_before_leaving(cx))
+    }
+
+    /// Open the cave at `path`, replacing the open one when it succeeds.
+    /// Refused while a restore runs: an in-place restore closes the cave it
+    /// replaces, and the restored cave opens when it is done.
+    pub fn open_cave(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if matches!(BackupOps::running(cx), Some(Running::Restore(_))) {
+            warn!("Not opening {} while a restore runs", path.display());
+            let message = format!(
+                "Could not open {}: a restore is running; the restored cave opens when it is done",
+                path.display()
+            );
+            match &self.disaster {
+                // With no cave open the disaster restore covers the error line.
+                Some((disaster, _)) => disaster.update(cx, |view, cx| view.show_error(message, cx)),
+                None => self.open_error = Some(message.into()),
+            }
+            cx.notify();
+            return;
+        }
+        self.open_cave_with_notice(path, None, cx);
+    }
+
+    /// [`Self::open_cave`], showing `notice` in the sidebar once it is open
+    /// (why a restore reopened the old cave).
+    fn open_cave_with_notice(
+        &mut self,
+        path: PathBuf,
+        notice: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
         // Pending edits go to the cave they were made in. If they cannot be
         // written, the cave is not switched (like a note switch).
-        if let Err(err) = self
-            .note_view
-            .update(cx, |view, cx| view.save_before_leaving(cx))
-        {
+        if let Err(err) = self.save_before_switch(cx) {
             warn!("Not opening {}: {err}", path.display());
             self.open_error = Some(format!("Could not open {}: {err}", path.display()).into());
             cx.notify();
@@ -422,16 +473,106 @@ impl Workspace {
             this.update(cx, |this, cx| {
                 // On success `CaveEvent::Opened` has already reset the note
                 // and the explorer.
-                this.open_error = result.err().map(|err| {
-                    warn!("Could not open the cave at {}: {err}", path.display());
-                    format!("Could not open {}: {err}", path.display()).into()
-                });
+                this.open_error = match result {
+                    Ok(()) => notice,
+                    Err(err) => {
+                        warn!("Could not open the cave at {}: {err}", path.display());
+                        Some(format!("Could not open {}: {err}", path.display()).into())
+                    }
+                };
                 this.status = Host::cave_path(cx).map_or(CaveStatus::Closed, CaveStatus::Open);
+                // With no cave open, a shown disaster restore covers the
+                // main area's error: show it there (a restored cave that
+                // does not open).
+                if let (CaveStatus::Closed, Some((disaster, _)), Some(error)) =
+                    (&this.status, &this.disaster, &this.open_error)
+                {
+                    let error = error.to_string();
+                    disaster.update(cx, |view, cx| view.show_error(error, cx));
+                }
                 cx.notify();
             })
             .ok();
         })
         .detach();
+    }
+
+    /// Run a restore and open the restored cave. Restoring over the open
+    /// cave writes its pending edits first (the restore closes it before
+    /// swapping the folders); if they cannot be written, nothing is
+    /// restored. The editor is locked while such a restore runs, so nothing
+    /// is typed into a cave that is about to be replaced. A failed restore
+    /// that had already closed the cave opens it again. Progress and
+    /// failures reach the backup views through [`BackupOps`].
+    pub fn restore_backup(&mut self, request: RestoreRequest, cx: &mut Context<Self>) {
+        let in_place = matches!(request.target, RestoreTarget::CurrentCave);
+        if in_place {
+            if let Err(err) = self.save_before_switch(cx) {
+                warn!("Not restoring over the open cave: {err}");
+                backup_ops::report_restore_failure(format!("Not restoring: {err}"), cx);
+                return;
+            }
+            self.note_view.update(cx, |view, cx| {
+                view.lock(Some(RESTORE_LOCK_REASON.into()), cx)
+            });
+        }
+        let task = backup_ops::restore(request, cx);
+        cx.spawn(async move |this, cx| {
+            let outcome = task.await;
+            this.update(cx, |this, cx| this.finish_restore(in_place, outcome, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    /// After a restore: unlock the editor and open the cave the restore
+    /// returned. After an in-place restore the open note belongs to the
+    /// replaced cave (kept as `<cave>.pre-restore-*`), so it is closed
+    /// without writing it: whatever it holds cannot be saved into a cave
+    /// that is no longer open, and must not keep the restored one from
+    /// opening.
+    pub(crate) fn finish_restore(
+        &mut self,
+        in_place: bool,
+        outcome: RestoreOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        self.note_view.update(cx, |view, cx| view.lock(None, cx));
+        let Some(path) = outcome.open else {
+            return;
+        };
+        if in_place {
+            self.note_view.update(cx, |view, cx| view.forget(cx));
+        }
+        let notice = outcome
+            .error
+            .map(|err| SharedString::from(format!("The restore failed: {err}")));
+        self.open_cave_with_notice(path, notice, cx);
+    }
+
+    /// The disaster-restore view, while it is shown.
+    #[cfg(test)]
+    pub fn disaster_restore(&self) -> Option<&Entity<DisasterRestore>> {
+        self.disaster.as_ref().map(|(view, _)| view)
+    }
+
+    /// Show the disaster restore in the main area (only with no cave open).
+    pub fn show_disaster_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.status, CaveStatus::Closed) || self.disaster.is_some() {
+            return;
+        }
+        let view = cx.new(|cx| DisasterRestore::new(window, cx));
+        let subscription =
+            cx.subscribe_in(&view, window, |this, _, event, window, cx| match event {
+                DisasterRestoreEvent::Close => {
+                    this.disaster = None;
+                    window.focus(&this.focus_handle, cx);
+                    cx.notify();
+                }
+            });
+        window.focus(&view.focus_handle(cx), cx);
+        self.disaster = Some((view, subscription));
+        cx.notify();
     }
 
     /// Ask for a cave folder and open it.
@@ -532,6 +673,7 @@ impl Workspace {
                 self.status = Host::cave_path(cx).map_or(CaveStatus::Closed, CaveStatus::Open);
                 // The settings were the previous cave's.
                 self.close_settings(cx);
+                self.disaster = None;
                 // The previous cave's note was written before the switch.
                 self.close_removed_note(cx);
                 let visible = Host::core(cx).lock_config().agent_panel.visible;
@@ -735,15 +877,32 @@ impl Workspace {
                 theme.muted_foreground,
             )
             .into_any_element(),
-            CaveStatus::Closed => match &self.open_error {
-                Some(err) => message(err.clone(), theme.danger),
-                None => message(
-                    "Open a folder of markdown notes to start.".into(),
-                    theme.muted_foreground,
-                ),
-            }
-            .child(open_button())
-            .into_any_element(),
+            CaveStatus::Closed => match &self.disaster {
+                Some((disaster, _)) => div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .child(disaster.clone())
+                    .into_any_element(),
+                None => match &self.open_error {
+                    Some(err) => message(err.clone(), theme.danger),
+                    None => message(
+                        "Open a folder of markdown notes to start.".into(),
+                        theme.muted_foreground,
+                    ),
+                }
+                .child(
+                    h_flex().gap_2().child(open_button()).child(
+                        Button::new("disaster-restore-main")
+                            .outline()
+                            .label("Restore from backup…")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.show_disaster_restore(window, cx)
+                            })),
+                    ),
+                )
+                .into_any_element(),
+            },
         }
     }
 }

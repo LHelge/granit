@@ -334,6 +334,23 @@ pub fn fast_key(passphrase: &str) -> CachedKey {
     }
 }
 
+/// Cache a [`fast_key`] in `granit_dir`, as setting a passphrase would.
+#[cfg(test)]
+pub fn write_fast_key_file(granit_dir: &Path, passphrase: &str) -> CachedKey {
+    let cached = fast_key(passphrase);
+    let contents = format!(
+        "{KEY_FILE_HEADER}\nargon2id m={} t={} p={}\nsalt {}\nkey {}\n",
+        cached.params.m_kib,
+        cached.params.t,
+        cached.params.p,
+        BASE64.encode(cached.salt),
+        BASE64.encode(cached.key),
+    );
+    std::fs::create_dir_all(granit_dir).unwrap();
+    std::fs::write(key_file_path(granit_dir), contents).unwrap();
+    cached
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

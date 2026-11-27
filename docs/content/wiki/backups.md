@@ -74,7 +74,9 @@ with two targets:
 - **Replace current cave** — rolls the open cave back to the snapshot, after an
   explicit confirmation. The restore is downloaded, verified, and unpacked next to the
   cave first, then swapped into place, so a failure at any point — network, wrong
-  passphrase, full disk — leaves the current cave exactly as it was.
+  passphrase, full disk — leaves the current cave exactly as it was. Unsaved edits
+  are saved before the restore starts, and the open note cannot be edited until the
+  restore is done.
 
 After a roll-back the previous contents are kept beside the cave folder as
 `<cave>.pre-restore-<timestamp>`. That directory is your escape hatch: nothing deletes

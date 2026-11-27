@@ -14,6 +14,7 @@ use granit_core::open::EmbeddingModelDirs;
 use granit_core::CoreState;
 use granit_types::AppConfig;
 
+use crate::backup_ops::BackupOps;
 use crate::config_ops::ConfigEvents;
 use crate::events::CaveEvents;
 use crate::last_cave::LastCaveStore;
@@ -68,11 +69,13 @@ pub struct Host {
 impl Global for Host {}
 
 impl Host {
-    /// Set up the host and the cave- and config-event emitters. Call once, after
+    /// Set up the host, the cave- and config-event emitters and the backup
+    /// state. Call once, after
     /// `gpui_kit::init`.
     pub fn init(options: HostOptions, cx: &mut App) {
         CaveEvents::init(cx);
         ConfigEvents::init(cx);
+        BackupOps::init(cx);
         cx.set_global(Host {
             core: Arc::new(CoreState::new(AppConfig::default())),
             options,

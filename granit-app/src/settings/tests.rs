@@ -118,7 +118,7 @@ fn the_settings_key_opens_and_closes_the_settings(cx: &mut TestAppContext) {
 fn every_page_draws(cx: &mut TestAppContext) {
     let dir = fixture_cave();
     let app = App::with_cave(dir.path(), cx);
-    for page in 0..4 {
+    for page in 0..5 {
         open_settings(&app, page, cx);
         cx.update_window(app.window, |_, window, cx| {
             app.workspace

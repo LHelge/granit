@@ -5,6 +5,7 @@ use parking_lot::{Mutex, MutexGuard};
 
 use crate::agent::vectordb::CaveVectorIndex;
 use crate::agent::{Agent, AgentError};
+use crate::backup::OperationGuard;
 use crate::cave::{Cave, CaveError};
 use granit_types::AppConfig;
 
@@ -27,7 +28,8 @@ where
 
 /// The host-agnostic state of a running Granit app: the cave config, the open
 /// cave (which also holds the active note), the lazily built agent with its
-/// generation counter, and the RAG vector index — each behind its own mutex.
+/// generation counter, and the RAG vector index — each behind its own mutex —
+/// plus the guard that keeps backups and restores from overlapping.
 ///
 /// A UI host keeps one of these for the app's lifetime and adds its own
 /// window, event and plugin state around it.
@@ -37,6 +39,8 @@ pub struct CoreState {
     agent: Mutex<Option<Agent>>,
     agent_generation: AtomicU64,
     vector_index: Mutex<Option<CaveVectorIndex>>,
+    /// Held by the running backup or restore (`backup_guard`).
+    pub(crate) backup_guard: OperationGuard,
 }
 
 impl CoreState {
@@ -47,6 +51,7 @@ impl CoreState {
             agent: Mutex::new(None),
             agent_generation: AtomicU64::new(0),
             vector_index: Mutex::new(None),
+            backup_guard: OperationGuard::default(),
         }
     }
 

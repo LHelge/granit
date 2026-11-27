@@ -257,6 +257,9 @@ pub struct NoteView {
     last_press: Option<Point<Pixels>>,
     find: Option<FindBar>,
     header: header::Header,
+    /// Why the note cannot be edited now (a restore replaces the cave);
+    /// shown instead of the note while set.
+    locked: Option<SharedString>,
     /// The font the editor area was last drawn with, for tests.
     #[cfg(test)]
     drawn_font: std::cell::Cell<Option<(SharedString, Pixels)>>,
@@ -321,6 +324,7 @@ impl NoteView {
             last_press: None,
             find: None,
             header,
+            locked: None,
             #[cfg(test)]
             drawn_font: Default::default(),
             _subscriptions: subscriptions,
@@ -423,9 +427,29 @@ impl NoteView {
         doc
     }
 
-    /// Close the open note without writing it (it was deleted).
+    /// Close the open note without writing it (it was deleted, or its cave
+    /// replaced by a restore).
     pub fn forget(&mut self, cx: &mut Context<Self>) {
         self.load(None, cx);
+    }
+
+    /// Lock the view for `reason`, shown instead of the note, or unlock it
+    /// with `None`. While locked nothing can be typed into the note (its
+    /// editor is not drawn), so it gains no edits that could not be saved.
+    /// The caller writes pending edits first.
+    pub fn lock(&mut self, reason: Option<SharedString>, cx: &mut Context<Self>) {
+        if reason.is_some() {
+            self.autosave = None;
+            self.completion = None;
+        }
+        self.locked = reason;
+        cx.notify();
+    }
+
+    /// Why the view is locked, if it is.
+    #[cfg(test)]
+    pub fn locked(&self) -> Option<&SharedString> {
+        self.locked.as_ref()
     }
 
     /// Put the caret at `reveal` in the open note and scroll it to the top.
@@ -987,6 +1011,24 @@ impl Render for NoteView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_pending_scroll(window, cx);
         let theme = cx.theme();
+        // Locked: neither the editor, the header nor the find bar is drawn,
+        // and the view's actions are not bound, so nothing reaches the note.
+        if let Some(reason) = &self.locked {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p_6()
+                .child(
+                    div()
+                        .text_color(theme.muted_foreground)
+                        .child(reason.clone()),
+                )
+                .into_any_element();
+        }
         let container = div()
             .key_context(KEY_CONTEXT)
             .on_action(cx.listener(Self::on_save))

@@ -41,10 +41,11 @@ pub enum AppIcon {
     NotepadTextDashed,
     Calendar,
     Pencil,
+    CloudUpload,
 }
 
 impl AppIcon {
-    const ALL: [AppIcon; 18] = [
+    const ALL: [AppIcon; 19] = [
         AppIcon::FilePlus,
         AppIcon::FolderPlus,
         AppIcon::PanelRight,
@@ -63,6 +64,7 @@ impl AppIcon {
         AppIcon::NotepadTextDashed,
         AppIcon::Calendar,
         AppIcon::Pencil,
+        AppIcon::CloudUpload,
     ];
 
     fn name(self) -> &'static str {
@@ -85,6 +87,7 @@ impl AppIcon {
             AppIcon::NotepadTextDashed => "notepad-text-dashed",
             AppIcon::Calendar => "calendar",
             AppIcon::Pencil => "pencil",
+            AppIcon::CloudUpload => "cloud-upload",
         }
     }
 
@@ -108,6 +111,7 @@ impl AppIcon {
             AppIcon::NotepadTextDashed => icondata_lu::LuNotepadTextDashed,
             AppIcon::Calendar => icondata_lu::LuCalendar,
             AppIcon::Pencil => icondata_lu::LuPencil,
+            AppIcon::CloudUpload => icondata_lu::LuCloudUpload,
         }
     }
 }
