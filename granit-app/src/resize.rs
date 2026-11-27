@@ -6,8 +6,8 @@
 //! panel's inner edge) as the root's last child. While
 //! the edge is dragged the panel draws [`PanelResize::width`], the dragged
 //! width (clamped); the owner hears the final width once, when the mouse
-//! button comes up, and saves it. The chat panel uses it; the sidebar can
-//! take the same thing for its trailing edge.
+//! button comes up, and saves it. The chat panel (leading edge) and the
+//! sidebar (trailing edge) use it.
 
 use gpui::{
     px, AppContext as _, Axis, Bounds, Context, DragMoveEvent, Empty, InteractiveElement as _,

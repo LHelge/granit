@@ -113,4 +113,6 @@ fn startup_cave(cave_arg: Option<PathBuf>, cx: &App) -> StartupCave {
 #[cfg(test)]
 mod backup_tests;
 #[cfg(test)]
+mod sidebar_tests;
+#[cfg(test)]
 mod tests;

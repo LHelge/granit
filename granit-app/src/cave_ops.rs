@@ -81,6 +81,12 @@ pub fn list_tree(cx: &App) -> Result<(Vec<DocumentMeta>, Vec<String>), CaveError
     Host::core(cx).with_cave(|cave| Ok((cave.list_notes()?, cave.list_folders()?)))
 }
 
+/// How many notes the cave has (the length of the core's note list), for
+/// the sidebar's footer.
+pub fn note_count(cx: &App) -> Result<usize, CaveError> {
+    Host::core(cx).with_cave(|cave| Ok(cave.list_notes()?.len()))
+}
+
 /// Read a note.
 pub fn read_note(slug: &str, cx: &App) -> Result<Document, CaveError> {
     Host::core(cx).with_cave(|cave| cave.read_note(slug))

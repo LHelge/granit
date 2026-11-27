@@ -496,3 +496,103 @@ fn notes_and_folders_move_by_drop(cx: &mut TestAppContext) {
     assert!(error(&app, cx).is_some());
     app.draw(cx);
 }
+
+/// Right-click the empty space below the tree's rows, then pick a menu
+/// item with `keys` (the menu has the keyboard once it is open).
+fn empty_space_menu(app: &App, keys: &str, cx: &mut TestAppContext) {
+    app.draw(cx);
+    let mut vcx = VisualTestContext::from_window(app.window, cx);
+    let tree = vcx
+        .debug_bounds("explorer-tree")
+        .expect("the tree area is painted");
+    let below_rows = gpui::point(tree.left() + gpui::px(20.), tree.bottom() - gpui::px(10.));
+    vcx.simulate_mouse_move(below_rows, None, Modifiers::none());
+    vcx.simulate_mouse_down(below_rows, gpui::MouseButton::Right, Modifiers::none());
+    vcx.simulate_mouse_up(below_rows, gpui::MouseButton::Right, Modifiers::none());
+    vcx.run_until_parked();
+    app.draw(&mut vcx);
+    for key in keys.split(' ') {
+        vcx.simulate_keystrokes(key);
+        vcx.run_until_parked();
+        app.draw(&mut vcx);
+    }
+}
+
+#[gpui::test]
+fn the_empty_space_menu_creates_in_the_cave_root(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    std::fs::create_dir_all(dir.path().join(".granit/templates")).unwrap();
+    std::fs::write(
+        dir.path().join(".granit/templates/meeting.md"),
+        "# {{ slug }}\n\n## Agenda\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    // Open a nested note: new entries still land in the root.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("b".into()), cx)
+    });
+
+    // "New note"
+    empty_space_menu(&app, "down enter", cx);
+    assert!(dir.path().join("untitled.md").exists());
+    assert_eq!(app.active_note(cx).as_deref(), Some("untitled"));
+    assert_eq!(
+        renaming(&app, cx),
+        Some((Entry::Note("untitled".into()), "untitled".into()))
+    );
+    type_and_commit(&app, "plain", cx);
+
+    // "New note from template", then its only template.
+    empty_space_menu(&app, "down down enter enter", cx);
+    let raw = std::fs::read_to_string(dir.path().join("untitled.md")).unwrap();
+    assert!(raw.ends_with("---\n# untitled\n\n## Agenda\n"), "{raw}");
+    assert_eq!(
+        renaming(&app, cx),
+        Some((Entry::Note("untitled".into()), "untitled".into()))
+    );
+    type_and_commit(&app, "meeting-notes", cx);
+
+    // "New folder"
+    empty_space_menu(&app, "down down down enter", cx);
+    assert!(dir.path().join("new-folder").is_dir());
+    assert_eq!(
+        renaming(&app, cx),
+        Some((Entry::Folder("new-folder".into()), "new-folder".into()))
+    );
+    type_and_commit(&app, "projects", cx);
+    assert_eq!(
+        app.rows(cx),
+        vec![
+            "empty",
+            "projects",
+            "sub",
+            "  b",
+            "a",
+            "meeting-notes",
+            "plain"
+        ]
+    );
+
+    // A right-click on a row still opens the row's own menu: "Rename" is
+    // its first item.
+    app.draw(cx);
+    let mut vcx = VisualTestContext::from_window(app.window, cx);
+    let row = vcx
+        .debug_bounds("explorer-note-a")
+        .expect("a is painted")
+        .center();
+    vcx.simulate_mouse_move(row, None, Modifiers::none());
+    vcx.simulate_mouse_down(row, gpui::MouseButton::Right, Modifiers::none());
+    vcx.simulate_mouse_up(row, gpui::MouseButton::Right, Modifiers::none());
+    vcx.run_until_parked();
+    app.draw(&mut vcx);
+    vcx.simulate_keystrokes("down");
+    vcx.simulate_keystrokes("enter");
+    vcx.run_until_parked();
+    assert_eq!(
+        renaming(&app, cx),
+        Some((Entry::Note("a".into()), "a".into()))
+    );
+    assert!(!dir.path().join("untitled.md").exists());
+}

@@ -1,16 +1,17 @@
 ---
 id: zem.ub
 title: "Sidebar polish: toggle, resize, note count, empty-space menu"
-status: open
+status: done
 priority: P3
 created: "2026-11-27T02:06:51.052472492Z"
-updated: "2026-11-27T02:06:51.052472492Z"
+updated: "2026-11-27T06:23:05.016334520Z"
 tags:
   - gpui
   - port
   - frontend
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

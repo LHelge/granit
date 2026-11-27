@@ -19,7 +19,10 @@
 //! first. The agent chat
 //! ([`ChatPanel`]) sits right of the main area while it is shown
 //! ([`ToggleChat`]); its visibility is kept in the cave's config
-//! (`agent_panel.visible`). The settings ([`SettingsView`],
+//! (`agent_panel.visible`). The sidebar can be hidden ([`ToggleSidebar`];
+//! a rail with the way back takes its place) and resized by its right edge
+//! ([`PanelResize`]), both kept in the cave's `sidebar` config; its footer
+//! counts the cave's notes. The settings ([`SettingsView`],
 //! [`ToggleSettings`]) replace the note in the main area while they are
 //! open; opening a note or another cave closes them.
 //!
@@ -38,8 +41,9 @@ use gpui::{
 use gpui_kit::component::{
     button::{Button, ButtonVariants},
     h_flex,
+    resizable::HandleEdge,
     tab::{Tab, TabBar},
-    ActiveTheme, Disableable as _, IconName, Sizable,
+    v_flex, ActiveTheme, Disableable as _, IconName, Sizable,
 };
 use granit_core::backup::RestoreRequest;
 use granit_types::{RestoreTarget, TodoItem};
@@ -60,10 +64,24 @@ use crate::panels::{
     AgentFilesPanel, CalendarPanel, FavoritesPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel,
     TemplatesPanel, TodosPanel,
 };
+use crate::resize::PanelResize;
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
 
-gpui_kit::actions!(granit, [OpenCave, ToggleChat, ToggleSettings, SearchNotes]);
+gpui_kit::actions!(
+    granit,
+    [
+        OpenCave,
+        ToggleChat,
+        ToggleSidebar,
+        ToggleSettings,
+        SearchNotes
+    ]
+);
+
+/// The sidebar's narrowest and widest width, as in the Tauri app.
+pub const SIDEBAR_MIN_WIDTH: f32 = 320.;
+pub const SIDEBAR_MAX_WIDTH: f32 = 600.;
 
 /// Why the editor is locked while a restore replaces the open cave.
 pub const RESTORE_LOCK_REASON: &str =
@@ -105,6 +123,16 @@ pub struct Workspace {
     agent_files: Entity<AgentFilesPanel>,
     /// The sidebar's shown tab.
     sidebar_tab: SidebarTab,
+    /// Whether the sidebar is shown (the cave's `sidebar.visible`). With no
+    /// cave open it always is: it holds the open-cave button.
+    sidebar_visible: bool,
+    /// The sidebar's width follows a drag of its right edge.
+    sidebar_resize: PanelResize,
+    /// Tracks focus inside the sidebar, so hiding it can take the focus
+    /// back to the workspace.
+    sidebar_focus: FocusHandle,
+    /// How many notes the open cave has, for the sidebar's footer.
+    note_count: usize,
     note_view: Entity<NoteView>,
     chat: Entity<ChatPanel>,
     /// Whether the chat panel is shown.
@@ -209,9 +237,17 @@ impl Workspace {
                     }
                 },
             ),
-            cx.subscribe(&CaveEvents::entity(cx), |this, _, event, cx| {
-                this.on_cave_event(event, cx)
-            }),
+            cx.subscribe_in(
+                &CaveEvents::entity(cx),
+                window,
+                |this, _, event: &CaveEvent, window, cx| {
+                    this.on_cave_event(event, cx);
+                    // A cave whose sidebar is hidden takes the focus out of it.
+                    if *event == CaveEvent::Opened {
+                        this.sidebar_shown_changed(window, cx);
+                    }
+                },
+            ),
             cx.subscribe(&BackupOps::entity(cx), |this, _, event, cx| {
                 if let BackupEvent::RestoreRequested(request) = event {
                     this.restore_backup(request.clone(), cx);
@@ -230,6 +266,15 @@ impl Workspace {
             templates,
             agent_files,
             sidebar_tab: SidebarTab::default(),
+            sidebar_visible: true,
+            sidebar_resize: PanelResize::new(
+                "sidebar-edge",
+                HandleEdge::Trailing,
+                SIDEBAR_MIN_WIDTH,
+                SIDEBAR_MAX_WIDTH,
+            ),
+            sidebar_focus: cx.focus_handle(),
+            note_count: 0,
             note_view,
             chat,
             chat_visible: false,
@@ -314,23 +359,36 @@ impl Workspace {
     /// so hidden ones skip their queries.
     pub fn show_tab(&mut self, tab: SidebarTab, cx: &mut Context<Self>) {
         self.sidebar_tab = tab;
-        self.search.update(cx, |panel, cx| {
-            panel.set_visible(tab == SidebarTab::Search, cx)
-        });
-        self.todos.update(cx, |panel, cx| {
-            panel.set_visible(tab == SidebarTab::Todos, cx)
-        });
-        self.tags.update(cx, |panel, cx| {
-            panel.set_visible(tab == SidebarTab::Tags, cx)
-        });
-        self.favorites.update(cx, |panel, cx| {
-            panel.set_visible(tab == SidebarTab::Favorites, cx)
-        });
+        self.sync_panel_visibility(cx);
         cx.notify();
     }
 
-    /// Show the search panel with the keyboard in its query box.
+    /// Tell the list panels whether they are shown: the selected tab's,
+    /// while the sidebar is.
+    fn sync_panel_visibility(&mut self, cx: &mut Context<Self>) {
+        let shown = self.sidebar_shown();
+        let tab = self.sidebar_tab;
+        self.search.update(cx, |panel, cx| {
+            panel.set_visible(shown && tab == SidebarTab::Search, cx)
+        });
+        self.todos.update(cx, |panel, cx| {
+            panel.set_visible(shown && tab == SidebarTab::Todos, cx)
+        });
+        self.tags.update(cx, |panel, cx| {
+            panel.set_visible(shown && tab == SidebarTab::Tags, cx)
+        });
+        self.favorites.update(cx, |panel, cx| {
+            panel.set_visible(shown && tab == SidebarTab::Favorites, cx)
+        });
+    }
+
+    /// Show the search panel with the keyboard in its query box, showing
+    /// the sidebar first if it is hidden (an input that is not drawn would
+    /// take the keyboard away from the workspace).
     pub fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.sidebar_shown() {
+            self.set_sidebar_visible(true, window, cx);
+        }
         self.show_tab(SidebarTab::Search, cx);
         self.search
             .update(cx, |search, cx| search.focus(window, cx));
@@ -406,6 +464,72 @@ impl Workspace {
 
     fn on_toggle_chat(&mut self, _: &ToggleChat, _: &mut Window, cx: &mut Context<Self>) {
         self.toggle_chat(cx);
+    }
+
+    /// Whether the sidebar is shown: as the cave's config says, and always
+    /// while no cave is open.
+    pub fn sidebar_shown(&self) -> bool {
+        self.sidebar_visible || !matches!(self.status, CaveStatus::Open(_))
+    }
+
+    /// How many notes the sidebar's footer counts.
+    #[cfg(test)]
+    pub fn note_count(&self) -> usize {
+        self.note_count
+    }
+
+    /// The sidebar's resize state.
+    #[cfg(test)]
+    pub fn sidebar_resize(&self) -> &PanelResize {
+        &self.sidebar_resize
+    }
+
+    /// Show or hide the sidebar, remembering it in the cave's config
+    /// (`sidebar.visible`). Needs an open cave (the setting is its config).
+    /// Hiding it takes the focus out of it, so the workspace's keys keep
+    /// working.
+    pub fn toggle_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.status, CaveStatus::Open(_)) {
+            return;
+        }
+        self.set_sidebar_visible(!self.sidebar_visible, window, cx);
+    }
+
+    /// Show or hide the sidebar and remember it in the cave's config.
+    fn set_sidebar_visible(&mut self, visible: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.sidebar_visible = visible;
+        self.sidebar_shown_changed(window, cx);
+        if let Err(err) = config_ops::update_config(cx, |config| config.sidebar.visible = visible) {
+            warn!("Could not remember the sidebar: {err}");
+        }
+    }
+
+    /// Whether the sidebar is shown may have changed: a hidden one gives
+    /// the focus inside it back to the workspace, so its keys keep working,
+    /// and the list panels learn whether they are shown.
+    fn sidebar_shown_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.sidebar_shown() && self.sidebar_focus.contains_focused(window, cx) {
+            window.focus(&self.focus_handle, cx);
+        }
+        self.sync_panel_visibility(cx);
+        cx.notify();
+    }
+
+    fn on_toggle_sidebar(
+        &mut self,
+        _: &ToggleSidebar,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_sidebar(window, cx);
+    }
+
+    /// Save the width the sidebar's edge was dragged to.
+    fn sidebar_resized(&mut self, width: f32, cx: &mut Context<Self>) {
+        let width = width.round() as u16;
+        if let Err(err) = config_ops::update_config(cx, |config| config.sidebar.width = width) {
+            warn!("Could not save the sidebar's width: {err}");
+        }
     }
 
     /// The settings view, while it is shown.
@@ -750,6 +874,12 @@ impl Workspace {
     }
 
     fn on_cave_event(&mut self, event: &CaveEvent, cx: &mut Context<Self>) {
+        // Every cave event may change the notes the footer counts.
+        let note_count = cave_ops::note_count(cx).unwrap_or(0);
+        if note_count != self.note_count {
+            self.note_count = note_count;
+            cx.notify();
+        }
         match event {
             CaveEvent::Opened => {
                 self.status = Host::cave_path(cx).map_or(CaveStatus::Closed, CaveStatus::Open);
@@ -758,8 +888,13 @@ impl Workspace {
                 self.disaster = None;
                 // The previous cave's note was written before the switch.
                 self.close_removed_note(cx);
-                let visible = Host::core(cx).lock_config().agent_panel.visible;
-                self.set_chat_visible(visible, cx);
+                let (chat_visible, sidebar_visible) = {
+                    let core = Host::core(cx);
+                    let config = core.lock_config();
+                    (config.agent_panel.visible, config.sidebar.visible)
+                };
+                self.sidebar_visible = sidebar_visible;
+                self.set_chat_visible(chat_visible, cx);
             }
             CaveEvent::NoteRenamed { from, to } if self.active.as_deref() == Some(from) => {
                 // Pending edits follow the note to its new name.
@@ -824,6 +959,14 @@ impl Workspace {
 
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let (background, foreground, muted, danger, border) = (
+            theme.sidebar,
+            theme.sidebar_foreground,
+            theme.muted_foreground,
+            theme.danger,
+            theme.sidebar_border,
+        );
+        let cave_open = matches!(self.status, CaveStatus::Open(_));
         let cave_name = match &self.status {
             CaveStatus::Open(path) | CaveStatus::Opening(path) => path
                 .file_name()
@@ -836,17 +979,28 @@ impl Workspace {
             CaveStatus::Open(_) => self.open_error.clone(),
             CaveStatus::Closed | CaveStatus::Opening(_) => None,
         };
-        div()
-            .w(px(260.))
+        let width = self
+            .sidebar_resize
+            .width(f32::from(Host::core(cx).lock_config().sidebar.width));
+        // The resize handle on the right edge draws the border line.
+        let panel = div()
+            .id("sidebar")
+            .track_focus(&self.sidebar_focus)
+            .w(px(width))
             .h_full()
             .flex_none()
             .flex()
             .flex_col()
             .overflow_hidden()
-            .bg(theme.sidebar)
-            .text_color(theme.sidebar_foreground)
-            .border_r_1()
-            .border_color(theme.sidebar_border)
+            .bg(background)
+            .text_color(foreground);
+        self.sidebar_resize
+            .attach(
+                panel,
+                |this: &mut Self| &mut this.sidebar_resize,
+                Self::sidebar_resized,
+                cx,
+            )
             .child(
                 h_flex()
                     .flex_none()
@@ -870,13 +1024,24 @@ impl Workspace {
                             .on_click(cx.listener(|this, _, _, cx| this.pick_cave(cx))),
                     )
                     .child(
+                        Button::new("hide-sidebar")
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::PanelLeftClose)
+                            .tooltip("Hide sidebar")
+                            .disabled(!cave_open)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx)),
+                            ),
+                    )
+                    .child(
                         Button::new("toggle-chat")
                             .ghost()
                             .xsmall()
                             .icon(AppIcon::PanelRight)
                             .tooltip("Toggle agent chat")
                             .toggled(self.chat_visible)
-                            .disabled(!matches!(self.status, CaveStatus::Open(_)))
+                            .disabled(!cave_open)
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_chat(cx))),
                     )
                     .child(
@@ -886,7 +1051,7 @@ impl Workspace {
                             .icon(AppIcon::Settings)
                             .tooltip("Settings")
                             .toggled(self.settings.is_some())
-                            .disabled(!matches!(self.status, CaveStatus::Open(_)))
+                            .disabled(!cave_open)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.toggle_settings(window, cx)),
                             ),
@@ -898,14 +1063,61 @@ impl Workspace {
                     .px_3()
                     .pb_2()
                     .text_sm()
-                    .text_color(theme.danger)
+                    .text_color(danger)
                     .child(error)
             }))
-            .when(matches!(self.status, CaveStatus::Open(_)), |this| {
+            .when(cave_open, |this| {
                 this.child(self.calendar.clone())
                     .child(self.render_tabs(cx))
             })
             .child(div().flex_1().min_h_0().child(self.render_panel()))
+            // The note count under every tab, as in the Tauri app.
+            .when(cave_open, |this| {
+                this.child(
+                    div()
+                        .flex_none()
+                        .px_3()
+                        .py_1()
+                        .text_xs()
+                        .text_color(muted)
+                        .border_t_1()
+                        .border_color(border)
+                        .child(note_count_label(self.note_count)),
+                )
+            })
+            .child(self.sidebar_resize.handle())
+    }
+
+    /// The strip left of the main area while the sidebar is hidden: the way
+    /// back, and the chat toggle the hidden sidebar header held (the Tauri
+    /// app keeps both in its title bar).
+    fn render_sidebar_rail(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        v_flex()
+            .flex_none()
+            .h_full()
+            .p_1()
+            .gap_1()
+            .bg(theme.sidebar)
+            .border_r_1()
+            .border_color(theme.sidebar_border)
+            .child(
+                Button::new("show-sidebar")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::PanelLeftOpen)
+                    .tooltip("Show sidebar")
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_sidebar(window, cx))),
+            )
+            .child(
+                Button::new("toggle-chat-rail")
+                    .ghost()
+                    .xsmall()
+                    .icon(AppIcon::PanelRight)
+                    .tooltip("Toggle agent chat")
+                    .toggled(self.chat_visible)
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_chat(cx))),
+            )
     }
 
     /// The tab bar that switches the sidebar's panel.
@@ -1019,6 +1231,7 @@ impl Render for Workspace {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_open_cave))
             .on_action(cx.listener(Self::on_toggle_chat))
+            .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_toggle_settings))
             .on_action(cx.listener(Self::on_search_notes))
             // A click that focused nothing inside (empty space, or after a
@@ -1032,7 +1245,13 @@ impl Render for Workspace {
                     }
                 }),
             )
-            .child(self.render_sidebar(cx))
+            .map(|this| {
+                if self.sidebar_shown() {
+                    this.child(self.render_sidebar(cx).into_any_element())
+                } else {
+                    this.child(self.render_sidebar_rail(cx).into_any_element())
+                }
+            })
             .child(self.render_main(cx))
             .when(
                 self.chat_visible && matches!(self.status, CaveStatus::Open(_)),
@@ -1047,11 +1266,17 @@ impl Focusable for Workspace {
     }
 }
 
+/// The sidebar footer's count of the cave's notes: "1 note", "N notes".
+pub(crate) fn note_count_label(count: usize) -> String {
+    format!("{count} {}", if count == 1 { "note" } else { "notes" })
+}
+
 /// Bind the workspace's keys. Call once at startup.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new(OPEN_CAVE_KEY, OpenCave, None),
         gpui::KeyBinding::new(TOGGLE_CHAT_KEY, ToggleChat, None),
+        gpui::KeyBinding::new(TOGGLE_SIDEBAR_KEY, ToggleSidebar, None),
         gpui::KeyBinding::new(TOGGLE_SETTINGS_KEY, ToggleSettings, None),
         gpui::KeyBinding::new(SEARCH_NOTES_KEY, SearchNotes, None),
     ]);
@@ -1072,6 +1297,13 @@ pub const OPEN_CAVE_KEY: &str = "ctrl-o";
 pub const TOGGLE_CHAT_KEY: &str = "cmd-shift-a";
 #[cfg(not(target_os = "macos"))]
 pub const TOGGLE_CHAT_KEY: &str = "ctrl-shift-a";
+
+/// The key that shows or hides the sidebar (`cmd-b`, as elsewhere, is the
+/// editor's bold).
+#[cfg(target_os = "macos")]
+pub const TOGGLE_SIDEBAR_KEY: &str = "cmd-shift-e";
+#[cfg(not(target_os = "macos"))]
+pub const TOGGLE_SIDEBAR_KEY: &str = "ctrl-shift-e";
 
 /// The key that shows or hides the settings.
 #[cfg(target_os = "macos")]

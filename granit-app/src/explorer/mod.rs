@@ -28,7 +28,7 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{InputEvent, InputState},
-    menu::{DropdownMenu as _, PopupMenu, PopupMenuItem},
+    menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem},
     tree::{tree, TreeEntry, TreeEvent, TreeState},
     ActiveTheme, Icon, Sizable,
 };
@@ -727,6 +727,37 @@ impl Explorer {
         }
     }
 
+    /// The context menu of the empty space around the tree's rows (the rows
+    /// have their own, [`Self::context_menu`]): new notes and folders in the
+    /// cave root, as the Tauri app's.
+    fn root_menu(
+        this: gpui::WeakEntity<Self>,
+        menu: PopupMenu,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> PopupMenu {
+        let action = |f: fn(&mut Self, &mut Window, &mut Context<Self>)| {
+            let this = this.clone();
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                this.update(cx, |this, cx| f(this, window, cx)).ok();
+            }
+        };
+        menu.item(
+            PopupMenuItem::new("New note")
+                .on_click(action(|this, window, cx| this.new_note(None, window, cx))),
+        )
+        .item(PopupMenuItem::submenu("New note from template", {
+            let this = this.clone();
+            PopupMenu::build(window, cx, move |menu, _, cx| {
+                Self::template_items(this.clone(), None, menu, cx)
+            })
+        }))
+        .item(
+            PopupMenuItem::new("New folder")
+                .on_click(action(|this, window, cx| this.new_folder(None, window, cx))),
+        )
+    }
+
     fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         h_flex()
@@ -783,8 +814,11 @@ impl Render for Explorer {
         let danger = theme.danger;
         let this = cx.entity().downgrade();
         let render_row = row::renderer(this.clone());
-        let tree = tree(&self.tree, render_row).context_menu(move |_, entry, menu, window, cx| {
-            Self::context_menu(this.clone(), entry, menu, window, cx)
+        let tree = tree(&self.tree, render_row).context_menu({
+            let this = this.clone();
+            move |_, entry, menu, window, cx| {
+                Self::context_menu(this.clone(), entry, menu, window, cx)
+            }
         });
         let body = if self.notes.is_empty() && self.tree.read(cx).entry(0).is_none() {
             div()
@@ -812,7 +846,13 @@ impl Render for Explorer {
                     .on_drop(cx.listener(|this, dragged: &row::DraggedEntry, _, cx| {
                         this.move_entries(dragged.entries.clone(), None, cx);
                     }))
-                    .child(body),
+                    .debug_selector(|| "explorer-tree".into())
+                    .child(body)
+                    // A right-click there offers new notes and folders in
+                    // the root; a row's own menu takes its right-clicks.
+                    .context_menu(move |menu, window, cx| {
+                        Self::root_menu(this.clone(), menu, window, cx)
+                    }),
             )
             .children(self.error.clone().map(|error| {
                 div()
