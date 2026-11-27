@@ -1,16 +1,17 @@
 ---
 id: zem.33
 title: Explorer multi-select and the favorites panel
-status: open
+status: done
 priority: P2
 created: "2026-11-27T00:35:36.663905246Z"
-updated: "2026-11-27T00:35:36.663905246Z"
+updated: "2026-11-27T05:41:18.373874997Z"
 tags:
   - gpui
   - port
   - frontend
 depends_on:
   - zem.4b
+attempts: 1
 ---
 
 ## Summary

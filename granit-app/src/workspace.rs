@@ -6,7 +6,7 @@
 //! (for the selection) and the calendar, and follows renames and deletions
 //! announced as [`CaveEvent`]s. The sidebar shows the [`CalendarPanel`]
 //! above a tab bar of [`SidebarTab`]s: the explorer, [`SearchPanel`],
-//! [`TodosPanel`], [`TagsPanel`] and [`TemplatesPanel`]
+//! [`TodosPanel`], [`TagsPanel`], [`FavoritesPanel`] and [`TemplatesPanel`]
 //! ([`Workspace::show_tab`]; the search key jumps to the search box). A note
 //! template opens in the same editor with [`Workspace::open_template`]. A new sidebar panel becomes a field here, a
 //! tab and a child in [`Workspace::render_sidebar`]; the main area is
@@ -55,7 +55,8 @@ use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
 use crate::note_view::{DocKind, DocRef, FlushOutcome, NoteView, NoteViewEvent, Reveal};
 use crate::panels::{
-    CalendarPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel,
+    CalendarPanel, FavoritesPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel,
+    TodosPanel,
 };
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
@@ -97,6 +98,7 @@ pub struct Workspace {
     search: Entity<SearchPanel>,
     todos: Entity<TodosPanel>,
     tags: Entity<TagsPanel>,
+    favorites: Entity<FavoritesPanel>,
     templates: Entity<TemplatesPanel>,
     /// The sidebar's shown tab.
     sidebar_tab: SidebarTab,
@@ -127,6 +129,7 @@ impl Workspace {
         let search = cx.new(|cx| SearchPanel::new(window, cx));
         let todos = cx.new(|cx| TodosPanel::new(window, cx));
         let tags = cx.new(|cx| TagsPanel::new(window, cx));
+        let favorites = cx.new(FavoritesPanel::new);
         let templates = cx.new(TemplatesPanel::new);
         let note_view = cx.new(|cx| NoteView::new(window, cx));
         let chat = cx.new(|cx| ChatPanel::new(window, cx));
@@ -144,6 +147,9 @@ impl Workspace {
             cx.subscribe(&search, move |this, _, event, cx| on_panel(this, event, cx)),
             cx.subscribe(&todos, move |this, _, event, cx| on_panel(this, event, cx)),
             cx.subscribe(&tags, move |this, _, event, cx| on_panel(this, event, cx)),
+            cx.subscribe(&favorites, move |this, _, event, cx| {
+                on_panel(this, event, cx)
+            }),
             cx.subscribe(&templates, move |this, _, event, cx| {
                 on_panel(this, event, cx)
             }),
@@ -207,6 +213,7 @@ impl Workspace {
             search,
             todos,
             tags,
+            favorites,
             templates,
             sidebar_tab: SidebarTab::default(),
             note_view,
@@ -269,6 +276,11 @@ impl Workspace {
     }
 
     #[cfg(test)]
+    pub fn favorites(&self) -> &Entity<FavoritesPanel> {
+        &self.favorites
+    }
+
+    #[cfg(test)]
     pub fn templates(&self) -> &Entity<TemplatesPanel> {
         &self.templates
     }
@@ -291,6 +303,9 @@ impl Workspace {
         });
         self.tags.update(cx, |panel, cx| {
             panel.set_visible(tab == SidebarTab::Tags, cx)
+        });
+        self.favorites.update(cx, |panel, cx| {
+            panel.set_visible(tab == SidebarTab::Favorites, cx)
         });
         cx.notify();
     }
@@ -643,6 +658,8 @@ impl Workspace {
             .update(cx, |explorer, cx| explorer.set_active(shown.clone(), cx));
         self.calendar
             .update(cx, |calendar, cx| calendar.set_active(shown.clone(), cx));
+        self.favorites
+            .update(cx, |favorites, cx| favorites.set_active(shown.clone(), cx));
         self.active = shown;
         cx.notify();
     }
@@ -838,6 +855,7 @@ impl Workspace {
             SidebarTab::Search => self.search.clone().into_any_element(),
             SidebarTab::Todos => self.todos.clone().into_any_element(),
             SidebarTab::Tags => self.tags.clone().into_any_element(),
+            SidebarTab::Favorites => self.favorites.clone().into_any_element(),
             SidebarTab::Templates => self.templates.clone().into_any_element(),
         }
     }

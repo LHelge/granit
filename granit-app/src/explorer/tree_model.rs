@@ -154,6 +154,27 @@ fn to_tree_item(node: &TreeNode, expanded: &HashSet<String>) -> TreeItem {
     }
 }
 
+/// The slugs of the notes the tree shows, top to bottom: every note that is
+/// not inside a collapsed folder (`expanded` holds the open folders' paths).
+pub fn visible_note_slugs(nodes: &[TreeNode], expanded: &HashSet<String>) -> Vec<String> {
+    let mut slugs = Vec::new();
+    collect_visible(nodes, expanded, &mut slugs);
+    slugs
+}
+
+fn collect_visible(nodes: &[TreeNode], expanded: &HashSet<String>, slugs: &mut Vec<String>) {
+    for node in nodes {
+        match node {
+            TreeNode::Note(meta) => slugs.push(meta.slug.clone()),
+            TreeNode::Folder { path, children, .. } => {
+                if expanded.contains(path) {
+                    collect_visible(children, expanded, slugs);
+                }
+            }
+        }
+    }
+}
+
 /// The folders containing the cave-relative `relative_path`, outermost first:
 /// `"a/b/note.md"` gives `["a", "a/b"]`.
 pub fn ancestor_folders(relative_path: &str) -> Vec<String> {
@@ -305,6 +326,30 @@ mod tests {
     #[test]
     fn item_kind_rejects_unknown_ids() {
         assert_eq!(item_kind("other"), None);
+    }
+
+    #[test]
+    fn visible_note_slugs_follow_the_tree_and_skip_collapsed_folders() {
+        let tree = build_tree(
+            vec![
+                note("root-note", "root-note.md"),
+                note("child", "projects/child.md"),
+                note("deep", "projects/2026/deep.md"),
+            ],
+            vec!["projects".into(), "projects/2026".into()],
+        );
+        assert_eq!(visible_note_slugs(&tree, &HashSet::new()), ["root-note"]);
+        let expanded = HashSet::from(["projects".to_string()]);
+        assert_eq!(
+            visible_note_slugs(&tree, &expanded),
+            ["child", "root-note"],
+            "folders come before the notes of their level"
+        );
+        let expanded = HashSet::from(["projects".to_string(), "projects/2026".to_string()]);
+        assert_eq!(
+            visible_note_slugs(&tree, &expanded),
+            ["deep", "child", "root-note"]
+        );
     }
 
     #[test]

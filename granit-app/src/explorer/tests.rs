@@ -1,10 +1,204 @@
 //! Explorer operations against a real cave: create, rename, move and
 //! delete notes and folders.
 
-use gpui::{AppContext as _, TestAppContext};
+use gpui::{AppContext as _, Modifiers, TestAppContext, VisualTestContext};
 
-use super::{Entry, Explorer};
+use super::{ClickKind, Entry, Explorer};
 use crate::tests::{fixture_cave, App};
+
+/// The fixture cave plus the root notes `c` and `d`: the tree shows
+/// `empty`, `sub` (collapsed), `a`, `c`, `d`.
+fn selection_cave() -> tempfile::TempDir {
+    let dir = fixture_cave();
+    std::fs::write(dir.path().join("c.md"), "# C\n").unwrap();
+    std::fs::write(dir.path().join("d.md"), "# D\n").unwrap();
+    dir
+}
+
+/// Click the painted row of a note (`selector`: `explorer-note-<slug>`)
+/// with `modifiers` held, as the mouse does.
+fn click(app: &App, selector: &'static str, modifiers: Modifiers, cx: &mut TestAppContext) {
+    app.draw(cx);
+    let mut vcx = VisualTestContext::from_window(app.window, cx);
+    let position = vcx
+        .debug_bounds(selector)
+        .unwrap_or_else(|| panic!("{selector} is painted"))
+        .center();
+    vcx.simulate_mouse_move(position, None, Modifiers::none());
+    vcx.simulate_click(position, modifiers);
+    cx.run_until_parked();
+}
+
+fn selected(app: &App, cx: &mut TestAppContext) -> Vec<String> {
+    let explorer = app.explorer(cx);
+    cx.read_entity(&explorer, |explorer: &Explorer, _| {
+        explorer.selected_notes()
+    })
+}
+
+fn ctrl() -> Modifiers {
+    Modifiers {
+        control: true,
+        ..Modifiers::default()
+    }
+}
+
+fn shift() -> Modifiers {
+    Modifiers {
+        shift: true,
+        ..Modifiers::default()
+    }
+}
+
+#[gpui::test]
+fn modifier_clicks_build_a_selection_in_tree_order(cx: &mut TestAppContext) {
+    let dir = selection_cave();
+    let app = App::with_cave(dir.path(), cx);
+    assert_eq!(app.rows(cx), vec!["empty", "sub", "a", "c", "d"]);
+
+    click(&app, "explorer-note-a", Modifiers::none(), cx);
+    assert_eq!(app.active_note(cx).as_deref(), Some("a"));
+    assert_eq!(selected(&app, cx), ["a"]);
+
+    // Ctrl/Cmd-click toggles without opening.
+    click(&app, "explorer-note-c", ctrl(), cx);
+    assert_eq!(app.active_note(cx).as_deref(), Some("a"), "c does not open");
+    assert_eq!(selected(&app, cx), ["a", "c"]);
+    let cmd = Modifiers {
+        platform: true,
+        ..Modifiers::default()
+    };
+    click(&app, "explorer-note-a", cmd, cx);
+    assert_eq!(selected(&app, cx), ["c"]);
+    assert_eq!(app.active_note(cx).as_deref(), Some("a"));
+    click(&app, "explorer-note-a", ctrl(), cx);
+    assert_eq!(selected(&app, cx), ["a", "c"]);
+
+    // Shift-click selects the range from the last clicked note, in the
+    // order the tree shows, and opens the clicked note.
+    click(&app, "explorer-note-d", shift(), cx);
+    assert_eq!(selected(&app, cx), ["a", "c", "d"]);
+    assert_eq!(app.active_note(cx).as_deref(), Some("d"));
+    // The range is redrawn from the same note.
+    click(&app, "explorer-note-c", shift(), cx);
+    assert_eq!(selected(&app, cx), ["a", "c"]);
+    assert_eq!(app.active_note(cx).as_deref(), Some("c"));
+
+    // A plain click selects just the clicked note.
+    click(&app, "explorer-note-d", Modifiers::none(), cx);
+    assert_eq!(selected(&app, cx), ["d"]);
+    assert_eq!(app.active_note(cx).as_deref(), Some("d"));
+
+    // A note opened elsewhere takes over a selection of one.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("a".into()), cx)
+    });
+    assert_eq!(selected(&app, cx), ["a"]);
+}
+
+#[gpui::test]
+fn a_shift_click_ranges_over_open_folders_only(cx: &mut TestAppContext) {
+    let dir = selection_cave();
+    let app = App::with_cave(dir.path(), cx);
+    app.update_explorer(cx, |explorer, _, cx| {
+        explorer.click_note("a", ClickKind::Plain, cx);
+        explorer.click_note("d", ClickKind::Extend, cx);
+    });
+    assert_eq!(selected(&app, cx), ["a", "c", "d"]);
+
+    // With `sub` expanded, its `b` is in the range too.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("b".into()), cx)
+    });
+    assert_eq!(app.rows(cx), vec!["empty", "sub", "  b", "a", "c", "d"]);
+    app.update_explorer(cx, |explorer, _, cx| {
+        explorer.click_note("b", ClickKind::Plain, cx);
+        explorer.click_note("c", ClickKind::Extend, cx);
+    });
+    assert_eq!(selected(&app, cx), ["b", "a", "c"]);
+}
+
+#[gpui::test]
+fn dragging_a_selected_note_moves_the_whole_selection(cx: &mut TestAppContext) {
+    let dir = selection_cave();
+    let app = App::with_cave(dir.path(), cx);
+    click(&app, "explorer-note-a", Modifiers::none(), cx);
+    click(&app, "explorer-note-c", ctrl(), cx);
+
+    let explorer = app.explorer(cx);
+    let dragged = |slug: &str, cx: &mut TestAppContext| {
+        let entry = Entry::Note(slug.into());
+        cx.read_entity(&explorer, |explorer: &Explorer, _| {
+            explorer.dragged_entries(&entry)
+        })
+    };
+    assert_eq!(
+        dragged("d", cx),
+        [Entry::Note("d".into())],
+        "an unselected note drags alone"
+    );
+    assert_eq!(
+        dragged("c", cx),
+        [Entry::Note("a".into()), Entry::Note("c".into())]
+    );
+    let folder = Entry::Folder("sub".into());
+    let folder_dragged = cx.read_entity(&explorer, |explorer: &Explorer, _| {
+        explorer.dragged_entries(&folder)
+    });
+    assert_eq!(folder_dragged, [folder]);
+
+    // Drop them on the `sub` folder.
+    let entries = dragged("c", cx);
+    app.update_explorer(cx, |explorer, _, cx| {
+        explorer.move_entries(entries, Some("sub".into()), cx)
+    });
+    assert!(dir.path().join("sub/a.md").exists());
+    assert!(dir.path().join("sub/c.md").exists());
+    assert_eq!(app.rows(cx), vec!["empty", "sub", "  a", "  b", "  c", "d"]);
+    assert_eq!(
+        app.active_note(cx).as_deref(),
+        Some("a"),
+        "the open note stays open"
+    );
+    assert_eq!(
+        app.shown_body(cx).as_deref(),
+        Some("# A\n\nAlpha links [[b]].\n")
+    );
+    assert_eq!(selected(&app, cx), ["a"], "the selection is spent");
+
+    // A single note still drags and drops alone.
+    app.update_explorer(cx, |explorer, _, cx| {
+        explorer.move_entries(vec![Entry::Note("d".into())], Some("empty".into()), cx)
+    });
+    assert!(dir.path().join("empty/d.md").exists());
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn deleting_a_selected_note_deletes_the_whole_selection(cx: &mut TestAppContext) {
+    let dir = selection_cave();
+    let app = App::with_cave(dir.path(), cx);
+    click(&app, "explorer-note-a", Modifiers::none(), cx);
+    click(&app, "explorer-note-c", ctrl(), cx);
+
+    let explorer = app.explorer(cx);
+    let targets = |slug: &str, cx: &mut TestAppContext| {
+        cx.read_entity(&explorer, |explorer: &Explorer, _| explorer.notes_for(slug))
+    };
+    assert_eq!(targets("d", cx), ["d"], "a note outside the selection");
+    let slugs = targets("c", cx);
+    assert_eq!(slugs, ["a", "c"]);
+
+    app.update_explorer(cx, |explorer, _, cx| explorer.delete_notes(slugs, cx));
+
+    assert!(!dir.path().join("a.md").exists());
+    assert!(!dir.path().join("c.md").exists());
+    assert!(dir.path().join("d.md").exists());
+    assert_eq!(app.rows(cx), vec!["empty", "sub", "d"]);
+    assert_eq!(app.active_note(cx), None, "the deleted open note is closed");
+    assert_eq!(selected(&app, cx), Vec::<String>::new());
+    app.draw(cx);
+}
 
 /// Type `name` into the open rename input and press Enter.
 fn type_and_commit(app: &App, name: &str, cx: &mut TestAppContext) {

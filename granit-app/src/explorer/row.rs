@@ -2,9 +2,9 @@
 //! or the rename input; plus dragging the row and dropping onto it.
 
 use gpui::{
-    div, px, App, AppContext as _, Context, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Render, SharedString, StatefulInteractiveElement as _, Styled, WeakEntity,
-    Window,
+    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, InteractiveElement,
+    IntoElement, KeyDownEvent, ParentElement, Render, SharedString,
+    StatefulInteractiveElement as _, Styled, WeakEntity, Window,
 };
 use gpui_kit::component::{
     h_flex, input::Input, list::ListItem, tree::TreeEntry, ActiveTheme, Icon, IconName, Sizable,
@@ -12,17 +12,18 @@ use gpui_kit::component::{
 
 use granit_core::cave::DocumentMeta;
 
-use super::{tree_model::ItemKind, Entry, Explorer};
+use super::{tree_model::ItemKind, ClickKind, Entry, Explorer};
 use crate::assets::note_icon_path;
 use crate::cave_ops::parent_of;
 
 const INDENT: f32 = 14.;
 const ICON_WIDTH: f32 = 14.;
 
-/// The payload of a row being dragged.
+/// The payload of a row being dragged: its entry, or every note of the
+/// multi-selection it belongs to.
 #[derive(Clone, Debug)]
 pub struct DraggedEntry {
-    pub entry: Entry,
+    pub entries: Vec<Entry>,
     label: SharedString,
 }
 
@@ -76,21 +77,29 @@ fn render_row(
 ) -> ListItem {
     let item = entry.item();
     let target = Entry::from_item_id(&item.id);
-    let (meta, rename_input) = match (explorer.upgrade(), &target) {
+    let (meta, rename_input, multi_selected, dragged) = match (explorer.upgrade(), &target) {
         (Some(explorer), Some(target)) => {
             let explorer = explorer.read(cx);
-            let meta = match target {
-                Entry::Note(slug) => explorer.notes.get(slug).cloned(),
-                Entry::Folder(_) => None,
+            let (meta, multi_selected) = match target {
+                Entry::Note(slug) => (
+                    explorer.notes.get(slug).cloned(),
+                    explorer.in_multi_selection(slug),
+                ),
+                Entry::Folder(_) => (None, false),
             };
             let input = explorer
                 .rename
                 .as_ref()
                 .filter(|rename| rename.entry == *target)
                 .map(|rename| rename.input.clone());
-            (meta, input)
+            (
+                meta,
+                input,
+                multi_selected,
+                explorer.dragged_entries(target),
+            )
         }
-        _ => (None, None),
+        _ => (None, None, false, Vec::new()),
     };
     let theme = cx.theme();
     let is_folder = matches!(super::item_kind(&item.id), Some(ItemKind::Folder(_)));
@@ -126,6 +135,7 @@ fn render_row(
     let star = (!is_folder && decoration.favorite)
         .then(|| Icon::new(IconName::Star).xsmall().text_color(theme.warning));
 
+    let renaming = rename_input.is_some();
     let label = match rename_input {
         Some(input) => div()
             .flex_1()
@@ -141,6 +151,9 @@ fn render_row(
 
     let row = ListItem::new(ix)
         .pl(px(6. + INDENT * entry.depth() as f32))
+        // The notes of a multi-selection besides the open one (which the
+        // tree highlights as its selected row).
+        .when(multi_selected, |row| row.bg(theme.selection.opacity(0.35)))
         .child(
             h_flex()
                 .gap_1()
@@ -154,6 +167,27 @@ fn render_row(
 
     let Some(target) = target else {
         return row;
+    };
+    // A click on a note updates the selection first (the tree's own click
+    // handler, which selects the row and so opens the note, runs after
+    // it); a Ctrl/Cmd-click stops there, so the note does not open.
+    let row = match &target {
+        Entry::Note(slug) if !renaming => {
+            let explorer = explorer.clone();
+            let slug = slug.clone();
+            let selector = format!("explorer-note-{slug}");
+            row.debug_selector(move || selector)
+                .on_click(move |event, _, cx| {
+                    let kind = ClickKind::from_modifiers(event.modifiers());
+                    let opens = explorer
+                        .update(cx, |explorer, cx| explorer.click_note(&slug, kind, cx))
+                        .unwrap_or(true);
+                    if !opens {
+                        cx.stop_propagation();
+                    }
+                })
+        }
+        _ => row,
     };
     // Escape in the rename input cancels the rename.
     let row = {
@@ -177,9 +211,17 @@ fn render_row(
             .as_ref()
             .and_then(|meta| parent_of(&meta.relative_path).map(str::to_string)),
     };
+    let label = match dragged.len() {
+        0 | 1 => item.label.clone(),
+        count => format!("{count} notes").into(),
+    };
     let dragged = DraggedEntry {
-        entry: target,
-        label: item.label.clone(),
+        entries: if dragged.is_empty() {
+            vec![target]
+        } else {
+            dragged
+        },
+        label,
     };
     let drop_target = explorer.clone();
     let hover = theme.accent;
@@ -190,7 +232,7 @@ fn render_row(
     .on_drop(move |dragged: &DraggedEntry, _, cx| {
         drop_target
             .update(cx, |explorer, cx| {
-                explorer.move_entry(dragged.entry.clone(), drop_folder.clone(), cx)
+                explorer.move_entries(dragged.entries.clone(), drop_folder.clone(), cx)
             })
             .ok();
     })

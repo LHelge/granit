@@ -328,6 +328,27 @@ pub fn move_note(
     Ok(meta)
 }
 
+/// Move the notes `slugs` into `folder` (`None`: the cave root), announcing
+/// the change once. A note that cannot be moved does not stop the others;
+/// the first failure is returned.
+pub fn move_notes(slugs: &[String], folder: Option<&str>, cx: &mut App) -> Result<(), CaveError> {
+    let core = Host::core(cx);
+    let mut first_error = None;
+    let mut moved = false;
+    for slug in slugs {
+        match core.with_cave(|cave| cave.move_note(slug, folder.map(Path::new))) {
+            Ok(_) => moved = true,
+            Err(err) => {
+                first_error.get_or_insert(err);
+            }
+        }
+    }
+    if moved {
+        CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
 /// Move the folder at `path` into `parent` (`None`: the cave root) and
 /// return its new path.
 pub fn move_folder(path: &str, parent: Option<&str>, cx: &mut App) -> Result<String, CaveError> {
@@ -342,6 +363,39 @@ pub fn delete_note(slug: &str, cx: &mut App) -> Result<(), CaveError> {
     schedule_index_removal(slug.to_string(), cx);
     CaveEvents::emit(CaveEvent::NotesRemoved(vec![slug.to_string()]), cx);
     Ok(())
+}
+
+/// Delete the notes `slugs`, announcing the removal once. A note that
+/// cannot be deleted does not stop the others; the first failure is
+/// returned.
+pub fn delete_notes(slugs: &[String], cx: &mut App) -> Result<(), CaveError> {
+    let core = Host::core(cx);
+    let mut first_error = None;
+    let mut removed = Vec::new();
+    for slug in slugs {
+        match core.with_cave(|cave| cave.delete_note(slug)) {
+            Ok(()) => removed.push(slug.clone()),
+            Err(err) => {
+                first_error.get_or_insert(err);
+            }
+        }
+    }
+    for slug in &removed {
+        schedule_index_removal(slug.clone(), cx);
+    }
+    if !removed.is_empty() {
+        CaveEvents::emit(CaveEvent::NotesRemoved(removed), cx);
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+/// The notes marked `favorite` in their frontmatter, by slug.
+pub fn list_favorites(cx: &App) -> Result<Vec<DocumentMeta>, CaveError> {
+    let notes = Host::core(cx).with_cave(|cave| cave.list_notes())?;
+    Ok(notes
+        .into_iter()
+        .filter(|meta| meta.favorite.unwrap_or(false))
+        .collect())
 }
 
 /// Delete the folder at `path` with everything in it.

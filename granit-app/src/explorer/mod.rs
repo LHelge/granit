@@ -6,6 +6,14 @@
 //! workspace opens it and reports the open note back with
 //! [`Explorer::set_active`]. Folders and notes are created, renamed
 //! (inline), moved (drag and drop) and deleted through [`crate::cave_ops`].
+//!
+//! Notes can also be selected several at a time, as in the Tauri app
+//! ([`Explorer::click_note`]): Ctrl/Cmd-click toggles a note in the
+//! selection without opening it, Shift-click selects the range from the
+//! last clicked note in the order the tree shows, and a plain click selects
+//! just the clicked note. Dragging a note of a multi-selection moves every
+//! selected note, and "Delete" on one deletes them all. Folders are not
+//! part of the selection.
 
 mod row;
 pub mod tree_model;
@@ -14,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
     div, App, AppContext, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
-    ParentElement, Render, SharedString, Styled, Subscription, Window,
+    Modifiers, ParentElement, Render, SharedString, Styled, Subscription, Window,
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants},
@@ -30,7 +38,37 @@ use log::warn;
 use crate::assets::{note_icon_path, AppIcon};
 use crate::cave_ops;
 use crate::events::{CaveEvent, CaveEvents};
-use tree_model::{ancestor_folders, build_tree, item_kind, note_item_id, to_tree_items, ItemKind};
+use tree_model::{
+    ancestor_folders, build_tree, item_kind, note_item_id, to_tree_items, visible_note_slugs,
+    ItemKind, TreeNode,
+};
+
+/// How a click on a note row changes the selection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ClickKind {
+    /// A plain click: select only this note (and open it).
+    #[default]
+    Plain,
+    /// Ctrl/Cmd-click: add or remove this note, without opening it.
+    Toggle,
+    /// Shift-click: select the range from the last clicked note (and open
+    /// it).
+    Extend,
+}
+
+impl ClickKind {
+    /// The kind of a click made with `modifiers` held. Ctrl and Cmd both
+    /// toggle on every platform, as in the Tauri app.
+    pub fn from_modifiers(modifiers: Modifiers) -> Self {
+        if modifiers.control || modifiers.platform {
+            ClickKind::Toggle
+        } else if modifiers.shift {
+            ClickKind::Extend
+        } else {
+            ClickKind::Plain
+        }
+    }
+}
 
 /// What the explorer asks of the workspace.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -76,8 +114,15 @@ pub struct Explorer {
     tree: Entity<TreeState>,
     /// The cave's notes by slug, for the row icons and favorite stars.
     notes: HashMap<String, DocumentMeta>,
+    /// The display tree the rows were built from, for the visible order of
+    /// the notes.
+    nodes: Vec<TreeNode>,
     /// Paths of the folders shown expanded.
     expanded: HashSet<String>,
+    /// The selected notes, by slug.
+    selection: HashSet<String>,
+    /// The note a Shift-click range starts from: the last one clicked.
+    anchor: Option<String>,
     /// The note open in the main area.
     active: Option<String>,
     rename: Option<Rename>,
@@ -109,6 +154,8 @@ impl Explorer {
             cx.subscribe(&CaveEvents::entity(cx), |this, _, event, cx| {
                 if *event == CaveEvent::Opened {
                     this.expanded.clear();
+                    this.selection.clear();
+                    this.anchor = None;
                     this.active = None;
                     this.rename = None;
                     this.error = None;
@@ -119,7 +166,10 @@ impl Explorer {
         let mut this = Self {
             tree,
             notes: HashMap::new(),
+            nodes: Vec::new(),
             expanded: HashSet::new(),
+            selection: HashSet::new(),
+            anchor: None,
             active: None,
             rename: None,
             error: None,
@@ -149,7 +199,17 @@ impl Explorer {
             .iter()
             .map(|meta| (meta.slug.clone(), meta.clone()))
             .collect();
-        let items = to_tree_items(&build_tree(notes, folders), &self.expanded);
+        // Notes that are gone leave the selection.
+        self.selection.retain(|slug| self.notes.contains_key(slug));
+        if self
+            .anchor
+            .as_ref()
+            .is_some_and(|slug| !self.notes.contains_key(slug))
+        {
+            self.anchor = None;
+        }
+        self.nodes = build_tree(notes, folders);
+        let items = to_tree_items(&self.nodes, &self.expanded);
         self.tree.update(cx, |tree, cx| tree.set_items(items, cx));
         self.select_active(cx);
         cx.notify();
@@ -158,6 +218,12 @@ impl Explorer {
     /// The note open in the main area changed: select it, expanding the
     /// folders above it.
     pub fn set_active(&mut self, slug: Option<String>, cx: &mut Context<Self>) {
+        // A selection of one note (a plain click) follows the open note; a
+        // multi-selection stays until the next plain click.
+        if self.selection.len() <= 1 {
+            self.selection = slug.iter().cloned().collect();
+            self.anchor = slug.clone();
+        }
         self.active = slug;
         self.select_active(cx);
         cx.notify();
@@ -245,7 +311,105 @@ impl Explorer {
             return;
         };
         if self.active.as_deref() != Some(slug.as_str()) {
+            // The arrow keys move a plain selection; a click has already
+            // updated the selection in `click_note`.
+            if !self.selection.contains(&slug) {
+                self.selection = HashSet::from([slug.clone()]);
+                self.anchor = Some(slug.clone());
+            }
             cx.emit(ExplorerEvent::OpenNote(slug));
+        }
+    }
+
+    /// The notes of the tree in the order it shows them, leaving out those
+    /// in collapsed folders.
+    fn visible_notes(&self) -> Vec<String> {
+        visible_note_slugs(&self.nodes, &self.expanded)
+    }
+
+    /// Apply a click of `kind` on the note `slug` to the selection, and say
+    /// whether the click goes on to open the note: a plain or Shift-click
+    /// does, a Ctrl/Cmd-click only toggles the note in the selection.
+    pub fn click_note(&mut self, slug: &str, kind: ClickKind, cx: &mut Context<Self>) -> bool {
+        cx.notify();
+        match kind {
+            ClickKind::Toggle => {
+                if !self.selection.remove(slug) {
+                    self.selection.insert(slug.to_string());
+                }
+                self.anchor = Some(slug.to_string());
+                false
+            }
+            ClickKind::Extend => {
+                let order = self.visible_notes();
+                let range = self.anchor.as_ref().and_then(|anchor| {
+                    let from = order.iter().position(|s| s == anchor)?;
+                    let to = order.iter().position(|s| s == slug)?;
+                    Some(from.min(to)..=from.max(to))
+                });
+                match range {
+                    // The anchor stays, so the next Shift-click redraws the
+                    // range from the same note.
+                    Some(range) => self.selection = order[range].iter().cloned().collect(),
+                    // No anchor in view: like a plain click.
+                    None => self.select_only(slug),
+                }
+                true
+            }
+            ClickKind::Plain => {
+                self.select_only(slug);
+                true
+            }
+        }
+    }
+
+    fn select_only(&mut self, slug: &str) {
+        self.selection = HashSet::from([slug.to_string()]);
+        self.anchor = Some(slug.to_string());
+    }
+
+    /// Drop a spent multi-selection: only the open note stays selected.
+    fn reset_selection(&mut self) {
+        self.selection = self.active.iter().cloned().collect();
+        self.anchor = self.active.clone();
+    }
+
+    /// The selected notes, in the tree's order, for tests.
+    #[cfg(test)]
+    pub fn selected_notes(&self) -> Vec<String> {
+        self.visible_notes()
+            .into_iter()
+            .filter(|slug| self.selection.contains(slug))
+            .collect()
+    }
+
+    /// Whether the note `slug` is part of a selection of several notes:
+    /// then dragging or deleting it acts on all of them.
+    fn in_multi_selection(&self, slug: &str) -> bool {
+        self.selection.len() > 1 && self.selection.contains(slug)
+    }
+
+    /// The notes an action on the note `slug` applies to: the selected
+    /// notes in the tree's order when `slug` is one of several selected,
+    /// else just `slug`. Selected notes hidden in a collapsed folder are
+    /// left out, as in the Tauri app.
+    pub fn notes_for(&self, slug: &str) -> Vec<String> {
+        if self.in_multi_selection(slug) {
+            self.visible_notes()
+                .into_iter()
+                .filter(|s| self.selection.contains(s))
+                .collect()
+        } else {
+            vec![slug.to_string()]
+        }
+    }
+
+    /// What dragging `entry` moves: a folder alone, a note with the rest of
+    /// its multi-selection ([`Self::notes_for`]).
+    pub fn dragged_entries(&self, entry: &Entry) -> Vec<Entry> {
+        match entry {
+            Entry::Note(slug) => self.notes_for(slug).into_iter().map(Entry::Note).collect(),
+            Entry::Folder(_) => vec![entry.clone()],
         }
     }
 
@@ -379,6 +543,44 @@ impl Explorer {
         cx.notify();
     }
 
+    /// Delete the notes `slugs` (a multi-selection, without asking, like a
+    /// single note). The selection is spent.
+    pub fn delete_notes(&mut self, slugs: Vec<String>, cx: &mut Context<Self>) {
+        if let [slug] = slugs.as_slice() {
+            return self.delete(Entry::Note(slug.clone()), cx);
+        }
+        let result = cave_ops::delete_notes(&slugs, cx);
+        self.report("Deleting the notes", result);
+        self.reset_selection();
+        cx.notify();
+    }
+
+    /// Move the dragged `entries` into `folder` (`None`: the cave root):
+    /// one note or folder, or the notes of a multi-selection, which is then
+    /// spent.
+    pub fn move_entries(
+        &mut self,
+        entries: Vec<Entry>,
+        folder: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        if let [entry] = entries.as_slice() {
+            return self.move_entry(entry.clone(), folder, cx);
+        }
+        let slugs: Vec<String> = entries
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Entry::Note(slug) => Some(slug),
+                Entry::Folder(_) => None,
+            })
+            .collect();
+        let result = cave_ops::move_notes(&slugs, folder.as_deref(), cx);
+        self.report("Moving the notes", result);
+        self.reset_selection();
+        self.expanded.extend(folder);
+        self.refresh(cx);
+    }
+
     /// Move `entry` into `folder` (`None`: the cave root).
     pub fn move_entry(&mut self, entry: Entry, folder: Option<String>, cx: &mut Context<Self>) {
         match entry {
@@ -475,10 +677,26 @@ impl Explorer {
             this.start_rename(entry, window, cx)
         }));
         match &target {
-            Entry::Note(_) => menu.item(rename).item(
-                PopupMenuItem::new("Delete note")
-                    .on_click(action(|this, entry, _, cx| this.delete(entry, cx))),
-            ),
+            Entry::Note(slug) => {
+                // On a note of a multi-selection, delete acts on all of it.
+                let count = this
+                    .upgrade()
+                    .map_or(1, |explorer| explorer.read(cx).notes_for(slug).len());
+                let label = if count > 1 {
+                    format!("Delete {count} notes")
+                } else {
+                    "Delete note".to_string()
+                };
+                menu.item(rename)
+                    .item(
+                        PopupMenuItem::new(label).on_click(action(|this, entry, _, cx| {
+                            if let Entry::Note(slug) = entry {
+                                let slugs = this.notes_for(&slug);
+                                this.delete_notes(slugs, cx);
+                            }
+                        })),
+                    )
+            }
             Entry::Folder(path) => menu
                 .item(PopupMenuItem::new("New note here").on_click(action(
                     |this, entry, window, cx| {
@@ -592,7 +810,7 @@ impl Render for Explorer {
                     // Dropping on the empty space below the tree moves to
                     // the cave root; rows handle drops onto folders.
                     .on_drop(cx.listener(|this, dragged: &row::DraggedEntry, _, cx| {
-                        this.move_entry(dragged.entry.clone(), None, cx);
+                        this.move_entries(dragged.entries.clone(), None, cx);
                     }))
                     .child(body),
             )

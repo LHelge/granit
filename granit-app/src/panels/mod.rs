@@ -1,10 +1,11 @@
 //! The sidebar panels that browse the cave beside the explorer: full-text
-//! search, the todos of every note, the tags, the note templates, and the
-//! calendar of daily notes.
+//! search, the todos of every note, the tags, the favorite notes, the note
+//! templates, and the calendar of daily notes.
 //!
 //! The sidebar shows the calendar above a tab bar ([`SidebarTab`]) that
 //! switches between the explorer and the [`SearchPanel`], [`TodosPanel`],
-//! [`TagsPanel`] and [`TemplatesPanel`], as the Tauri app does. Each panel
+//! [`TagsPanel`], [`FavoritesPanel`] and [`TemplatesPanel`], as the Tauri
+//! app does. Each panel
 //! asks the workspace to open a note with [`PanelEvent::OpenNote`] (with the
 //! spot to reveal for a search or todo match), or a template with
 //! [`PanelEvent::OpenTemplate`]; the todos panel asks it to toggle a todo with
@@ -14,6 +15,7 @@
 //! panel stale and it reruns its query once shown again.
 
 pub mod calendar;
+pub mod favorites;
 pub mod search;
 pub mod tags;
 pub mod templates;
@@ -30,6 +32,7 @@ use crate::assets::AppIcon;
 use crate::note_view::Reveal;
 
 pub use calendar::CalendarPanel;
+pub use favorites::FavoritesPanel;
 pub use search::SearchPanel;
 pub use tags::TagsPanel;
 pub use templates::TemplatesPanel;
@@ -58,15 +61,17 @@ pub enum SidebarTab {
     Search,
     Todos,
     Tags,
+    Favorites,
     Templates,
 }
 
 impl SidebarTab {
-    pub const ALL: [SidebarTab; 5] = [
+    pub const ALL: [SidebarTab; 6] = [
         SidebarTab::Notes,
         SidebarTab::Search,
         SidebarTab::Todos,
         SidebarTab::Tags,
+        SidebarTab::Favorites,
         SidebarTab::Templates,
     ];
 
@@ -81,6 +86,7 @@ impl SidebarTab {
             SidebarTab::Search => "Search",
             SidebarTab::Todos => "Todos",
             SidebarTab::Tags => "Tags",
+            SidebarTab::Favorites => "Favorites",
             SidebarTab::Templates => "Templates",
         }
     }
@@ -91,6 +97,7 @@ impl SidebarTab {
             SidebarTab::Search => Icon::new(IconName::Search),
             SidebarTab::Todos => Icon::new(AppIcon::ListTodo),
             SidebarTab::Tags => Icon::new(AppIcon::Tag),
+            SidebarTab::Favorites => Icon::new(IconName::Star),
             SidebarTab::Templates => Icon::new(AppIcon::NotepadTextDashed),
         }
     }

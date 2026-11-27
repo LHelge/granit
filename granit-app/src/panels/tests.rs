@@ -1,12 +1,14 @@
 //! Headless window tests of the sidebar panels against a fixture cave:
-//! switching tabs, the todos (opening and toggling), the tags, the search
-//! and the calendar of daily notes.
+//! switching tabs, the todos (opening and toggling), the tags, the search,
+//! the calendar of daily notes, the templates and the favorites.
 
 use std::path::Path;
 
 use gpui::{AppContext as _, Context, Entity, EntityInputHandler as _, TestAppContext, Window};
 
-use super::{CalendarPanel, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel};
+use super::{
+    CalendarPanel, FavoritesPanel, SearchPanel, SidebarTab, TagsPanel, TemplatesPanel, TodosPanel,
+};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::host::Host;
 use crate::tests::App;
@@ -572,5 +574,57 @@ fn templates_are_created_renamed_opened_and_deleted(cx: &mut TestAppContext) {
         cx.read_entity(&panel, |panel, _| panel.slugs()),
         ["meeting"]
     );
+    app.draw(cx);
+}
+
+fn favorites(app: &App, cx: &mut TestAppContext) -> Entity<FavoritesPanel> {
+    cx.read_entity(&app.workspace, |workspace, _| workspace.favorites().clone())
+}
+
+#[gpui::test]
+fn favorites_list_the_starred_notes_and_open_them(cx: &mut TestAppContext) {
+    let dir = panel_cave();
+    std::fs::write(
+        dir.path().join("sub/b.md"),
+        "---\nfavorite: true\n---\n# B\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("star.md"),
+        "---\nfavorite: true\n---\n# Star\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("plain.md"), "---\nfavorite: false\n---\n").unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    show(&app, SidebarTab::Favorites, cx);
+    app.draw(cx);
+    let panel = favorites(&app, cx);
+    let slugs = |cx: &mut TestAppContext| cx.read_entity(&panel, |panel, _| panel.slugs());
+    assert_eq!(slugs(cx), ["b", "star"]);
+
+    // A click opens the note, which the list then shows as open.
+    update(&app, &panel, cx, |panel, _, cx| {
+        panel.open("star".into(), cx)
+    });
+    assert_eq!(app.active_note(cx).as_deref(), Some("star"));
+    let active = cx.read_entity(&panel, |panel, _| panel.active().map(str::to_string));
+    assert_eq!(active.as_deref(), Some("star"));
+    app.draw(cx);
+
+    // A note starred by a save shows up; one unstarred leaves.
+    std::fs::write(dir.path().join("a.md"), "---\nfavorite: true\n---\n# A\n").unwrap();
+    std::fs::write(dir.path().join("star.md"), "# Star\n").unwrap();
+    cx.update(|cx| CaveEvents::emit(CaveEvent::NotesChanged, cx));
+    cx.run_until_parked();
+    assert_eq!(slugs(cx), ["a", "b"]);
+
+    // While hidden the list is not reread; it catches up once shown.
+    show(&app, SidebarTab::Notes, cx);
+    std::fs::write(dir.path().join("plain.md"), "---\nfavorite: true\n---\n").unwrap();
+    cx.update(|cx| CaveEvents::emit(CaveEvent::NotesChanged, cx));
+    cx.run_until_parked();
+    assert_eq!(slugs(cx), ["a", "b"]);
+    show(&app, SidebarTab::Favorites, cx);
+    assert_eq!(slugs(cx), ["a", "b", "plain"]);
     app.draw(cx);
 }
