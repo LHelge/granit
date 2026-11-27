@@ -62,6 +62,46 @@ fn reading_minutes(word_count: usize) -> usize {
     word_count.div_ceil(200)
 }
 
+/// A frontmatter timestamp as the reader shows it: local time,
+/// `YYYY-MM-DD HH:MM:SS`.
+fn display_timestamp(at: chrono::DateTime<Utc>) -> String {
+    at.with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string()
+}
+
+/// What the reader shows under a document's title besides its tags: the
+/// dates from its frontmatter, its word count and reading time.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DocumentStats {
+    /// `created_at` in local time (`2026-03-27 14:05:00`), if present.
+    pub created_display: Option<String>,
+    /// `modified_at` in local time, if present.
+    pub modified_display: Option<String>,
+    /// Words in the plain-text body ([`Markdown::word_count`]).
+    pub word_count: usize,
+    /// Estimated reading time in whole minutes (~200 wpm, rounded up).
+    pub reading_minutes: usize,
+}
+
+impl Markdown<'_> {
+    /// The dates, word count and reading time of this document.
+    pub fn stats(&self) -> DocumentStats {
+        let frontmatter = self.frontmatter();
+        let word_count = self.word_count();
+        DocumentStats {
+            created_display: frontmatter
+                .and_then(|f| f.created_at)
+                .map(display_timestamp),
+            modified_display: frontmatter
+                .and_then(|f| f.modified_at)
+                .map(display_timestamp),
+            word_count,
+            reading_minutes: reading_minutes(word_count),
+        }
+    }
+}
+
 impl Markdown<'_> {
     /// Source line numbers (1-based, counted in the full raw document
     /// including frontmatter) of each rendered task-list checkbox, in
@@ -112,24 +152,17 @@ impl<'a> Markdown<'a> {
             self.image_base.as_deref(),
             true,
         );
-        let fmt = |d: chrono::DateTime<Utc>| {
-            d.with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        };
-        let created_display = frontmatter.as_ref().and_then(|f| f.created_at).map(fmt);
-        let modified_display = frontmatter.as_ref().and_then(|f| f.modified_at).map(fmt);
-        let word_count = self.word_count();
+        let stats = self.stats();
         RenderedDocument {
             title: title.to_string(),
             html,
             frontmatter,
             outgoing_links,
             backlinks: Vec::new(),
-            created_display,
-            modified_display,
-            word_count,
-            reading_minutes: reading_minutes(word_count),
+            created_display: stats.created_display,
+            modified_display: stats.modified_display,
+            word_count: stats.word_count,
+            reading_minutes: stats.reading_minutes,
         }
     }
 

@@ -32,8 +32,8 @@ pub enum CaveEvent {
     /// These notes no longer exist (a deleted note, or every note of a
     /// deleted folder). Implies `NotesChanged`.
     NotesRemoved(Vec<String>),
-    /// A note template was created. (Saving a template's body announces
-    /// nothing: no other view shows it.)
+    /// A note template was created, or its icon or tags changed. (Saving a
+    /// template's body announces nothing: no other view shows it.)
     TemplatesChanged,
     /// The note template `from` is now called `to`.
     TemplateRenamed { from: String, to: String },

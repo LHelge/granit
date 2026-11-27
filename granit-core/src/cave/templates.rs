@@ -220,6 +220,43 @@ impl Cave {
         Ok(meta)
     }
 
+    /// Apply one header edit (a tag or the icon) to the template `slug`,
+    /// keeping its body as it is on disk. Templates have no favorite flag,
+    /// so [`super::HeaderEdit::Favorite`] changes nothing; an edit that
+    /// changes nothing writes nothing.
+    pub fn edit_template_header(
+        &self,
+        slug: &str,
+        edit: super::HeaderEdit,
+    ) -> Result<DocumentMeta, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .templates
+            .get(slug)
+            .ok_or_else(|| CaveError::TemplateNotFound(slug.to_string()))?;
+        let raw = std::fs::read_to_string(abs_path)?;
+        let md = crate::markdown::Markdown::new(&raw);
+        let changes = match edit {
+            super::HeaderEdit::Favorite(_) => None,
+            edit => edit.changes(&md),
+        }
+        .unwrap_or_default();
+        let updated = crate::markdown::Markdown::rebuild(
+            &raw,
+            md.body(),
+            changes.tags,
+            changes.icon,
+            None,
+            None,
+        );
+        if updated != raw {
+            write_atomic(abs_path, updated.as_str())?;
+        }
+        let mut meta = template_meta_from_path(abs_path);
+        meta.icon = crate::markdown::Markdown::new(&updated).icon();
+        Ok(meta)
+    }
+
     // ── Template rendering helpers ─────────────────────────────────
 
     pub fn read_template_body(&self, slug: &str) -> Result<String, CaveError> {

@@ -164,3 +164,38 @@ pub fn resolve_note_icon(id: &str) -> &'static IconData {
         .map(|e| e.icon)
         .unwrap_or(icondata_lu::LuFileText)
 }
+
+/// The icons of [`NOTE_ICONS`] matching a picker search, in catalog order:
+/// those whose id, label or tags contain `query`, ignoring case and the
+/// surrounding whitespace. A blank query matches every icon.
+pub fn search_note_icons(query: &str) -> Vec<&'static NoteIconEntry> {
+    let query = query.trim().to_lowercase();
+    NOTE_ICONS
+        .iter()
+        .filter(|entry| {
+            query.is_empty()
+                || entry.id.to_lowercase().contains(&query)
+                || entry.label.to_lowercase().contains(&query)
+                || entry.tags.contains(&query)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_blank_search_lists_every_icon() {
+        assert_eq!(search_note_icons("  ").len(), NOTE_ICONS.len());
+    }
+
+    #[test]
+    fn search_matches_id_label_and_tags_ignoring_case() {
+        let ids = |query| -> Vec<&str> { search_note_icons(query).iter().map(|e| e.id).collect() };
+        assert!(ids("ALARM").contains(&"AlarmClock"), "by id");
+        assert!(ids("alarm clock").contains(&"AlarmClock"), "by label");
+        assert!(ids("reminder").contains(&"AlarmClock"), "by tag");
+        assert!(ids("no-such-icon-anywhere").is_empty());
+    }
+}

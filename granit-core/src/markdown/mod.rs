@@ -6,7 +6,7 @@ mod render;
 
 pub use frontmatter::split_frontmatter;
 pub use links::{AnchorHeading, LinkSpans, WikiLinkSpan};
-pub use render::cave_image_path;
+pub use render::{cave_image_path, DocumentStats};
 
 use std::cell::OnceCell;
 

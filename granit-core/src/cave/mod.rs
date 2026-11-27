@@ -1,6 +1,7 @@
 mod agent_docs;
 mod error;
 mod folders;
+mod header;
 mod helpers;
 mod notes;
 mod presentations;
@@ -11,6 +12,7 @@ mod todos;
 
 pub use error::CaveError;
 use granit_types::AppConfig;
+pub use header::{normalize_tag, DocumentHeader, HeaderEdit};
 pub use helpers::write_atomic;
 use helpers::{ensure_md_extension, validate_folder_path};
 pub use helpers::{Document, DocumentMeta, RenderedDocument};

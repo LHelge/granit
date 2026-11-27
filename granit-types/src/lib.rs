@@ -18,6 +18,6 @@ pub use config::{AppConfig, FontConfig, SidebarConfig, ThemeChoice};
 pub use document::{
     ContentMatch, Document, DocumentMeta, Frontmatter, RenderedDocument, TagMap, TodoItem, TodoList,
 };
-pub use icons::{resolve_note_icon, NoteIconEntry, NOTE_ICONS};
+pub use icons::{resolve_note_icon, search_note_icons, NoteIconEntry, NOTE_ICONS};
 pub use metadata::AppMetadata;
 pub use update::{ReleaseNotes, UpdateCheckStatus};

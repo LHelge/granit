@@ -9,6 +9,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseUpEvent, Pixels, PlatformInput, Point, TestAppContext,
     VisualTestContext, Window,
 };
+use granit_core::cave::{DocumentHeader, HeaderEdit};
 use granit_core::markdown::Markdown;
 use zorite_editor::EditorState;
 
@@ -1172,4 +1173,351 @@ fn a_broken_link_in_a_template_creates_no_note(cx: &mut TestAppContext) {
     // A link to an existing note still opens it.
     update_view(&app, cx, |view, _, cx| view.navigate_to_link("b", cx));
     assert_eq!(app.active_note(cx).as_deref(), Some("b"));
+}
+
+// ── Header ──────────────────────────────────────────────────────────────
+
+fn header(app: &App, cx: &mut TestAppContext) -> DocumentHeader {
+    let view = view(app, cx);
+    cx.read_entity(&view, |view, _| view.header_info().cloned())
+        .expect("the header is loaded")
+}
+
+fn header_tags(app: &App, cx: &mut TestAppContext) -> Vec<String> {
+    header(app, cx).tags
+}
+
+/// The explorer's (icon path, favorite) of the note `slug`.
+fn explorer_decoration(app: &App, slug: &str, cx: &mut TestAppContext) -> (String, bool) {
+    let explorer = app.explorer(cx);
+    let decorations = cx.read_entity(&explorer, |explorer, cx| explorer.note_decorations(cx));
+    let (_, decoration) = decorations
+        .into_iter()
+        .find(|(shown, _)| shown == slug)
+        .expect("the note is shown");
+    (decoration.icon.to_string(), decoration.favorite)
+}
+
+#[gpui::test]
+fn the_favorite_star_changes_only_favorite_and_keeps_typed_text(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    app.draw(cx);
+    assert!(header(&app, cx).favorite);
+    type_at_end(&app, "typed", cx);
+
+    update_view(&app, cx, |view, _, cx| view.toggle_favorite(cx));
+
+    let raw = read(dir.path(), "a.md");
+    assert!(
+        raw.starts_with("---\nicon: Star\nfavorite: false\n"),
+        "only the favorite key changed: {raw}"
+    );
+    assert!(raw.contains("\nmodified_at: "), "{raw}");
+    assert!(
+        raw.ends_with("---\n# A\n\nAlpha links [[b]].\ntyped"),
+        "the typed text was written first: {raw}"
+    );
+    assert_eq!(text(&app, cx), "# A\n\nAlpha links [[b]].\ntyped");
+    assert!(!header(&app, cx).favorite);
+    assert_eq!(
+        explorer_decoration(&app, "a", cx),
+        ("note-icons/Star.svg".into(), false)
+    );
+
+    update_view(&app, cx, |view, _, cx| view.toggle_favorite(cx));
+    assert!(read(dir.path(), "a.md").starts_with("---\nicon: Star\nfavorite: true\n"));
+    assert!(header(&app, cx).favorite);
+    assert!(
+        explorer_decoration(&app, "a", cx).1,
+        "the explorer star is back"
+    );
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn a_header_edit_whose_typed_text_cannot_be_saved_changes_nothing(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "b", cx);
+    type_at_end(&app, "z", cx);
+    std::fs::remove_dir_all(dir.path().join("sub")).unwrap();
+    std::fs::write(dir.path().join("sub"), "").unwrap();
+
+    update_view(&app, cx, |view, _, cx| view.toggle_favorite(cx));
+
+    let view = view(&app, cx);
+    let error = cx.read_entity(&view, |view, _| view.header_error().cloned());
+    assert!(
+        error.is_some_and(|error| error.contains("could not be saved")),
+        "the refusal is shown"
+    );
+    assert_eq!(text(&app, cx), "# B\nz", "the typed text is kept");
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn the_icon_picker_searches_sets_and_removes_the_icon(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    update_view(&app, cx, |view, window, cx| {
+        view.open_icon_picker(window, cx)
+    });
+    app.draw(cx);
+
+    let shown = update_view(&app, cx, |view, window, cx| {
+        view.search_icons("ALARM", window, cx)
+    })
+    .expect("the picker is open");
+    assert!(shown.contains(&"AlarmClock"), "{shown:?}");
+    assert!(shown.len() < granit_types::NOTE_ICONS.len());
+    app.draw(cx);
+
+    update_view(&app, cx, |view, _, cx| {
+        view.choose_icon(Some("AlarmClock".into()), cx)
+    });
+    let view = view(&app, cx);
+    assert!(!cx.read_entity(&view, |view, _| view.icon_picker_open()));
+    assert!(
+        read(dir.path(), "a.md").starts_with("---\nicon: AlarmClock\nfavorite: true\n"),
+        "only the icon key changed"
+    );
+    assert_eq!(header(&app, cx).icon.as_deref(), Some("AlarmClock"));
+    assert_eq!(
+        explorer_decoration(&app, "a", cx),
+        ("note-icons/AlarmClock.svg".into(), true)
+    );
+
+    update_view(&app, cx, |view, _, cx| view.choose_icon(None, cx));
+    let raw = read(dir.path(), "a.md");
+    assert!(raw.starts_with("---\nfavorite: true\n"), "{raw}");
+    assert!(!raw.contains("icon:"), "{raw}");
+    assert_eq!(header(&app, cx).icon, None);
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn clicking_the_icon_button_opens_the_picker_and_outside_closes_it(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+    app.draw(cx);
+    let view = view(&app, cx);
+
+    let mut vcx = VisualTestContext::from_window(app.window, cx);
+    let trigger = vcx
+        .debug_bounds("note-icon-trigger")
+        .expect("the icon button is drawn");
+    assert!(vcx.debug_bounds("note-icon-grid").is_none());
+    vcx.simulate_click(trigger.center(), Modifiers::none());
+    vcx.run_until_parked();
+    let _ = vcx.update(|window, cx| window.draw(cx));
+    let _ = vcx.update(|window, cx| window.draw(cx));
+
+    assert!(
+        vcx.read_entity(&view, |view, _| view.icon_picker_open()),
+        "the trigger opened the picker"
+    );
+    assert!(
+        vcx.debug_bounds("note-icon-grid").is_some(),
+        "the icon grid is shown"
+    );
+
+    // A press outside the popover dismisses it, and the view follows.
+    let far = trigger.center() + point(px(400.), px(400.));
+    vcx.simulate_click(far, Modifiers::none());
+    vcx.run_until_parked();
+    let _ = vcx.update(|window, cx| window.draw(cx));
+    assert!(!vcx.read_entity(&view, |view, _| view.icon_picker_open()));
+    assert!(vcx.debug_bounds("note-icon-grid").is_none());
+}
+
+#[gpui::test]
+fn tags_are_added_on_enter_or_a_comma_and_removed_from_their_pill(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "a", cx);
+
+    update_view(&app, cx, |view, window, cx| {
+        view.type_tag("Work, pla", false, window, cx)
+    });
+    assert_eq!(header_tags(&app, cx), vec!["work"]);
+    let view = view(&app, cx);
+    assert_eq!(
+        cx.read_entity(&view, |view, cx| view.tag_input_text(cx)),
+        "pla"
+    );
+
+    update_view(&app, cx, |view, window, cx| {
+        view.type_tag("Plan", true, window, cx)
+    });
+    // A tag already there is not added twice.
+    update_view(&app, cx, |view, window, cx| {
+        view.type_tag(" WORK ", true, window, cx)
+    });
+    assert_eq!(header_tags(&app, cx), vec!["work", "plan"]);
+    assert_eq!(
+        cx.read_entity(&view, |view, cx| view.tag_input_text(cx)),
+        ""
+    );
+    let raw = read(dir.path(), "a.md");
+    assert!(
+        raw.starts_with("---\nicon: Star\nfavorite: true\n"),
+        "the other keys are untouched: {raw}"
+    );
+    assert!(raw.ends_with("---\n# A\n\nAlpha links [[b]].\n"), "{raw}");
+    app.draw(cx);
+
+    update_view(&app, cx, |view, _, cx| {
+        view.edit_header(HeaderEdit::RemoveTag("work".into()), cx)
+    });
+    assert_eq!(header_tags(&app, cx), vec!["plan"]);
+    let tags = cx
+        .update(|cx| Host::core(cx).with_cave(|cave| cave.list_tags()))
+        .unwrap();
+    assert!(tags.tags.contains_key("plan") && !tags.tags.contains_key("work"));
+}
+
+#[gpui::test]
+fn the_header_shows_dates_word_count_and_reading_time(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    std::fs::write(
+        dir.path().join("dated.md"),
+        "---\ncreated_at: 2026-01-02T03:04:05Z\nmodified_at: 2026-01-03T03:04:05Z\n---\none two three\n",
+    )
+    .unwrap();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "dated", cx);
+    app.draw(cx);
+
+    let shown = header(&app, cx).stats;
+    let expected = cx.update(|cx| {
+        Host::core(cx)
+            .with_cave(|cave| Ok(Markdown::new(&cave.read_note_raw("dated")?).stats()))
+            .unwrap()
+    });
+    assert_eq!(shown, expected, "the core's dates and counts");
+    assert!(shown.created_display.is_some() && shown.modified_display.is_some());
+    assert_eq!((shown.word_count, shown.reading_minutes), (3, 1));
+
+    // A save updates the count and the modified date.
+    type_at_end(&app, "four", cx);
+    flush(&app, cx);
+    let saved = header(&app, cx).stats;
+    assert_eq!(saved.word_count, 4);
+    assert_ne!(saved.modified_display, shown.modified_display);
+    assert_eq!(saved.created_display, shown.created_display);
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn editing_the_title_renames_the_note_and_keeps_typed_text(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "b", cx);
+    type_at_end(&app, "!", cx);
+
+    // Escape (cancel) and a blank title rename nothing.
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx)
+    });
+    app.draw(cx);
+    update_view(&app, cx, |view, _, cx| view.cancel_title_edit(cx));
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx);
+        view.type_title("  ", window, cx);
+        view.commit_title(cx);
+    });
+    assert_eq!(app.active_note(cx).as_deref(), Some("b"));
+
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx);
+        view.type_title("renamed", window, cx);
+        view.commit_title(cx);
+    });
+
+    assert_eq!(app.active_note(cx).as_deref(), Some("renamed"));
+    assert!(!dir.path().join("sub/b.md").exists());
+    assert_eq!(text(&app, cx), "# B\n!", "the typed text follows the note");
+    assert!(
+        read(dir.path(), "a.md").contains("[[renamed]]"),
+        "links follow"
+    );
+    flush(&app, cx);
+    assert_eq!(read(dir.path(), "sub/renamed.md"), "# B\n!");
+
+    // A taken name is refused and shown.
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx);
+        view.type_title("a", window, cx);
+        view.commit_title(cx);
+    });
+    assert_eq!(app.active_note(cx).as_deref(), Some("renamed"));
+    let view = view(&app, cx);
+    assert!(cx.read_entity(&view, |view, _| view.header_error().is_some()));
+    app.draw(cx);
+}
+
+#[gpui::test]
+fn the_backlinks_section_lists_and_opens_the_linking_notes(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open(&app, "b", cx);
+    let backlinks: Vec<String> = header(&app, cx)
+        .backlinks
+        .into_iter()
+        .map(|meta| meta.slug)
+        .collect();
+    assert_eq!(backlinks, vec!["a"]);
+    update_view(&app, cx, |view, _, cx| view.toggle_backlinks(cx));
+    app.draw(cx);
+
+    update_view(&app, cx, |view, _, cx| view.open_backlink("a".into(), cx));
+    assert_eq!(app.active_note(cx).as_deref(), Some("a"));
+    assert!(header(&app, cx).backlinks.is_empty());
+}
+
+#[gpui::test]
+fn a_template_header_edits_icon_tags_and_name(cx: &mut TestAppContext) {
+    let dir = template_cave();
+    let app = App::with_cave(dir.path(), cx);
+    open_template(&app, "day", cx);
+    app.draw(cx);
+    let shown = header(&app, cx);
+    assert_eq!(shown.icon.as_deref(), Some("Star"));
+    assert_eq!(shown.tags, vec!["day"]);
+    assert!(!shown.favorite && shown.backlinks.is_empty());
+    type_at_end(&app, "x", cx);
+
+    update_view(&app, cx, |view, _, cx| {
+        view.choose_icon(Some("Zap".into()), cx)
+    });
+    update_view(&app, cx, |view, window, cx| {
+        view.type_tag("Daily", true, window, cx)
+    });
+
+    let raw = read(dir.path(), ".granit/templates/day.md");
+    assert!(
+        raw.starts_with("---\nicon: Zap\n# keep me\ntags: [day, daily]\n"),
+        "only the touched keys changed: {raw}"
+    );
+    assert!(raw.ends_with(&format!("---\n{TEMPLATE_BODY}x")), "{raw}");
+    assert_eq!(read(dir.path(), "day.md"), "# The note\n");
+    let listed = cx.update(|cx| cave_ops::list_templates(cx)).unwrap();
+    assert_eq!(listed[0].icon.as_deref(), Some("Zap"), "the panel's icon");
+
+    update_view(&app, cx, |view, window, cx| {
+        view.start_title_edit(window, cx);
+        view.type_title("week", window, cx);
+        view.commit_title(cx);
+    });
+    let shown = cx.read_entity(&app.workspace, |workspace, cx| {
+        workspace.open_template_slug(cx)
+    });
+    assert_eq!(shown.as_deref(), Some("week"));
+    assert!(dir.path().join(".granit/templates/week.md").exists());
+    assert_eq!(text(&app, cx), format!("{TEMPLATE_BODY}x"));
+    app.draw(cx);
 }

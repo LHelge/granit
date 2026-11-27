@@ -206,6 +206,28 @@ impl Cave {
         })
     }
 
+    /// Apply one header edit (a tag, the icon or the favorite flag) to the
+    /// note `slug`, keeping its body as it is on disk. Only the edited key
+    /// (and `modified_at`) is rewritten; an edit that changes nothing writes
+    /// nothing.
+    pub fn edit_note_header(
+        &self,
+        slug: &str,
+        edit: super::HeaderEdit,
+    ) -> Result<DocumentMeta, CaveError> {
+        self.rewrite_note(slug, |raw| {
+            let md = crate::markdown::Markdown::new(raw);
+            let changes = edit.changes(&md).unwrap_or_default();
+            Ok(NoteRewrite {
+                body: md.body().to_string(),
+                tags: changes.tags,
+                icon: changes.icon,
+                favorite: changes.favorite,
+                presentation: None,
+            })
+        })
+    }
+
     /// Replace `old_text` with `new_text` in an existing note (looked up by slug).
     /// Fails if `old_text` is not found in the note's content.
     pub fn edit_note(

@@ -1,10 +1,10 @@
 ---
 id: zem.7j
 title: "Note header: favorite, icon, tags, dates and rename"
-status: open
+status: done
 priority: P2
 created: "2026-11-27T02:06:51.011878071Z"
-updated: "2026-11-27T02:06:51.011878071Z"
+updated: "2026-11-27T05:41:37.429548127Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - editor
 depends_on:
   - zem.4k
+attempts: 1
 ---
 
 ## Summary

@@ -17,13 +17,15 @@
 //! act on stale rows after loading a shorter note. One [`CodeHighlighter`]
 //! and one [`ImageCache`] are shared by all of them.
 //!
-//! Submodules: [`save`] (save bookkeeping), [`wiki_links`] (link parsing and
-//! completion ranking), [`links`] (navigation and the `[[` popup), [`find`]
-//! (the find bar), [`images`], [`style`] and [`commands`] (link and task
-//! shortcuts).
+//! Submodules: [`header`] (icon, favorite, title, tags, dates and
+//! backlinks above the editor), [`save`] (save bookkeeping), [`wiki_links`]
+//! (link parsing and completion ranking), [`links`] (navigation and the
+//! `[[` popup), [`find`] (the find bar), [`images`], [`style`] and
+//! [`commands`] (link and task shortcuts).
 
 mod commands;
 mod find;
+mod header;
 mod images;
 mod links;
 mod save;
@@ -37,10 +39,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AnyWindowHandle, App, AppContext as _, Context, Entity,
-    EventEmitter, Focusable, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement as _, Styled, Subscription, Task, Window,
+    div, px, AnyWindowHandle, App, AppContext as _, Context, Entity, EventEmitter, Focusable,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels,
+    Point, Render, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled,
+    Subscription, Task, Window,
 };
 use gpui_kit::component::{ActiveTheme, Theme};
 use log::warn;
@@ -54,8 +56,10 @@ use find::FindBar;
 use granit_core::markdown::Markdown;
 use images::{ImageBase, ImageCache};
 use links::LinkCompletion;
+#[cfg(test)]
+use save::SaveStatus;
 pub use save::{DocKind, FlushOutcome, AUTOSAVE_DELAY};
-use save::{NoteSession, SaveSnapshot, SaveStatus};
+use save::{NoteSession, SaveSnapshot};
 use style::CodeHighlighter;
 use wiki_links::{LinkIndex, SpanCache};
 
@@ -252,6 +256,7 @@ pub struct NoteView {
     /// construct a link click came from.
     last_press: Option<Point<Pixels>>,
     find: Option<FindBar>,
+    header: header::Header,
     /// The font the editor area was last drawn with, for tests.
     #[cfg(test)]
     drawn_font: std::cell::Cell<Option<(SharedString, Pixels)>>,
@@ -293,6 +298,7 @@ impl NoteView {
                 }
             }),
         ];
+        let header = header::Header::new(window, cx);
         Self {
             window: window.window_handle(),
             note: Note::Empty,
@@ -314,6 +320,7 @@ impl NoteView {
             dismissed_link: None,
             last_press: None,
             find: None,
+            header,
             #[cfg(test)]
             drawn_font: Default::default(),
             _subscriptions: subscriptions,
@@ -455,6 +462,8 @@ impl NoteView {
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.refresh_links(cx);
         self.follow_note_dir(cx);
+        // Frontmatter, dates and backlinks may have changed either way.
+        self.refresh_header(cx);
         let Note::Loaded(loaded) = &self.note else {
             return;
         };
@@ -496,8 +505,11 @@ impl NoteView {
             return FlushOutcome::Unchanged;
         };
         let outcome = loaded.session.finish(&snapshot, result);
-        if let FlushOutcome::Failed(err) = &outcome {
-            warn!("Could not save {}: {err}", snapshot.slug);
+        match &outcome {
+            FlushOutcome::Failed(err) => warn!("Could not save {}: {err}", snapshot.slug),
+            // The modified date and word count follow the save.
+            FlushOutcome::Saved => self.refresh_header(cx),
+            FlushOutcome::Unchanged => {}
         }
         cx.notify();
         outcome
@@ -577,6 +589,8 @@ impl NoteView {
             },
         };
         self.refresh_links(cx);
+        self.header.reset();
+        self.refresh_header(cx);
         if matches!(self.note, Note::Loaded(_)) {
             let generation = self.load_generation;
             let window = self.window;
@@ -632,6 +646,7 @@ impl NoteView {
         });
         let restored = editor.update(cx, |editor, cx| load_text(editor, &body, cx));
         self.undo_floor = restored.then_some(body);
+        self.header.clear_tag_input(window, cx);
         self.editor_subscriptions = vec![
             cx.subscribe_in(&editor, window, Self::on_editor_event),
             cx.on_blur(&editor.read(cx).focus_handle(cx), window, |this, _, cx| {
@@ -846,47 +861,6 @@ impl NoteView {
     /// popup follows the caret box.
     fn after_paint(&mut self, cx: &mut Context<Self>) {
         cx.notify();
-    }
-
-    /// Title bar above the editor: the note's slug and its save state.
-    fn render_header(&self, session: &NoteSession, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let (label, color): (SharedString, _) = match session.status() {
-            SaveStatus::Clean => ("".into(), theme.muted_foreground),
-            SaveStatus::Edited => ("Edited".into(), theme.muted_foreground),
-            SaveStatus::Failed(err) => (format!("Save failed: {err}").into(), theme.danger),
-        };
-        div()
-            .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_3()
-            .px_6()
-            .py_2()
-            .border_b_1()
-            .border_color(theme.border)
-            .when(session.kind() == DocKind::Template, |header| {
-                header.child(
-                    div()
-                        .flex_none()
-                        .px_2()
-                        .rounded(px(4.))
-                        .text_xs()
-                        .bg(theme.muted)
-                        .text_color(theme.muted_foreground)
-                        .child("Template"),
-                )
-            })
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(SharedString::from(session.slug().to_string())),
-            )
-            .child(div().flex_none().text_sm().text_color(color).child(label))
     }
 
     fn render_editor_area(&self, editor: Entity<EditorState>, cx: &mut Context<Self>) -> gpui::Div {

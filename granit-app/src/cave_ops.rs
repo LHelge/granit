@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use gpui::{App, AppContext as _, Task};
-use granit_core::cave::{CaveError, Document, DocumentMeta};
+use granit_core::cave::{CaveError, Document, DocumentHeader, DocumentMeta, HeaderEdit};
 use granit_core::open::{prepare_cave, sync_vector_index};
 use granit_types::TodoItem;
 use log::warn;
@@ -126,6 +126,45 @@ pub fn save_note(slug: &str, body: &str, cx: &mut App) -> Result<DocumentMeta, C
     let meta = Host::core(cx).with_cave(|cave| cave.save_note(slug, body))?;
     schedule_index_update(meta.slug.clone(), cx);
     CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    Ok(meta)
+}
+
+/// What the header of the note `slug` shows: its tags, icon and favorite
+/// flag, dates, word count, reading time and backlinks.
+pub fn note_header(slug: &str, cx: &App) -> Result<DocumentHeader, CaveError> {
+    Host::core(cx).with_cave(|cave| cave.note_header(slug))
+}
+
+/// What the header of the template `slug` shows (no favorite, no backlinks).
+pub fn template_header(slug: &str, cx: &App) -> Result<DocumentHeader, CaveError> {
+    Host::core(cx).with_cave(|cave| cave.template_header(slug))
+}
+
+/// Apply a header edit (a tag, the icon or the favorite flag) to the note
+/// `slug`. Only that frontmatter key (and `modified_at`) changes, and the
+/// body on disk is kept: write the editor's pending edits first. Announces
+/// [`CaveEvent::NotesChanged`], so the explorer redraws the icon and star.
+pub fn edit_note_header(
+    slug: &str,
+    edit: HeaderEdit,
+    cx: &mut App,
+) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.edit_note_header(slug, edit))?;
+    schedule_index_update(meta.slug.clone(), cx);
+    CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    Ok(meta)
+}
+
+/// Apply a header edit (a tag or the icon) to the template `slug`, keeping
+/// its body on disk. Announces [`CaveEvent::TemplatesChanged`], so the
+/// templates panel redraws the icon.
+pub fn edit_template_header(
+    slug: &str,
+    edit: HeaderEdit,
+    cx: &mut App,
+) -> Result<DocumentMeta, CaveError> {
+    let meta = Host::core(cx).with_cave(|cave| cave.edit_template_header(slug, edit))?;
+    CaveEvents::emit(CaveEvent::TemplatesChanged, cx);
     Ok(meta)
 }
 
