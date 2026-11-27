@@ -71,7 +71,7 @@ jobs:
         run: cargo clippy -p granit-ui --target wasm32-unknown-unknown -- -D warnings
 
       - name: Run tests
-        run: cargo test -p granit -p granit-core -p granit-app
+        run: cargo test -p granit -p granit-core -p granit-app -p granit-types
 
       # The rustwasm.github.io installer serves a stale version (the project
       # moved to the drager org); install-action tracks the latest release.

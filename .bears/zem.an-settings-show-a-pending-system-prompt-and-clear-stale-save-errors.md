@@ -1,10 +1,10 @@
 ---
 id: zem.an
 title: "Settings: show a pending system prompt and clear stale save errors"
-status: open
+status: done
 priority: P3
 created: "2026-11-27T06:10:39.694883485Z"
-updated: "2026-11-27T06:10:39.694883485Z"
+updated: "2026-11-27T06:58:58.701413943Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - settings
 depends_on:
   - zem.dz
+attempts: 1
 ---
 
 ## Summary

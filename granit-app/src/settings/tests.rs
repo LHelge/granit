@@ -391,12 +391,51 @@ fn a_system_prompt_that_cannot_be_written_outlives_the_settings(cx: &mut TestApp
     assert!(failure.is_some_and(|message| message.contains("settings could not be saved")));
     assert_eq!(agent_generation(cx), generation);
 
+    // Reopened settings show the pending prompt, not the file, and say it
+    // is not saved; closing them untouched keeps it pending.
+    let shown_prompt = |cx: &mut TestAppContext| {
+        let view = open_settings(&app, 2, cx);
+        let prompt = cx.read_entity(&view, |view, _| view.prompt().clone());
+        let text = cx.read_entity(&prompt, |prompt, _| prompt.value().to_string());
+        let error = cx.read_entity(&view, |view, _| view.error().is_some());
+        (prompt, text, error)
+    };
+    let close_settings = |cx: &mut TestAppContext| {
+        cx.update_window(app.window, |_, window, cx| {
+            app.workspace
+                .update(cx, |workspace, cx| workspace.toggle_settings(window, cx))
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    let (_, text, error) = shown_prompt(cx);
+    assert_eq!(text, "Be brief.");
+    assert!(error, "the failed write is shown again");
+    close_settings(cx);
+    assert!(cx.update(|cx| config_ops::has_unsaved(cx)));
+
+    // Editing the shown prompt replaces the pending one.
+    let (prompt, text, _) = shown_prompt(cx);
+    assert_eq!(text, "Be brief.", "still pending after an untouched close");
+    cx.update_window(app.window, |_, window, cx| {
+        prompt.update(cx, |prompt, cx| {
+            prompt.replace_all("Be briefer.", window, cx)
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    close_settings(cx);
+    assert_eq!(std::fs::read_to_string(&prompt_path).unwrap(), original);
+
     // Once it can be, the switch writes it (resetting the agent) and opens.
     drop(read_only);
     app.update_workspace(cx, |workspace, cx| {
         workspace.open_cave(other.path().to_path_buf(), cx)
     });
-    assert_eq!(std::fs::read_to_string(&prompt_path).unwrap(), "Be brief.");
+    assert_eq!(
+        std::fs::read_to_string(&prompt_path).unwrap(),
+        "Be briefer."
+    );
     assert_eq!(
         cx.update(|cx| Host::cave_path(cx)),
         Some(other.path().to_path_buf())
@@ -431,6 +470,30 @@ fn a_successful_write_keeps_a_pending_failure_shown(cx: &mut TestAppContext) {
     assert!(
         cx.read_entity(&view, |view, _| view.error().is_some()),
         "the unsaved name is still reported"
+    );
+}
+
+#[cfg(unix)]
+#[gpui::test]
+fn a_successful_deferred_save_clears_a_stale_error(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    let view = open_settings(&app, 3, cx);
+    let name = probe::input("provider-0-name").expect("the name field is drawn");
+
+    let read_only = ReadOnlyConfig::new(&dir);
+    type_into(&app, &name, &["Box"], cx);
+    pause(cx);
+    assert!(cx.read_entity(&view, |view, _| view.error().is_some()));
+
+    // Writable again: the next typing pause saves, and the error goes.
+    drop(read_only);
+    type_into(&app, &name, &["Boxes"], cx);
+    pause(cx);
+    assert!(saved_config(&dir).contains("name: Boxes"));
+    assert!(
+        cx.read_entity(&view, |view, _| view.error().is_none()),
+        "the stale error is cleared"
     );
 }
 
@@ -618,4 +681,60 @@ fn picking_a_font_saves_it_and_follows_the_config(cx: &mut TestAppContext) {
     });
     app.draw(cx);
     assert_eq!(selected(cx).as_deref(), Some("serif"));
+}
+
+#[gpui::test]
+fn a_chat_pick_commits_a_pending_field_edit_first(cx: &mut TestAppContext) {
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let dir = fixture_cave();
+    let _app = App::with_cave(dir.path(), cx);
+    let agent_events = Rc::new(Cell::new(0));
+    let _subscription = cx.update(|cx| {
+        let agent_events = agent_events.clone();
+        cx.subscribe(
+            &config_ops::ConfigEvents::entity(cx),
+            move |_, event: &config_ops::ConfigEvent, _| {
+                if event.agent {
+                    agent_events.set(agent_events.get() + 1);
+                }
+            },
+        )
+    });
+    let generation = agent_generation(cx);
+
+    // A Brave key typed in the settings, waiting for its typing pause.
+    cx.update(|cx| {
+        config_ops::edit_config(cx, |config| {
+            config.agent.tool_config.web_search.api_key = Some("BSA-key".into())
+        })
+    });
+    cx.run_until_parked();
+
+    // The model is picked in the chat meanwhile.
+    let changed = cx
+        .update(|cx| crate::agent_ops::select_model("qwen3".into(), cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert!(changed);
+
+    // The edit was committed and announced first, then the pick saved.
+    let yaml = saved_config(&dir);
+    assert!(yaml.contains("api_key: BSA-key"), "{yaml}");
+    assert!(yaml.contains("selected_model: qwen3"), "{yaml}");
+    assert_eq!(agent_events.get(), 1, "the settings edit is announced");
+    assert_eq!(agent_generation(cx), generation + 2, "one reset each");
+
+    // Nothing is left to commit after the pause.
+    pause(cx);
+    assert_eq!(agent_generation(cx), generation + 2);
+    assert_eq!(agent_events.get(), 1);
+
+    // Re-picking the same model changes nothing.
+    let changed = cx
+        .update(|cx| crate::agent_ops::select_model("qwen3".into(), cx))
+        .unwrap();
+    assert!(!changed);
+    assert_eq!(agent_generation(cx), generation + 2);
 }

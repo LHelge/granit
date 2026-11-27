@@ -92,9 +92,14 @@ impl SettingsView {
         fonts.sort();
         fonts.dedup();
 
-        let (prompt_text, prompt_error) = match config_ops::read_system_prompt(cx) {
-            Ok(text) => (text, None),
-            Err(err) => (String::new(), Some(err.into())),
+        // A prompt that could not be written is shown instead of the file:
+        // it is what the next flush writes, so what is seen is what is saved.
+        let (prompt_text, prompt_error) = match config_ops::pending_system_prompt(cx) {
+            Some(pending) => (pending.text, Some(pending.error.into())),
+            None => match config_ops::read_system_prompt(cx) {
+                Ok(text) => (text, None),
+                Err(err) => (String::new(), Some(err.into())),
+            },
         };
         let prompt = cx.new(|cx| {
             TextareaState::new(window, cx)
@@ -121,10 +126,11 @@ impl SettingsView {
                 }
                 _ => {}
             }),
-            // Re-read every field after any change, including one made
-            // elsewhere (the chat's provider and model pickers).
-            cx.subscribe(&ConfigEvents::entity(cx), |_, _, _: &ConfigEvent, cx| {
-                cx.notify()
+            // Re-read every field after any change. A change is a write that
+            // succeeded (a deferred commit, too), so a stale error goes once
+            // nothing else waits to be saved.
+            cx.subscribe(&ConfigEvents::entity(cx), |this, _, _: &ConfigEvent, cx| {
+                this.report(Ok(()), cx)
             }),
             cx.subscribe(
                 &ConfigEvents::entity(cx),

@@ -19,8 +19,8 @@ SQLX_OFFLINE=true cargo clippy -p granit-server -p granit-api --all-targets -- -
 echo "pre-push: cargo test -p granit-api"
 cargo test -p granit-api
 
-echo "pre-push: cargo test -p granit -p granit-core -p granit-app"
-cargo test -p granit -p granit-core -p granit-app
+echo "pre-push: cargo test -p granit -p granit-core -p granit-app -p granit-types"
+cargo test -p granit -p granit-core -p granit-app -p granit-types
 
 # CI runs these in Firefox; Chrome is the local default because macOS
 # Gatekeeper kills wasm-pack's cached geckodriver. Override with e.g.

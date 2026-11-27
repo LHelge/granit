@@ -25,7 +25,7 @@
 //! [`read_system_prompt`] / [`write_system_prompt`] (the latter resets the
 //! agent and announces it too; a prompt it cannot write stays pending, here
 //! rather than in the settings view, until [`flush_system_prompt`] writes
-//! it). [`flush_all`] writes both kinds of pending change before a cave
+//! it; [`pending_system_prompt`] is what reopened settings show). [`flush_all`] writes both kinds of pending change before a cave
 //! switch.
 
 use std::path::PathBuf;
@@ -187,6 +187,36 @@ fn apply(change: Option<ConfigChange>, cx: &mut App) -> bool {
     let Some(change) = change else {
         return false;
     };
+    apply_to_index(&change, cx);
+    ConfigEvents::emit(
+        ConfigEvent {
+            agent: change.agent,
+            theme: change.theme,
+            fonts: change.fonts,
+        },
+        cx,
+    );
+    true
+}
+
+/// [`update_config`] without the [`ConfigEvent`], for a view that applies
+/// the change itself (the chat's provider, model and mode pickers, and its
+/// visibility). Edits pending from [`edit_config`] are still committed
+/// first, and announced.
+pub fn update_config_quietly(cx: &mut App, f: impl FnOnce(&mut AppConfig)) -> Result<bool, String> {
+    flush_config(cx)?;
+    let change = Host::core(cx)
+        .update_config(f)
+        .map_err(|err| err.to_string())?;
+    let Some(change) = change else {
+        return Ok(false);
+    };
+    apply_to_index(&change, cx);
+    Ok(true)
+}
+
+/// Rebuild or drop the RAG index as a saved change asks.
+fn apply_to_index(change: &ConfigChange, cx: &mut App) {
     let core = Host::core(cx);
     match change.rag {
         RagIndexAction::Rebuild => {
@@ -197,15 +227,6 @@ fn apply(change: Option<ConfigChange>, cx: &mut App) -> bool {
         RagIndexAction::Disable => core.set_vector_index(None),
         RagIndexAction::None => {}
     }
-    ConfigEvents::emit(
-        ConfigEvent {
-            agent: change.agent,
-            theme: change.theme,
-            fonts: change.fonts,
-        },
-        cx,
-    );
-    true
 }
 
 /// The open cave's system prompt (`.granit/agent/system.md`), seeded with
@@ -224,8 +245,12 @@ pub fn read_system_prompt(cx: &App) -> Result<String, String> {
 
 /// A system prompt [`write_system_prompt`] could not write, kept to be
 /// written by [`flush_system_prompt`] (the settings may be closed by then).
-struct PendingPrompt {
-    text: String,
+#[derive(Clone, Debug)]
+pub struct PendingPrompt {
+    /// The prompt as typed.
+    pub text: String,
+    /// Why it could not be written.
+    pub error: String,
     /// The cave it was typed in.
     cave: Option<PathBuf>,
 }
@@ -250,10 +275,12 @@ pub fn write_system_prompt(content: &str, cx: &mut App) -> Result<(), String> {
             Ok(true)
         })
         .map_err(|err| err.to_string());
-    cx.default_global::<GlobalPendingPrompt>().0 = result.is_err().then(|| PendingPrompt {
-        text: content.to_string(),
-        cave: core.active_cave_path(),
-    });
+    cx.default_global::<GlobalPendingPrompt>().0 =
+        result.as_ref().err().map(|error| PendingPrompt {
+            text: content.to_string(),
+            error: error.clone(),
+            cave: core.active_cave_path(),
+        });
     if !result? {
         return Ok(());
     }
@@ -266,6 +293,15 @@ pub fn write_system_prompt(content: &str, cx: &mut App) -> Result<(), String> {
         cx,
     );
     Ok(())
+}
+
+/// The system prompt a failed [`write_system_prompt`] left pending, if it
+/// was typed in the open cave: what the settings show instead of the file,
+/// since it is what [`flush_system_prompt`] will write.
+pub fn pending_system_prompt(cx: &App) -> Option<PendingPrompt> {
+    cx.try_global::<GlobalPendingPrompt>()
+        .and_then(|pending| pending.0.clone())
+        .filter(|pending| pending.cave == Host::cave_path(cx))
 }
 
 /// Write the system prompt a failed [`write_system_prompt`] left pending,
