@@ -4,7 +4,7 @@ title: "Cut over: remove the Tauri frontend, Node, Trunk and wasm"
 status: open
 priority: P1
 created: "2026-11-26T21:10:30.012817Z"
-updated: "2026-11-27T01:51:11.310571141Z"
+updated: "2026-11-27T02:06:53.950116387Z"
 tags:
   - gpui
   - port
@@ -24,6 +24,11 @@ depends_on:
   - zem.ru
   - zem.cn
   - zem.dz
+  - zem.7j
+  - zem.ub
+  - zem.th
+  - zem.s9
+  - zem.vz
 ---
 
 ## Summary
