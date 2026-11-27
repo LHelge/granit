@@ -6,11 +6,13 @@
 //! they run on the calling (foreground) thread; only opening a cave, which
 //! scans the whole directory, goes to the background.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use gpui::{App, AppContext as _, Task};
 use granit_core::cave::{CaveError, Document, DocumentMeta};
 use granit_core::open::{prepare_cave, sync_vector_index};
+use granit_types::TodoItem;
 use log::warn;
 
 use crate::events::{CaveEvent, CaveEvents};
@@ -119,6 +121,54 @@ pub fn save_note(slug: &str, body: &str, cx: &mut App) -> Result<DocumentMeta, C
     schedule_index_update(meta.slug.clone(), cx);
     CaveEvents::emit(CaveEvent::NotesChanged, cx);
     Ok(meta)
+}
+
+/// Open the daily note of `date` (`YYYY-MM-DD`; `None`: today), creating it
+/// in the configured daily-note folder from the configured template when it
+/// does not exist yet, as the Tauri app's `open_daily_note_for_date` does.
+/// Announces [`CaveEvent::NotesChanged`] only when the note was created.
+pub fn open_daily_note(date: Option<&str>, cx: &mut App) -> Result<DocumentMeta, CaveError> {
+    let core = Host::core(cx);
+    let (folder, template) = {
+        let config = core.lock_config();
+        (
+            config.daily_note_folder.clone(),
+            config.daily_note_template_slug.clone(),
+        )
+    };
+    let date = date.map_or_else(granit_core::calendar::today_slug, str::to_string);
+    let (doc, created) = core.with_cave(|cave| {
+        let created = !cave.note_paths().contains_key(&date);
+        let doc = cave.open_daily_note_for_date(&date, &folder, template.as_deref())?;
+        Ok((doc, created))
+    })?;
+    if created {
+        schedule_index_update(doc.meta.slug.clone(), cx);
+        CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    }
+    Ok(doc.meta)
+}
+
+/// The slugs of the daily notes in the configured daily-note folder, for
+/// the calendar.
+pub fn daily_note_slugs(cx: &App) -> Result<HashSet<String>, CaveError> {
+    let core = Host::core(cx);
+    let folder = core.lock_config().daily_note_folder.clone();
+    core.with_cave(|cave| Ok(cave.daily_note_slugs(&folder)))
+}
+
+/// Toggle a listed todo (`checked`: its state when listed) in its note,
+/// keeping the note's frontmatter and line endings. The todo is found again
+/// first ([`granit_core::cave::Cave::locate_todo`]), so a note that changed
+/// since the list was built still toggles the right line.
+pub fn toggle_todo(item: &TodoItem, checked: bool, cx: &mut App) -> Result<(), CaveError> {
+    Host::core(cx).with_cave(|cave| {
+        let line = cave.locate_todo(&item.slug, item.line, &item.text, checked)?;
+        cave.toggle_todo(&item.slug, line)
+    })?;
+    schedule_index_update(item.slug.clone(), cx);
+    CaveEvents::emit(CaveEvent::NotesChanged, cx);
+    Ok(())
 }
 
 /// Create a folder named [`NEW_FOLDER_NAME`] in `parent` (`None`: the cave

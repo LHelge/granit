@@ -319,6 +319,23 @@ impl Cave {
         self.open_daily_note_for_date(&today, folder, template_slug)
     }
 
+    /// The slugs of the daily notes in `folder` (or its subfolders; an empty
+    /// folder means the whole cave): the notes named after a date
+    /// (`YYYY-MM-DD`), for the calendar.
+    pub fn daily_note_slugs(&self, folder: &str) -> std::collections::HashSet<String> {
+        let folder = folder.trim_matches('/');
+        let prefix = format!("{folder}/");
+        self.notes
+            .iter()
+            .filter(|(slug, _)| Self::parse_daily_note_slug(slug).is_some())
+            .filter(|(_, abs_path)| {
+                let dir = self.relative_dir(abs_path.parent().unwrap_or(&self.path));
+                folder.is_empty() || dir == folder || dir.starts_with(&prefix)
+            })
+            .map(|(slug, _)| slug.clone())
+            .collect()
+    }
+
     /// Open or create a daily note for a specific date.
     ///
     /// `date` must be in `YYYY-MM-DD` format.
@@ -384,6 +401,23 @@ impl Cave {
 #[cfg(test)]
 mod tests {
     use crate::cave::{Cave, CaveError};
+
+    #[test]
+    fn test_daily_note_slugs_are_the_dated_notes_in_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Daily/2026")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Elsewhere")).unwrap();
+        std::fs::write(dir.path().join("Daily/2026-11-01.md"), "").unwrap();
+        std::fs::write(dir.path().join("Daily/2026/2026-11-02.md"), "").unwrap();
+        std::fs::write(dir.path().join("Daily/plan.md"), "").unwrap();
+        std::fs::write(dir.path().join("Elsewhere/2026-11-03.md"), "").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        let mut slugs: Vec<String> = cave.daily_note_slugs("Daily").into_iter().collect();
+        slugs.sort();
+        assert_eq!(slugs, ["2026-11-01", "2026-11-02"]);
+        assert_eq!(cave.daily_note_slugs("").len(), 3, "the whole cave");
+    }
 
     #[test]
     fn test_templates_are_listed_separately_from_notes() {

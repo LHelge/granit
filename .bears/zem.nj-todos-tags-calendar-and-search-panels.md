@@ -1,16 +1,17 @@
 ---
 id: zem.nj
 title: Todos, tags, calendar and search panels
-status: open
+status: done
 priority: P2
 created: "2026-11-26T21:09:59.285080Z"
-updated: "2026-11-26T21:09:59.285080Z"
+updated: "2026-11-27T01:32:31.264751908Z"
 tags:
   - gpui
   - port
   - frontend
 depends_on:
   - zem.4b
+attempts: 1
 ---
 
 ## Summary

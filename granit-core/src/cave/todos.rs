@@ -47,7 +47,57 @@ fn parse_checkbox(trimmed: &str) -> Option<Checkbox<'_>> {
     })
 }
 
+/// The todos of a note's raw file: (1-based file line, checked, stripped
+/// text), as [`Cave::list_todos`] reports them.
+fn note_todos(raw: &str) -> impl Iterator<Item = (usize, bool, String)> + '_ {
+    raw.lines().enumerate().filter_map(|(idx, line)| {
+        let checkbox = parse_checkbox(line.trim_start())?;
+        Some((idx + 1, checkbox.checked, Markdown::strip(checkbox.rest)))
+    })
+}
+
 impl Cave {
+    /// Find a listed todo again in its note, which may have changed since it
+    /// was listed (an edit saved in between moves lines): the 1-based file
+    /// `line` if that is still the todo with this `text` and state, else the
+    /// nearest such todo in the note. [`CaveError::InvalidTodoLine`] when the
+    /// note no longer has it.
+    pub fn locate_todo(
+        &self,
+        slug: &str,
+        line: usize,
+        text: &str,
+        checked: bool,
+    ) -> Result<usize, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+        let raw = std::fs::read_to_string(abs_path)?;
+        note_todos(&raw)
+            .filter(|(_, state, todo)| *state == checked && todo == text)
+            .map(|(found, _, _)| found)
+            .min_by_key(|found| found.abs_diff(line))
+            .ok_or(CaveError::InvalidTodoLine(line))
+    }
+
+    /// The 0-based body line (the text the editor shows, without
+    /// frontmatter) of the 1-based file `line` that [`Cave::list_todos`]
+    /// reports, for opening a todo where it is. Lines inside the frontmatter
+    /// map to the first body line.
+    pub fn todo_body_line(&self, slug: &str, line: usize) -> Result<usize, CaveError> {
+        validate_name(slug)?;
+        let abs_path = self
+            .notes
+            .get(slug)
+            .ok_or_else(|| CaveError::NotFound(slug.to_string()))?;
+        let raw = std::fs::read_to_string(abs_path)?;
+        let body = Markdown::new(&raw).body();
+        let frontmatter_lines = raw[..raw.len() - body.len()].matches('\n').count();
+        Ok(line.saturating_sub(1).saturating_sub(frontmatter_lines))
+    }
+
     /// Collect all todo items (`- [ ]` / `- [x]`) across every note in the cave.
     ///
     /// Todos are extracted from raw file lines (including frontmatter so that
@@ -76,17 +126,14 @@ impl Cave {
                 .collect::<Vec<_>>()
                 .join("/");
 
-            for (idx, line) in raw.lines().enumerate() {
-                let Some(checkbox) = parse_checkbox(line.trim_start()) else {
-                    continue;
-                };
+            for (line, checked, text) in note_todos(&raw) {
                 let item = TodoItem {
                     slug: slug.clone(),
                     relative_path: rel_str.clone(),
-                    line: idx + 1, // 1-based
-                    text: Markdown::strip(checkbox.rest),
+                    line,
+                    text,
                 };
-                if checkbox.checked {
+                if checked {
                     completed.push(item);
                 } else {
                     incomplete.push(item);
@@ -400,6 +447,44 @@ mod tests {
 
         let err = cave.toggle_todo("note", 999).unwrap_err();
         assert!(matches!(err, CaveError::InvalidTodoLine(999)));
+    }
+
+    // ── locate_todo / todo_body_line ───────────────────────────────
+
+    #[test]
+    fn test_locate_todo_follows_a_moved_line() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "- [ ] a\n- [ ] b\n- [x] b\n").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(cave.locate_todo("note", 2, "b", false).unwrap(), 2);
+        // Two lines were inserted above it since it was listed.
+        std::fs::write(
+            dir.path().join("note.md"),
+            "new\n\n- [ ] a\n- [ ] b\n- [x] b\n",
+        )
+        .unwrap();
+        assert_eq!(cave.locate_todo("note", 2, "b", false).unwrap(), 4);
+        assert_eq!(cave.locate_todo("note", 3, "b", true).unwrap(), 5);
+        assert!(matches!(
+            cave.locate_todo("note", 2, "gone", false),
+            Err(CaveError::InvalidTodoLine(2))
+        ));
+    }
+
+    #[test]
+    fn test_todo_body_line_skips_the_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("note.md"),
+            "---\ntags: [a]\n---\n# T\n- [ ] x\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("plain.md"), "# T\n- [ ] x\n").unwrap();
+        let cave = Cave::open(dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(cave.todo_body_line("note", 5).unwrap(), 1);
+        assert_eq!(cave.todo_body_line("plain", 2).unwrap(), 1);
     }
 
     // ── toggle_todo_by_index ───────────────────────────────────────

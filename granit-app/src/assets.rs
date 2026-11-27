@@ -35,10 +35,13 @@ pub enum AppIcon {
     NotebookPen,
     Bot,
     Trash,
+    FolderTree,
+    ListTodo,
+    Tag,
 }
 
 impl AppIcon {
-    const ALL: [AppIcon; 12] = [
+    const ALL: [AppIcon; 15] = [
         AppIcon::FilePlus,
         AppIcon::FolderPlus,
         AppIcon::PanelRight,
@@ -51,6 +54,9 @@ impl AppIcon {
         AppIcon::NotebookPen,
         AppIcon::Bot,
         AppIcon::Trash,
+        AppIcon::FolderTree,
+        AppIcon::ListTodo,
+        AppIcon::Tag,
     ];
 
     fn name(self) -> &'static str {
@@ -67,6 +73,9 @@ impl AppIcon {
             AppIcon::NotebookPen => "notebook-pen",
             AppIcon::Bot => "bot",
             AppIcon::Trash => "trash-2",
+            AppIcon::FolderTree => "folder-tree",
+            AppIcon::ListTodo => "list-todo",
+            AppIcon::Tag => "tag",
         }
     }
 
@@ -84,6 +93,9 @@ impl AppIcon {
             AppIcon::NotebookPen => icondata_lu::LuNotebookPen,
             AppIcon::Bot => icondata_lu::LuBot,
             AppIcon::Trash => icondata_lu::LuTrash2,
+            AppIcon::FolderTree => icondata_lu::LuFolderTree,
+            AppIcon::ListTodo => icondata_lu::LuListTodo,
+            AppIcon::Tag => icondata_lu::LuTag,
         }
     }
 }

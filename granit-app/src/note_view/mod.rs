@@ -53,8 +53,8 @@ use crate::host::Host;
 use find::FindBar;
 use images::{ImageBase, ImageCache};
 use links::LinkCompletion;
-pub use save::AUTOSAVE_DELAY;
-use save::{FlushOutcome, NoteSession, SaveSnapshot, SaveStatus};
+pub use save::{FlushOutcome, AUTOSAVE_DELAY};
+use save::{NoteSession, SaveSnapshot, SaveStatus};
 use style::CodeHighlighter;
 use wiki_links::LinkIndex;
 

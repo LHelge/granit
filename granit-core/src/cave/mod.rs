@@ -15,6 +15,7 @@ pub use helpers::write_atomic;
 use helpers::{ensure_md_extension, validate_folder_path};
 pub use helpers::{Document, DocumentMeta, RenderedDocument};
 pub use presentations::PRESENTATIONS_DIR;
+pub use search::{LineMatch, NoteMatches};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 

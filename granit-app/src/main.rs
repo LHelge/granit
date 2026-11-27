@@ -29,6 +29,7 @@ mod explorer;
 mod host;
 mod last_cave;
 mod note_view;
+mod panels;
 mod runtime;
 mod settings;
 mod theme;

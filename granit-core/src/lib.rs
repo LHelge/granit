@@ -1,7 +1,8 @@
 //! Host-agnostic core of Granit.
 //!
 //! Everything that does not depend on the UI host lives here: the cave model
-//! and its indexes (`cave`), markdown rendering (`markdown`), the AI agent with
+//! and its indexes (`cave`), markdown rendering (`markdown`), the month grids
+//! of the daily-note calendar (`calendar`), the AI agent with
 //! its tools and RAG index (`agent`), encrypted backups (`backup`), and the
 //! shared state the host keeps for the open cave (`state`), config changes
 //! from a settings UI (`config`), the open-cave flow and the RAG index build
@@ -12,6 +13,7 @@
 
 pub mod agent;
 pub mod backup;
+pub mod calendar;
 pub mod cave;
 pub mod config;
 pub mod markdown;

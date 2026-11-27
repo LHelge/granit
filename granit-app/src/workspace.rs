@@ -1,13 +1,19 @@
-//! The root view of the main window: the sidebar with the explorer, and the
-//! main area with the open note.
+//! The root view of the main window: the sidebar with the calendar and the
+//! explorer or another panel, and the main area with the open note.
 //!
-//! The workspace owns the open note: it opens what the explorer asks for,
-//! tells the core (for the agent's tools) and the explorer (for the
-//! selection), and follows renames and deletions announced as
-//! [`CaveEvent`]s. A new sidebar panel becomes a field here and a child in
-//! [`Workspace::render_sidebar`]; the main area is [`NoteView`], the note
-//! editor. Other panels open a note with [`Workspace::open_note`], or at a
-//! heading, line or offset with [`Workspace::open_note_at`]. The agent chat
+//! The workspace owns the open note: it opens what the explorer and the
+//! panels ask for, tells the core (for the agent's tools), the explorer
+//! (for the selection) and the calendar, and follows renames and deletions
+//! announced as [`CaveEvent`]s. The sidebar shows the [`CalendarPanel`]
+//! above a tab bar of [`SidebarTab`]s: the explorer, [`SearchPanel`],
+//! [`TodosPanel`] and [`TagsPanel`] ([`Workspace::show_tab`]; the search key
+//! jumps to the search box). A new sidebar panel becomes a field here, a
+//! tab and a child in [`Workspace::render_sidebar`]; the main area is
+//! [`NoteView`], the note editor. Panels open a note with
+//! [`Workspace::open_note`], or at a heading, line or offset with
+//! [`Workspace::open_note_at`]; a todo is toggled by
+//! [`Workspace::toggle_todo`], which writes the open note's pending edits
+//! first. The agent chat
 //! ([`ChatPanel`]) sits right of the main area while it is shown
 //! ([`ToggleChat`]); its visibility is kept in the cave's config
 //! (`agent_panel.visible`). The settings ([`SettingsView`],
@@ -23,8 +29,11 @@ use gpui::{
 };
 use gpui_kit::component::{
     button::{Button, ButtonVariants},
-    h_flex, ActiveTheme, Disableable as _, IconName, Sizable,
+    h_flex,
+    tab::{Tab, TabBar},
+    ActiveTheme, Disableable as _, IconName, Sizable,
 };
+use granit_types::TodoItem;
 use log::warn;
 
 use crate::agent_ops;
@@ -35,11 +44,12 @@ use crate::config_ops::{ConfigEvent, ConfigEvents};
 use crate::events::{CaveEvent, CaveEvents};
 use crate::explorer::{Explorer, ExplorerEvent};
 use crate::host::Host;
-use crate::note_view::{NoteView, NoteViewEvent, Reveal};
+use crate::note_view::{FlushOutcome, NoteView, NoteViewEvent, Reveal};
+use crate::panels::{CalendarPanel, PanelEvent, SearchPanel, SidebarTab, TagsPanel, TodosPanel};
 use crate::settings::{SettingsEvent, SettingsView};
 use crate::theme;
 
-gpui_kit::actions!(granit, [OpenCave, ToggleChat, ToggleSettings]);
+gpui_kit::actions!(granit, [OpenCave, ToggleChat, ToggleSettings, SearchNotes]);
 
 /// Which cave to open when the window opens.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +78,12 @@ pub struct Workspace {
     /// stays open.
     open_error: Option<SharedString>,
     explorer: Entity<Explorer>,
+    calendar: Entity<CalendarPanel>,
+    search: Entity<SearchPanel>,
+    todos: Entity<TodosPanel>,
+    tags: Entity<TagsPanel>,
+    /// The sidebar's shown tab.
+    sidebar_tab: SidebarTab,
     note_view: Entity<NoteView>,
     chat: Entity<ChatPanel>,
     /// Whether the chat panel is shown.
@@ -88,9 +104,25 @@ impl Workspace {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
         let explorer = cx.new(Explorer::new);
+        let calendar = cx.new(CalendarPanel::new);
+        let search = cx.new(|cx| SearchPanel::new(window, cx));
+        let todos = cx.new(|cx| TodosPanel::new(window, cx));
+        let tags = cx.new(|cx| TagsPanel::new(window, cx));
         let note_view = cx.new(|cx| NoteView::new(window, cx));
         let chat = cx.new(|cx| ChatPanel::new(window, cx));
+        let on_panel = |this: &mut Self, event: &PanelEvent, cx: &mut Context<Self>| match event {
+            PanelEvent::OpenNote { slug, reveal } => {
+                this.open_note_at(slug.clone(), reveal.clone(), cx)
+            }
+            PanelEvent::ToggleTodo { item, checked } => this.toggle_todo(item, *checked, cx),
+        };
         let subscriptions = vec![
+            cx.subscribe(&calendar, move |this, _, event, cx| {
+                on_panel(this, event, cx)
+            }),
+            cx.subscribe(&search, move |this, _, event, cx| on_panel(this, event, cx)),
+            cx.subscribe(&todos, move |this, _, event, cx| on_panel(this, event, cx)),
+            cx.subscribe(&tags, move |this, _, event, cx| on_panel(this, event, cx)),
             cx.subscribe(&chat, |this, _, event: &ChatEvent, cx| match event {
                 ChatEvent::OpenNote { slug, anchor } => {
                     let reveal = anchor.clone().map(Reveal::Anchor);
@@ -142,6 +174,11 @@ impl Workspace {
             status: CaveStatus::Closed,
             open_error: None,
             explorer,
+            calendar,
+            search,
+            todos,
+            tags,
+            sidebar_tab: SidebarTab::default(),
             note_view,
             chat,
             chat_visible: false,
@@ -178,6 +215,84 @@ impl Workspace {
     #[cfg(test)]
     pub fn note_view(&self) -> &Entity<NoteView> {
         &self.note_view
+    }
+
+    #[cfg(test)]
+    pub fn calendar(&self) -> &Entity<CalendarPanel> {
+        &self.calendar
+    }
+
+    #[cfg(test)]
+    pub fn search(&self) -> &Entity<SearchPanel> {
+        &self.search
+    }
+
+    #[cfg(test)]
+    pub fn todos(&self) -> &Entity<TodosPanel> {
+        &self.todos
+    }
+
+    #[cfg(test)]
+    pub fn tags(&self) -> &Entity<TagsPanel> {
+        &self.tags
+    }
+
+    /// The sidebar's shown tab.
+    #[cfg(test)]
+    pub fn sidebar_tab(&self) -> SidebarTab {
+        self.sidebar_tab
+    }
+
+    /// Show `tab` in the sidebar; the panels learn whether they are shown,
+    /// so hidden ones skip their queries.
+    pub fn show_tab(&mut self, tab: SidebarTab, cx: &mut Context<Self>) {
+        self.sidebar_tab = tab;
+        self.search.update(cx, |panel, cx| {
+            panel.set_visible(tab == SidebarTab::Search, cx)
+        });
+        self.todos.update(cx, |panel, cx| {
+            panel.set_visible(tab == SidebarTab::Todos, cx)
+        });
+        self.tags.update(cx, |panel, cx| {
+            panel.set_visible(tab == SidebarTab::Tags, cx)
+        });
+        cx.notify();
+    }
+
+    /// Show the search panel with the keyboard in its query box.
+    pub fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_tab(SidebarTab::Search, cx);
+        self.search
+            .update(cx, |search, cx| search.focus(window, cx));
+    }
+
+    fn on_search_notes(&mut self, _: &SearchNotes, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.status, CaveStatus::Open(_)) {
+            self.focus_search(window, cx);
+        }
+    }
+
+    /// Toggle a todo listed by the todos panel (`checked`: its listed
+    /// state). If its note is open, its pending edits are written first, so
+    /// the toggle neither loses them nor is overwritten by them; the editor
+    /// then reloads the toggled note. Failures show in the todos panel.
+    pub fn toggle_todo(&mut self, item: &TodoItem, checked: bool, cx: &mut Context<Self>) {
+        let open = self.note_view.read(cx).slug() == Some(item.slug.as_str());
+        if open {
+            if let FlushOutcome::Failed(err) = self.note_view.update(cx, |view, cx| view.flush(cx))
+            {
+                let message = format!("The edits to {} could not be saved: {err}", item.slug);
+                self.todos
+                    .update(cx, |todos, cx| todos.show_error(message, cx));
+                return;
+            }
+        }
+        if let Err(err) = cave_ops::toggle_todo(item, checked, cx) {
+            warn!("Could not toggle the todo in {}: {err}", item.slug);
+            let message = format!("Could not toggle the todo: {err}");
+            self.todos
+                .update(cx, |todos, cx| todos.show_error(message, cx));
+        }
     }
 
     #[cfg(test)]
@@ -342,6 +457,8 @@ impl Workspace {
         cave_ops::set_active_note(shown.clone(), cx);
         self.explorer
             .update(cx, |explorer, cx| explorer.set_active(shown.clone(), cx));
+        self.calendar
+            .update(cx, |calendar, cx| calendar.set_active(shown.clone(), cx));
         self.active = shown;
         cx.notify();
     }
@@ -487,7 +604,42 @@ impl Workspace {
                     .text_color(theme.danger)
                     .child(error)
             }))
-            .child(div().flex_1().min_h_0().child(self.explorer.clone()))
+            .when(matches!(self.status, CaveStatus::Open(_)), |this| {
+                this.child(self.calendar.clone())
+                    .child(self.render_tabs(cx))
+            })
+            .child(div().flex_1().min_h_0().child(self.render_panel()))
+    }
+
+    /// The tab bar that switches the sidebar's panel.
+    fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        TabBar::new("sidebar-tabs")
+            .underline()
+            .small()
+            .px_1()
+            .selected_index(self.sidebar_tab.index())
+            .on_click(cx.listener(|this, ix: &usize, window, cx| {
+                match SidebarTab::ALL.get(*ix).copied() {
+                    Some(SidebarTab::Search) => this.focus_search(window, cx),
+                    Some(tab) => this.show_tab(tab, cx),
+                    None => {}
+                }
+            }))
+            .children(
+                SidebarTab::ALL
+                    .into_iter()
+                    .map(|tab| Tab::new().icon(tab.icon()).aria_label(tab.label())),
+            )
+    }
+
+    /// The sidebar's shown panel.
+    fn render_panel(&self) -> gpui::AnyElement {
+        match self.sidebar_tab {
+            SidebarTab::Notes => self.explorer.clone().into_any_element(),
+            SidebarTab::Search => self.search.clone().into_any_element(),
+            SidebarTab::Todos => self.todos.clone().into_any_element(),
+            SidebarTab::Tags => self.tags.clone().into_any_element(),
+        }
     }
 
     fn render_main(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -551,6 +703,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_open_cave))
             .on_action(cx.listener(Self::on_toggle_chat))
             .on_action(cx.listener(Self::on_toggle_settings))
+            .on_action(cx.listener(Self::on_search_notes))
             // A click that focused nothing inside (empty space, or after a
             // focused input went away) takes focus back, so the
             // workspace's keys keep working.
@@ -583,6 +736,7 @@ pub fn bind_keys(cx: &mut App) {
         gpui::KeyBinding::new(OPEN_CAVE_KEY, OpenCave, None),
         gpui::KeyBinding::new(TOGGLE_CHAT_KEY, ToggleChat, None),
         gpui::KeyBinding::new(TOGGLE_SETTINGS_KEY, ToggleSettings, None),
+        gpui::KeyBinding::new(SEARCH_NOTES_KEY, SearchNotes, None),
     ]);
     crate::note_view::bind_keys(cx);
 }
@@ -607,6 +761,12 @@ pub const TOGGLE_CHAT_KEY: &str = "ctrl-shift-a";
 pub const TOGGLE_SETTINGS_KEY: &str = "cmd-,";
 #[cfg(not(target_os = "macos"))]
 pub const TOGGLE_SETTINGS_KEY: &str = "ctrl-,";
+
+/// The key that shows the search panel with the keyboard in its query box.
+#[cfg(target_os = "macos")]
+pub const SEARCH_NOTES_KEY: &str = "cmd-shift-f";
+#[cfg(not(target_os = "macos"))]
+pub const SEARCH_NOTES_KEY: &str = "ctrl-shift-f";
 
 /// The key that quits the app.
 #[cfg(target_os = "macos")]
