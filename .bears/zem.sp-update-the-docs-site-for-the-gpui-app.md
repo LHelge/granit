@@ -32,3 +32,8 @@ The docs site (`docs/`, aphid) describes the Tauri app: reader and edit modes, D
 ## Testing
 
 - The docs site builds locally and links resolve
+## Decisions (owner, 2026-11-28)
+
+- Presentations and mermaid diagrams are dropped from the app (`zem.t7`): remove `presentations.md` with the template DOM contract, and what other pages say about diagrams.
+- Linux ships a `.deb` and an AppImage, no `.rpm` (`zem.nb`): remove the rpm instructions, and use the package names after the cutover rename (`granit_<version>_amd64.deb`, `granit_<version>_x86_64.AppImage`).
+- Updates stay silent, with the release notes shown after the restart (`zem.8j`).

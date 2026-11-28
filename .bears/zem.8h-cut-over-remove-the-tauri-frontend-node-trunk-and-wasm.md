@@ -54,3 +54,8 @@ Once the GPUI app has feature parity, delete the old frontend and its toolchain 
 ## Testing
 
 - CI green on the cut-over branch; a release dry run
+## Decisions (owner, 2026-11-28)
+
+- **The GPUI binary is renamed `granit` here**, once the Tauri package no longer owns the name. cargo-packager names the Linux packages after it (`granit_<version>_amd64.deb`, `granit_<version>_x86_64.AppImage`); the macOS bundle's executable follows. Update the workflow's `otool` path, the packager comments and the docs' install commands with it.
+- Move the icons and the bundled embedding model out of `src-tauri/` (the packager config in `granit-app/Cargo.toml` points there).
+- Mermaid and presentations are not rebuilt first (`zem.t7`): the mermaid bundle and the presentation window go with the Tauri app; the presentation rendering in `granit-core` stays.
