@@ -82,6 +82,8 @@ jobs:
           # "unknown/unknown" entry on the GHCR package page.
           provenance: false
 
+  # The Tauri app, for Windows and Linux until the GPUI app is packaged for
+  # them too (Bears zem.nb). macOS is built by `build-macos` below.
   build:
     needs: [check, changelog]
     permissions:
@@ -90,16 +92,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
           - platform: ubuntu-latest
             args: ''
           - platform: windows-latest
             args: ''
 
     runs-on: ${{ matrix.platform }}
-    # Typically 16-22 min (Windows slowest). macOS minutes bill at 10x on
-    # private repos, so a hung build must not run to the 6 h default.
+    # Typically 16-22 min (Windows slowest); a hung build must not run to
+    # the 6 h default.
     timeout-minutes: 60
 
     steps:
@@ -138,7 +138,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,wasm32-unknown-unknown' || 'wasm32-unknown-unknown' }}
+          targets: wasm32-unknown-unknown
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -155,39 +155,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Import Apple Developer Certificate
-        if: matrix.platform == 'macos-latest'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          security find-identity -v -p codesigning build.keychain
-
-      - name: Verify certificate
-        if: matrix.platform == 'macos-latest'
-        run: |
-          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
-          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
-          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
-          echo "Certificate imported."
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.platform == 'macos-latest' && env.CERT_ID || '' }}
-          APPLE_ID: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.platform == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
@@ -198,12 +168,179 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+  # The macOS app is the GPUI one (granit-app), packaged by cargo-packager
+  # from `[package.metadata.packager]` in granit-app/Cargo.toml: it builds
+  # Granit.app, signs it with the Developer ID certificate (hardened
+  # runtime) and makes and signs the dmg. With the updater key it also
+  # writes Granit.app.tar.gz and its signature, the update archive the
+  # Tauri updater of installed apps expects. The job then notarizes the dmg
+  # itself, with a time limit.
+  build-macos:
+    needs: check
+    runs-on: macos-latest
+    # macOS minutes bill at 10x on private repos, so a hung build must not
+    # run to the 6 h default.
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      TARGET: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Install cargo-packager
+        run: cargo install --locked cargo-packager@0.11.8
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "granit-app") | .version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # The deployment target matches `minimum-system-version` of the
+      # packager config.
+      - name: Build
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: cargo build --release -p granit-app --target "$TARGET"
+
+      # cargo-packager imports the certificate into a keychain of its own
+      # and removes it afterwards. It gets no notarization variables, so it
+      # only signs (it warns that it skips notarization): its own
+      # notarization waits for Apple without a limit. Without the updater
+      # key it writes no update archive, which fails the upload step.
+      - name: Package and sign
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo packager --release --target "$TARGET" -p granit-app --formats app,dmg
+
+      # Notarizing the dmg covers the app inside it. Apple normally answers
+      # within a few minutes, but can hold a submission for a review that
+      # takes a day (it did for the first release), so the wait is limited
+      # and the job fails instead of burning macOS minutes.
+      - name: Notarize
+        working-directory: target/${{ env.TARGET }}/release
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTARIZE_TIMEOUT_SECONDS: 300
+        run: |
+          set -euo pipefail
+          DMG=$(ls Granit_*_aarch64.dmg)
+          auth=(--apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID")
+
+          id=$(xcrun notarytool submit "$DMG" "${auth[@]}" --output-format json | jq -r .id)
+          echo "Submitted $DMG to Apple's notary service: submission $id"
+
+          deadline=$((SECONDS + NOTARIZE_TIMEOUT_SECONDS))
+          while :; do
+            # A failed status request counts as "not done yet".
+            status=$(xcrun notarytool info "$id" "${auth[@]}" --output-format json | jq -r .status || true)
+            echo "Status after ${SECONDS}s: ${status:-unknown}"
+            case "$status" in
+              Accepted) break ;;
+              "In Progress" | "") ;;
+              *)
+                xcrun notarytool log "$id" "${auth[@]}" || true
+                echo "::error title=Notarization rejected::Apple answered '$status' for submission $id. Its log is printed above."
+                exit 1
+                ;;
+            esac
+            if (( SECONDS >= deadline )); then
+              echo "::error title=Notarization not finished::Apple has not notarized the app within ${NOTARIZE_TIMEOUT_SECONDS}s (submission $id is still in progress), so it is probably held for an in-depth review, which can take a day. Nothing was released. Check it on a Mac with 'xcrun notarytool info $id', and re-run this job once it is accepted: later submissions are usually quick."
+              exit 1
+            fi
+            sleep 10
+          done
+
+          xcrun stapler staple "$DMG"
+
+      - name: Verify signature and notarization
+        working-directory: target/${{ env.TARGET }}/release
+        run: |
+          codesign --verify --deep --strict --verbose=2 Granit.app
+          spctl --assess --type execute --verbose=2 Granit.app
+          codesign --verify --verbose=2 Granit_*_aarch64.dmg
+          xcrun stapler validate Granit_*_aarch64.dmg
+          echo "Libraries the binary loads:"
+          otool -L Granit.app/Contents/MacOS/granit-app
+          du -sh Granit.app Granit.app/Contents/MacOS/granit-app Granit_*_aarch64.dmg
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          if-no-files-found: error
+          retention-days: 3
+          path: |
+            target/${{ env.TARGET }}/release/Granit_*_aarch64.dmg
+            target/${{ env.TARGET }}/release/Granit.app.tar.gz
+            target/${{ env.TARGET }}/release/Granit.app.tar.gz.sig
+
+  # Attach the macOS packages to the draft release that the Tauri build
+  # created, and add macOS to its updater manifest (latest.json), which
+  # tauri-action wrote for the platforms it built. The archive keeps the
+  # asset name earlier releases used.
+  release-macos:
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.build-macos.outputs.version }}
+      ARCHIVE: Granit_aarch64.app.tar.gz
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos
+
+      - name: Upload to the release
+        run: |
+          mv Granit.app.tar.gz "$ARCHIVE"
+          mv Granit.app.tar.gz.sig "$ARCHIVE.sig"
+          gh release upload "$TAG" Granit_*_aarch64.dmg "$ARCHIVE" "$ARCHIVE.sig" --clobber
+
+      - name: Add macOS to the updater manifest
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern latest.json
+          jq --arg signature "$(cat "$ARCHIVE.sig")" \
+            --arg url "https://github.com/$GH_REPO/releases/download/$TAG/$ARCHIVE" \
+            '.platforms["darwin-aarch64"] = {signature: $signature, url: $url}
+             | .platforms["darwin-aarch64-app"] = .platforms["darwin-aarch64"]' \
+            latest.json > latest.new.json
+          mv latest.new.json latest.json
+          jq '.platforms | keys' latest.json
+          gh release upload "$TAG" latest.json --clobber
+
   # Un-draft the release; the body was already set from the changelog job.
   # The updater endpoint (releases/latest/download/latest.json) only
   # resolves for published releases, so this is what makes the update
-  # visible to running apps.
+  # visible to running apps. A pre-release tag (v1.2.3-rc.1) stops here,
+  # with the draft left to inspect: nothing is published, and the docs and
+  # the Homebrew cask, which need this job, are skipped with it.
   publish:
-    needs: build
+    needs: [build, release-macos]
+    if: ${{ !(startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

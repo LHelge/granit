@@ -48,3 +48,35 @@ arboard = { version = "3.6", default-features = false, features = ["wayland-data
 gpui = { package = "gpui-pre", version = "=0.3.12", features = ["test-support"] }
 gpui-kit = { version = "0.10", features = ["test-support"] }
 tempfile = "3.27.0"
+
+# Packaging with cargo-packager: `cargo packager --release -p granit-app`
+# after a release build. The release workflow runs it for macOS (signed,
+# notarized `Granit.app` and `Granit_<version>_aarch64.dmg`). The version
+# comes from the workspace. Paths are relative to this directory; the icons
+# and the model stay under `src-tauri/` until the cutover.
+[package.metadata.packager]
+product-name = "Granit"
+identifier = "se.lhelge.granit"
+category = "Productivity"
+homepage = "https://granit.lhelge.se/"
+icons = [
+    "../src-tauri/icons/32x32.png",
+    "../src-tauri/icons/128x128.png",
+    "../src-tauri/icons/128x128@2x.png",
+    "../src-tauri/icons/icon.icns",
+    "../src-tauri/icons/icon.ico",
+]
+# The default embedding model, so RAG works without a download
+# (`host::bundled_model_dir` finds it).
+resources = [
+    { src = "../src-tauri/resources/models/all-MiniLM-L6-v2-onnx/*", target = "models/all-MiniLM-L6-v2-onnx" },
+]
+
+# `signing-identity` is matched by codesign against the certificate's name,
+# so this picks the one Developer ID certificate of the keychain that
+# cargo-packager fills from `APPLE_CERTIFICATE`. Notarization uses
+# `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID`. The app is not sandboxed
+# and needs no entitlements.
+[package.metadata.packager.macos]
+minimum-system-version = "11.0"
+signing-identity = "Developer ID Application"

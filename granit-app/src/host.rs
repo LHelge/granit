@@ -6,7 +6,7 @@
 //! the RAG index current and announces the change on
 //! [`crate::events::CaveEvents`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{App, Global};
@@ -60,12 +60,33 @@ impl HostOptions {
 
 /// Embedding models are cached in `<data dir>/se.lhelge.granit/models`, the
 /// directory the Tauri app uses, so a model is downloaded once for both.
-/// Nothing is bundled yet.
+/// The default model comes from the app bundle when there is one.
 fn default_embedding_models() -> Option<EmbeddingModelDirs> {
+    let bundled_model_dir = std::env::current_exe()
+        .and_then(|exe| exe.canonicalize())
+        .ok()
+        .and_then(|exe| bundled_model_dir(&exe));
     dirs::data_dir().map(|dir| EmbeddingModelDirs {
         models_dir: dir.join(APP_ID).join("models"),
-        bundled_model_dir: None,
+        bundled_model_dir,
     })
+}
+
+/// Where the packaged app keeps the default embedding model, under its
+/// resources (`[package.metadata.packager]` in `Cargo.toml`).
+const BUNDLED_MODEL: &str = "models/all-MiniLM-L6-v2-onnx";
+
+/// The default embedding model shipped in the macOS bundle, found from the
+/// executable (`Granit.app/Contents/MacOS/<exe>`, with the model in
+/// `Contents/Resources`). `None` outside a bundle, e.g. under `cargo run`:
+/// the model is then downloaded.
+fn bundled_model_dir(exe: &Path) -> Option<PathBuf> {
+    let dir = exe
+        .parent()?
+        .parent()?
+        .join("Resources")
+        .join(BUNDLED_MODEL);
+    dir.is_dir().then_some(dir)
 }
 
 /// The app-wide host state.
@@ -118,5 +139,22 @@ impl Host {
     /// The path of the open cave.
     pub fn cave_path(cx: &App) -> Option<PathBuf> {
         Self::get(cx).core.active_cave_path()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bundled_model_is_found_beside_the_executable_of_a_bundle() {
+        let dir = tempfile::tempdir().unwrap();
+        let contents = dir.path().join("Granit.app/Contents");
+        let exe = contents.join("MacOS/granit-app");
+        assert_eq!(bundled_model_dir(&exe), None);
+
+        let model = contents.join("Resources").join(BUNDLED_MODEL);
+        std::fs::create_dir_all(&model).unwrap();
+        assert_eq!(bundled_model_dir(&exe), Some(model));
     }
 }
