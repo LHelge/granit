@@ -706,6 +706,10 @@ impl Workspace {
             self.note_view.update(cx, |view, cx| {
                 view.lock(Some(RESTORE_LOCK_REASON.into()), cx)
             });
+            // The restore closes this cave and swaps its folder: a running
+            // reply's tools must not act on it meanwhile, or on what
+            // replaces it.
+            self.chat.update(cx, |chat, cx| chat.stop_reply(cx));
         }
         let task = backup_ops::restore(request, cx);
         cx.spawn(async move |this, cx| {

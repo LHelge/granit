@@ -1,10 +1,10 @@
 ---
 id: zem.ua
 title: Stop a running chat reply before an in-place restore swaps the cave
-status: open
+status: done
 priority: P2
 created: "2026-11-28T08:47:42.830168797Z"
-updated: "2026-11-28T08:47:42.830168797Z"
+updated: "2026-11-28T10:49:36.353312638Z"
 tags:
   - gpui
   - port

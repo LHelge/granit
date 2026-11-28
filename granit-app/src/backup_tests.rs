@@ -516,6 +516,75 @@ fn the_note_is_locked_while_a_restore_replaces_the_cave(cx: &mut TestAppContext)
     });
 }
 
+/// Ask for [`snapshot`] to be restored over the open cave.
+fn restore_in_place(app: &App, cx: &mut TestAppContext) {
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.restore_backup(
+            granit_core::backup::RestoreRequest {
+                id: snapshot().id,
+                target: RestoreTarget::CurrentCave,
+                passphrase: None,
+                credentials: None,
+            },
+            cx,
+        )
+    });
+}
+
+#[gpui::test]
+fn a_restore_over_the_cave_stops_a_running_reply_first(cx: &mut TestAppContext) {
+    let dir = fixture_cave();
+    let app = App::with_cave(dir.path(), cx);
+    cx.executor().allow_parking();
+    let backend = HangingBackend::new();
+    let url = backend.url();
+    cx.update(|cx| {
+        config_ops::update_config(cx, |config| {
+            config.backup.backend_url = url;
+            config.backup.api_key = "grnt_test".into();
+        })
+    })
+    .unwrap();
+    let chat = cx.read_entity(&app.workspace, |workspace, _| workspace.chat().clone());
+    let reply = |cx: &mut TestAppContext| {
+        chat.update(cx, |chat, cx| {
+            chat.run_stream(std::future::pending(), "hi".into(), 0, cx)
+        })
+    };
+    let streaming = |cx: &mut TestAppContext| cx.read_entity(&chat, |chat, _| chat.is_streaming());
+
+    // A restore refused for edits that cannot be written leaves the reply.
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_note(Some("b".into()), cx)
+    });
+    app.draw(cx);
+    edit_note(&app, "# B\n\nCannot be written.\n", cx);
+    std::fs::rename(dir.path().join("sub"), dir.path().join("sub.kept")).unwrap();
+    std::fs::write(dir.path().join("sub"), "").unwrap();
+    reply(cx);
+    restore_in_place(&app, cx);
+    assert_eq!(cx.update(|cx| BackupOps::running(cx)), None);
+    assert!(streaming(cx), "a refused restore stops nothing");
+
+    // Once they can be written the restore starts, and stops the reply
+    // while its cave is still the one installed.
+    std::fs::remove_file(dir.path().join("sub")).unwrap();
+    std::fs::rename(dir.path().join("sub.kept"), dir.path().join("sub")).unwrap();
+    restore_in_place(&app, cx);
+    assert_eq!(
+        cx.update(|cx| BackupOps::running(cx)),
+        Some(Running::Restore(RestoreStage::Downloading))
+    );
+    assert!(!streaming(cx));
+    assert_eq!(
+        cx.read_entity(&chat, |chat, _| chat.stopped_in()),
+        Some(Some(dir.path().to_path_buf()))
+    );
+
+    drop(backend);
+    wait_until(cx, |cx| cx.update(|cx| BackupOps::running(cx)).is_none());
+}
+
 #[gpui::test]
 fn the_no_cave_screen_offers_a_disaster_restore(cx: &mut TestAppContext) {
     let app = App::start(HostOptions::default(), StartupCave::None, cx);
