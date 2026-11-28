@@ -69,7 +69,7 @@ Take the ready tasks. Run them one at a time unless running some together is saf
   `Cargo.toml` or `Cargo.lock`, `package.json`, the JS bundles in `js/`, or the backup
   server's migrations and `.sqlx/`.
 - Two tasks can run beside each other when their bodies make it clear that they touch
-  different modules (say, an agent tool in `src-tauri/src/agent/tools/` and a docs page, or
+  different modules (say, an agent tool in `granit-core/src/agent/tools/` and a docs page, or
   two separate frontend components). If you cannot tell, run them in sequence.
 - Two agents at once by default, three at most: every checkout compiles the workspace,
   which is heavy (`fastembed`, `ort`, Tauri).

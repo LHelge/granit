@@ -1,8 +1,10 @@
 use super::store::Store;
 use super::AppState;
 use crate::agent::{self, AgentError};
-use crate::cave::{Cave, CaveError};
-use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, RagConfig, SidebarConfig};
+use crate::cave::CaveError;
+use granit_core::config::{rag_index_action, RagIndexAction};
+use granit_core::open::{build_vector_index, prepare_cave, sync_vector_index, EmbeddingModelDirs};
+use granit_types::{AppConfig, AppMetadata, ModelInfo, ProviderConfig, SidebarConfig};
 use log::warn;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -51,50 +53,9 @@ fn restore_cave_logic(
         return Ok(RestoreOutcome::InvalidPath);
     }
 
-    let mut cave = Cave::open(path)?;
-    cave.ensure_config()?;
-    let mut config = cave.load_config()?;
-    ensure_system_prompt_file(&cave, &mut config);
-    ensure_presentation_defaults(&mut cave);
-    *state.lock_config() = config;
-    state.set_cave(Some(cave));
+    state.install_cave(prepare_cave(path)?);
 
     Ok(RestoreOutcome::Restored)
-}
-
-/// Ensure `.granit/agent/system.md` exists for an opening cave.
-///
-/// A missing file is seeded from the legacy `agent.system_prompt` config
-/// field (which is then cleared from the config — the one-time migration) or,
-/// absent that, from the built-in default template. An existing file is never
-/// overwritten. Best-effort: on failure the agent falls back to the built-in
-/// default at build time, and an unmigrated legacy value is kept in config.
-fn ensure_system_prompt_file(cave: &Cave, config: &mut AppConfig) {
-    if !cave.system_prompt_path().exists() {
-        let content = match config.agent.system_prompt.as_deref() {
-            Some(custom) if !custom.trim().is_empty() => custom,
-            _ => granit_types::DEFAULT_SYSTEM_PROMPT_TEMPLATE,
-        };
-        if let Err(err) = cave.write_system_prompt(content) {
-            warn!("Failed to seed system prompt file: {err}");
-            return;
-        }
-    }
-    if config.agent.system_prompt.is_some() {
-        config.agent.system_prompt = None;
-        if let Err(err) = cave.save_config(config) {
-            warn!("Failed to clear migrated system prompt from config: {err}");
-        }
-    }
-}
-
-/// Seed the default presentation templates into a cave that has no
-/// `.granit/presentations/` directory yet. Best-effort: a cave that cannot
-/// be written simply has no templates until the user adds some.
-fn ensure_presentation_defaults(cave: &mut Cave) {
-    if let Err(err) = cave.seed_presentation_defaults() {
-        warn!("Failed to seed presentation templates: {err}");
-    }
 }
 
 /// Restore the cave at `path` into `state`, **never failing**.
@@ -145,10 +106,11 @@ pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn st
 
     // Build the vector index for RAG if a cave was restored.
     if outcome == RestoreOutcome::Restored {
-        let rag_config = state.lock_config().agent.rag.clone();
-        if rag_config.enabled {
-            build_vector_index(app, &state, &rag_config);
-        }
+        sync_vector_index(
+            state.core(),
+            &embedding_model_dirs(app),
+            tauri::async_runtime::handle().inner(),
+        );
     }
 
     Ok(())
@@ -157,30 +119,6 @@ pub(crate) fn restore_active_cave(app: &mut tauri::App) -> Result<(), Box<dyn st
 fn get_config_for_state(state: &AppState) -> AppConfig {
     let config = state.lock_config();
     state.ipc_response(&config)
-}
-
-/// What a config change means for the RAG vector index.
-#[derive(Debug, PartialEq)]
-enum RagIndexAction {
-    /// No index-affecting RAG change.
-    None,
-    /// RAG was enabled, or is enabled and the embedding model changed:
-    /// the index must be (re)built.
-    Rebuild,
-    /// RAG was disabled: the index should be dropped.
-    Disable,
-}
-
-fn rag_index_action(old: &RagConfig, new: &RagConfig) -> RagIndexAction {
-    if new.enabled && (!old.enabled || old.embedding_model != new.embedding_model) {
-        RagIndexAction::Rebuild
-    } else if old.enabled && !new.enabled {
-        RagIndexAction::Disable
-    } else {
-        // A `top_n`-only change needs no rebuild: top_n is baked into the
-        // agent at build time and the caller resets the agent anyway.
-        RagIndexAction::None
-    }
 }
 
 /// Lock the config, apply `f`, persist to the cave, reset the agent, and
@@ -322,7 +260,12 @@ pub(crate) fn save_config(
                 // Use the config this save just persisted — re-locking here
                 // could pick up a concurrent save's settings and rebuild with
                 // the wrong model (or after that save disabled RAG).
-                build_vector_index(&app, &state, &response.agent.rag);
+                build_vector_index(
+                    state.core(),
+                    &response.agent.rag,
+                    &embedding_model_dirs(&app),
+                    tauri::async_runtime::handle().inner(),
+                );
             }
         }
         RagIndexAction::Disable => state.set_vector_index(None),
@@ -341,73 +284,24 @@ pub(crate) fn save_sidebar_state(
     save_sidebar_state_for_state(state.inner(), sidebar, agent_panel)
 }
 
-/// Resolve paths for the embedding model and build the vector index for RAG
-/// on a background task.
-///
-/// Loading the ONNX model can take seconds, so only the cheap path resolution
-/// happens on the calling command; model load, cache read, and the rebuild all
-/// run in the background. The current index is dropped immediately (cancelling
-/// any in-flight rebuild) so an agent built during the window never holds an
-/// index with stale embeddings; the new index is installed once ready.
-fn build_vector_index(app: &impl Manager<tauri::Wry>, state: &AppState, rag_config: &RagConfig) {
+/// Where the RAG embedding model is cached and bundled, from the Tauri path
+/// API: downloads go to `<app data>/models`, the bundled default model sits
+/// in the app's resources.
+fn embedding_model_dirs(app: &impl Manager<tauri::Wry>) -> EmbeddingModelDirs {
     let models_dir = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("models");
-    let _ = std::fs::create_dir_all(&models_dir);
-
-    let model_name =
-        crate::agent::vectordb::resolve_model_name(rag_config.embedding_model.as_deref())
-            .to_string();
-
     let bundled_model_dir = app
         .path()
         .resource_dir()
         .ok()
-        .map(|d| d.join("resources/models/all-MiniLM-L6-v2-onnx"))
-        .filter(|d| d.join("model.onnx").exists());
-
-    state.set_vector_index(None);
-
-    let shared_cave = state.shared_cave();
-    let app_handle = app.app_handle().clone();
-    tauri::async_runtime::spawn(async move {
-        let built = tauri::async_runtime::spawn_blocking(move || {
-            crate::agent::vectordb::CaveVectorIndex::new(
-                shared_cave,
-                &model_name,
-                &models_dir,
-                bundled_model_dir.as_deref(),
-            )
-        })
-        .await;
-
-        let index = match built {
-            Ok(Ok(index)) => index,
-            Ok(Err(e)) => {
-                warn!("vector index init failed (RAG disabled): {e}");
-                return;
-            }
-            Err(e) => {
-                warn!("vector index init task panicked: {e}");
-                return;
-            }
-        };
-
-        {
-            let state = app_handle.state::<AppState>();
-            state.set_vector_index(Some(index.clone()));
-            // ensure_agent snapshots the vector index when it builds the
-            // agent, so an agent built before the index was ready would never
-            // see RAG. Reset so the next message rebuilds it with the index.
-            state.reset_agent();
-        }
-
-        if let Err(e) = index.rebuild().await {
-            warn!("vector index rebuild failed: {e}");
-        }
-    });
+        .map(|d| d.join("resources/models/all-MiniLM-L6-v2-onnx"));
+    EmbeddingModelDirs {
+        models_dir,
+        bundled_model_dir,
+    }
 }
 
 /// The full open-cave flow, shared by the `open_cave` command and restore
@@ -417,11 +311,7 @@ pub(crate) fn open_cave_at(
     app: &tauri::AppHandle,
     state: &AppState,
 ) -> Result<AppConfig, CaveError> {
-    let mut cave = Cave::open(path.clone())?;
-    cave.ensure_config()?;
-    let mut config = cave.load_config()?;
-    ensure_system_prompt_file(&cave, &mut config);
-    ensure_presentation_defaults(&mut cave);
+    let prepared = prepare_cave(path.clone())?;
 
     // The presentation window belongs to the cave being closed.
     super::close_presentation_window(app, state);
@@ -429,16 +319,14 @@ pub(crate) fn open_cave_at(
     let store = Store::new(app);
     store.persist_active_cave(&path).map_err(CaveError::Io)?;
 
-    *state.lock_config() = config;
-    state.set_cave(Some(cave));
-    state.reset_agent();
-
-    let rag_config = state.lock_config().agent.rag.clone();
-    if rag_config.enabled {
-        build_vector_index(app, state, &rag_config);
-    } else {
-        state.set_vector_index(None);
-    }
+    state.install_cave(prepared);
+    // The vector index is built on the tokio runtime behind
+    // `tauri::async_runtime`.
+    sync_vector_index(
+        state.core(),
+        &embedding_model_dirs(app),
+        tauri::async_runtime::handle().inner(),
+    );
 
     let config = state.lock_config();
     Ok(state.ipc_response(&config))
@@ -498,6 +386,7 @@ pub(crate) fn select_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cave::Cave;
     use granit_types::{AgentConfig, AgentMode, RagConfig, ToolsConfig};
 
     fn test_app_state() -> AppState {
@@ -758,67 +647,7 @@ mod tests {
         assert!(saved.active_cave.is_none());
     }
 
-    // ── rag_index_action: which config changes touch the vector index ──────
-
-    fn rag(enabled: bool, top_n: usize, model: Option<&str>) -> RagConfig {
-        RagConfig {
-            enabled,
-            top_n,
-            embedding_model: model.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn rag_index_action_enabling_rag_rebuilds() {
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(true, 5, None)),
-            RagIndexAction::Rebuild
-        );
-    }
-
-    #[test]
-    fn rag_index_action_disabling_rag_disables() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(false, 5, None)),
-            RagIndexAction::Disable
-        );
-    }
-
-    #[test]
-    fn rag_index_action_model_change_while_enabled_rebuilds() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 5, Some("BGESmallENV15"))),
-            RagIndexAction::Rebuild
-        );
-    }
-
-    #[test]
-    fn rag_index_action_model_change_while_disabled_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(false, 5, Some("BGESmallENV15"))),
-            RagIndexAction::None
-        );
-    }
-
-    #[test]
-    fn rag_index_action_top_n_only_change_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 10, None)),
-            RagIndexAction::None
-        );
-    }
-
-    #[test]
-    fn rag_index_action_unchanged_config_is_none() {
-        assert_eq!(
-            rag_index_action(&rag(true, 5, None), &rag(true, 5, None)),
-            RagIndexAction::None
-        );
-        assert_eq!(
-            rag_index_action(&rag(false, 5, None), &rag(false, 5, None)),
-            RagIndexAction::None
-        );
-    }
+    // rag_index_action itself is tested in granit_core::config.
 
     #[test]
     fn test_save_config_for_state_reports_rag_action() {

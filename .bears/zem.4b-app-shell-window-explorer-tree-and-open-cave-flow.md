@@ -1,16 +1,17 @@
 ---
 id: zem.4b
 title: "App shell: window, explorer tree and open-cave flow"
-status: open
+status: done
 priority: P1
 created: "2026-11-26T21:09:11.701295Z"
-updated: "2026-11-26T21:09:11.701295Z"
+updated: "2026-11-27T00:26:21.628104247Z"
 tags:
   - gpui
   - port
   - frontend
 depends_on:
   - zem.4q
+attempts: 1
 ---
 
 ## Summary

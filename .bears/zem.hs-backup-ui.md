@@ -1,10 +1,10 @@
 ---
 id: zem.hs
 title: Backup UI
-status: open
+status: done
 priority: P2
 created: "2026-11-26T21:09:59.306207Z"
-updated: "2026-11-26T21:09:59.306207Z"
+updated: "2026-11-27T02:15:50.604345793Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - backup
 depends_on:
   - zem.4b
+attempts: 1
 ---
 
 ## Summary

@@ -33,3 +33,13 @@ The port starts on a pinned, slightly old stack: gpui-kit 0.10 (0.11 pins a gpui
 ## Testing
 
 - Full test suite and a manual run of the app after each bump
+## Upstream items found during the port (2026-11-27)
+
+Workarounds in `granit-app/src/note_view/` that an upstream zorite-editor change would remove:
+
+- `$$` split on load: `normalize_loaded` (`src/lib.rs` ~387, from `set_text` ~1235 / `with_text`) runs `normalize_math_fences`. Needs a non-normalizing load (`set_text_raw` or an option) or `EditorState::clear_history()`; removes `load_text`'s `replace_range` and the `undo_floor` guard.
+- `$$` split while typing: `apply_auto_replace` (~1434) calls `normalize_math_at` (~4223). Needs a switch (`set_math_normalization(false)`); removes the always-firing empty `set_auto_replace` rule.
+- CRLF: `EditorState::newline` (~2433-2514) inserts bare `\n` and paste (~2945) converts CRLF to LF. Needs line-ending preservation; the host-side `save::LineEnding` conversion can stay.
+- No selection setter: `NoteView::select_range` fakes one with `replace_and_mark_text_in_range` + `unmark_text` and swallows the `Changed` echo (`selection_echo`). Needs a public `select_range(range)`. Re-check this workaround whenever the zorite pin moves: if the echo stops firing, the next real edit is swallowed.
+- No multi-cursor: select-next moves the single selection instead of adding one.
+- Optional: route Copy/Cut through `set_clipboard_writer` to put HTML on normal copies (`granit-app/src/clipboard.rs`).

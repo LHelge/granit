@@ -1,10 +1,10 @@
 ---
 id: zem.ry
 title: Make an unedited save leave note files byte-identical
-status: open
+status: done
 priority: P1
 created: "2026-11-26T21:09:11.675360Z"
-updated: "2026-11-26T21:09:11.675360Z"
+updated: "2026-11-27T00:12:05.793266422Z"
 tags:
   - gpui
   - port
@@ -12,6 +12,7 @@ tags:
   - core
 depends_on:
   - zem.4q
+attempts: 1
 ---
 
 ## Summary

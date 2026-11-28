@@ -54,6 +54,11 @@ pub(crate) fn render_presentation_page(state: &AppState, name: &str) -> Result<S
     })
 }
 
+/// A Tauri window failure as the cave error the command reports.
+fn window_error(e: tauri::Error) -> CaveError {
+    CaveError::Window(e.to_string())
+}
+
 /// Open the presentation window for a note, or point the open window at it.
 #[tauri::command]
 pub(crate) fn start_presentation(
@@ -69,8 +74,8 @@ pub(crate) fn start_presentation(
     });
 
     if let Some(window) = app.get_webview_window(PRESENTATION_WINDOW_LABEL) {
-        window.navigate(url)?;
-        window.set_focus()?;
+        window.navigate(url).map_err(window_error)?;
+        window.set_focus().map_err(window_error)?;
         return Ok(());
     }
 
@@ -82,7 +87,8 @@ pub(crate) fn start_presentation(
     .title(format!("{slug} - Presentation"))
     .inner_size(1280.0, 720.0)
     .min_inner_size(320.0, 180.0)
-    .build()?;
+    .build()
+    .map_err(window_error)?;
 
     // Forget what the window showed once the user closes it.
     let handle = app.clone();

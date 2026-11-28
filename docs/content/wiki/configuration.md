@@ -84,8 +84,9 @@ agent:
 
 # Theme
 
-`theme` (string, default `"dark"`) selects the active UI theme by id. See [[themes]] for the full
-list of available theme ids and their light/dark variants.
+`theme` (string, default `"system"`) selects the active UI theme by id; `system` follows the
+operating system's light or dark appearance. See [[themes]] for the full list of available theme
+ids and their light/dark variants.
 
 # Fonts
 

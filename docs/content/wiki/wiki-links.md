@@ -12,12 +12,14 @@ A wiki-link wraps a note's slug (its filename without the `.md` extension) in do
 
 To show different link text, add a label after a pipe. Writing `[[Volvo|the car]]` links to the `Volvo` note but displays "the car".
 
+Link syntax inside inline code, code blocks and raw HTML blocks is plain text: it is not a link, not a backlink, never marked broken, and `[[` completion stays off there.
+
 > [!IMPORTANT]
 > Links resolve by **filename across the whole cave**, not by relative path. Because filenames are globally unique (see [[cave-rules]]), the slug alone always identifies exactly one note, regardless of which subfolder it sits in.
 
 # Heading anchors
 
-Any heading can be made a link target by giving it an explicit id with a pandoc-style attribute. Writing a heading as `# Volvo {#volvo}` registers the anchor `volvo`.
+Any heading can be made a link target by giving it an explicit id with a pandoc-style attribute. Writing a heading as `# Volvo {#volvo}` registers the anchor `volvo`. An underlined (setext) heading takes the attribute on its text line, `Volvo {#volvo}` above a line of `===` or `---`.
 
 What makes Granit distinctive is that anchor ids live in the **same global namespace as note filenames**. Once a heading declares an id, you can link to it with a plain wiki-link — `[[Volvo]]` — exactly as if it were a note. The link resolves to that heading and scrolls the reader to it.
 

@@ -1,9 +1,9 @@
-mod agent;
-mod backup;
-mod cave;
 mod commands;
-mod markdown;
 mod scheme;
+
+// The core modules live in `granit-core`; re-importing them at the crate root
+// keeps the `crate::cave::…`-style paths of `commands/` and `scheme.rs`.
+use granit_core::{agent, backup, cave, markdown};
 
 use commands::*;
 use granit_types::AppConfig;
@@ -26,7 +26,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::new(config))
         .manage(UpdateCheckGuard::default())
-        .manage(OperationGuard::default())
         // Serves cave files (note images, presentation templates and their
         // assets) to every webview of the app; see `scheme.rs`.
         .register_uri_scheme_protocol(scheme::SCHEME, |ctx, request| {

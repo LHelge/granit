@@ -32,3 +32,8 @@ The current app updates itself with `tauri-plugin-updater`, verifying releases w
 ## Testing
 
 - End-to-end against a pre-release on a test machine: old version updates to new
+## Decisions (owner, 2026-11-28)
+
+- **Own small updater**, not `cargo-packager-updater` (last published July 2025, needs its own manifest format) and not Sparkle. It reads the same `latest.json` as the Tauri updater (one manifest format for old and new apps), verifies with the existing minisign key (cargo-packager signs artifacts in the format Tauri does), and replaces the app per platform: the `.app` bundle on macOS, the AppImage on Linux, the installer on Windows.
+- **Silent, as today**: download and install in the background on start; the new version applies on the next launch and shows its release notes then. No confirmation prompt (this replaces "installs on confirmation" in the acceptance criteria).
+- The macOS release job (`release-macos`) already adds a signed `Granit_aarch64.app.tar.gz` to `latest.json`; whether an installed Tauri app updates from it is still to be verified end to end.

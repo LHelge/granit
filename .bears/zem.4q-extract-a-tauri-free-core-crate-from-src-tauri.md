@@ -1,15 +1,16 @@
 ---
 id: zem.4q
 title: Extract a Tauri-free core crate from src-tauri
-status: open
+status: done
 priority: P1
 created: "2026-11-26T21:08:54.928028Z"
-updated: "2026-11-26T21:08:54.928028Z"
+updated: "2026-11-26T23:59:40.963954938Z"
 tags:
   - gpui
   - port
   - backend
   - core
+attempts: 1
 ---
 
 ## Summary

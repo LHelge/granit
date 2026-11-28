@@ -9,15 +9,15 @@ mod update;
 pub use agent::{
     AgentConfig, AgentDocInfo, AgentMode, AttachedNote, ChatMessage, ChatRole, ModelInfo,
     ProviderConfig, ProviderEntry, ProviderInfo, RagConfig, ToolCallInfo, ToolInfo, ToolsConfig,
-    WebFetchConfig, WebSearchConfig, DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+    WebFetchConfig, WebSearchConfig, DEFAULT_SYSTEM_PROMPT_TEMPLATE, EMBEDDING_MODELS,
 };
 pub use backup::{
     BackupConfig, BackupProgress, BackupStage, RestoreProgress, RestoreStage, RestoreTarget,
 };
-pub use config::{AppConfig, FontConfig, SidebarConfig};
+pub use config::{AppConfig, FontConfig, SidebarConfig, ThemeChoice};
 pub use document::{
     ContentMatch, Document, DocumentMeta, Frontmatter, RenderedDocument, TagMap, TodoItem, TodoList,
 };
-pub use icons::{resolve_note_icon, NoteIconEntry, NOTE_ICONS};
+pub use icons::{resolve_note_icon, search_note_icons, NoteIconEntry, NOTE_ICONS};
 pub use metadata::AppMetadata;
 pub use update::{ReleaseNotes, UpdateCheckStatus};

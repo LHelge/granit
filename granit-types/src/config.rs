@@ -2,7 +2,125 @@ use crate::AgentConfig;
 use serde::{Deserialize, Serialize};
 
 fn default_theme() -> String {
-    "dark".to_string()
+    ThemeChoice::System.config_value().to_string()
+}
+
+/// The theme the GPUI app shows: Catppuccin Latte (light), Catppuccin Frappé
+/// (dark), or whichever matches the system appearance.
+///
+/// It is read from [`AppConfig::theme`], which keeps the free-form name the
+/// Tauri app writes (a DaisyUI or community theme id). Reading never fails
+/// and never changes the stored name: known dark themes read as
+/// [`ThemeChoice::Dark`], known light ones as [`ThemeChoice::Light`], and a
+/// name that says neither as [`ThemeChoice::System`]. Choosing a theme writes
+/// [`ThemeChoice::config_value`], which the Tauri app also accepts: DaisyUI's
+/// built-in `light` and `dark`, and `system`, which no theme is named after,
+/// so the web view falls back to DaisyUI's `prefers-color-scheme` themes and
+/// follows the system too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThemeChoice {
+    /// Follow the system appearance.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// DaisyUI and community theme ids the Tauri app offers with a dark palette.
+const DARK_THEMES: &[&str] = &[
+    "dark",
+    "synthwave",
+    "halloween",
+    "forest",
+    "black",
+    "luxury",
+    "dracula",
+    "business",
+    "night",
+    "coffee",
+    "dim",
+    "sunset",
+    "abyss",
+    "catppuccin-frappe",
+    "catppuccin-macchiato",
+    "catppuccin-mocha",
+    "frappe",
+    "macchiato",
+    "mocha",
+    "gruvbox-dark",
+    "tokyo-night",
+    "rose-pine-moon",
+    "one-dark",
+];
+
+/// DaisyUI and community theme ids the Tauri app offers with a light palette.
+const LIGHT_THEMES: &[&str] = &[
+    "light",
+    "cupcake",
+    "bumblebee",
+    "emerald",
+    "corporate",
+    "retro",
+    "cyberpunk",
+    "valentine",
+    "garden",
+    "aqua",
+    "lofi",
+    "pastel",
+    "fantasy",
+    "wireframe",
+    "cmyk",
+    "autumn",
+    "acid",
+    "lemonade",
+    "winter",
+    "nord",
+    "caramellatte",
+    "silk",
+    "catppuccin-latte",
+    "latte",
+    "gruvbox-light",
+    "rose-pine-dawn",
+];
+
+impl ThemeChoice {
+    /// Every choice, in the order the settings offer them.
+    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
+
+    /// Read a stored theme name. Never fails: an unknown name follows the
+    /// system unless it says "dark" or "light".
+    pub fn from_config(theme: &str) -> Self {
+        let theme = theme.trim().to_ascii_lowercase();
+        if DARK_THEMES.contains(&theme.as_str()) {
+            Self::Dark
+        } else if LIGHT_THEMES.contains(&theme.as_str()) {
+            Self::Light
+        } else if theme.contains("dark") {
+            Self::Dark
+        } else if theme.contains("light") {
+            Self::Light
+        } else {
+            Self::System
+        }
+    }
+
+    /// The name stored for this choice, one the Tauri app also accepts.
+    pub fn config_value(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Light => "light",
+            Self::Dark => "dark",
+        }
+    }
+
+    /// What the settings call this choice.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "Follow the system",
+            Self::Light => "Catppuccin Latte (light)",
+            Self::Dark => "Catppuccin Frappé (dark)",
+        }
+    }
 }
 
 fn default_daily_note_folder() -> String {
@@ -63,7 +181,7 @@ impl FontConfig {
 }
 
 /// Application configuration shared between backend persistence and frontend IPC.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub agent: AgentConfig,
@@ -77,7 +195,9 @@ pub struct AppConfig {
     pub sidebar: SidebarConfig,
     #[serde(default = "SidebarConfig::agent_default")]
     pub agent_panel: SidebarConfig,
-    /// Active theme id (e.g. "default", "mocha").
+    /// Active theme id: a DaisyUI or community theme id from the Tauri app
+    /// (e.g. "dracula", "catppuccin-mocha"), or "system". The GPUI app reads
+    /// it through [`AppConfig::theme_choice`].
     #[serde(default = "default_theme")]
     pub theme: String,
     /// Folder name/path (relative to cave root) where daily notes are stored.
@@ -103,11 +223,26 @@ impl Default for AppConfig {
             agent_font: FontConfig::agent_default(),
             sidebar: SidebarConfig::sidebar_default(),
             agent_panel: SidebarConfig::agent_default(),
-            theme: "dark".to_string(),
+            theme: default_theme(),
             daily_note_folder: "Daily".to_string(),
             daily_note_template_slug: None,
             backup: crate::BackupConfig::default(),
             active_cave: None,
+        }
+    }
+}
+
+impl AppConfig {
+    /// The theme to show, read from [`AppConfig::theme`].
+    pub fn theme_choice(&self) -> ThemeChoice {
+        ThemeChoice::from_config(&self.theme)
+    }
+
+    /// Choose `choice`. A choice equal to what the stored name reads as
+    /// keeps that name, so an unchanged pick never rewrites a Tauri theme.
+    pub fn set_theme_choice(&mut self, choice: ThemeChoice) {
+        if self.theme_choice() != choice {
+            self.theme = choice.config_value().to_string();
         }
     }
 }
@@ -125,7 +260,8 @@ mod tests {
             config.agent.providers[0].provider,
             ProviderConfig::Ollama { .. }
         ));
-        assert_eq!(config.theme, "dark");
+        assert_eq!(config.theme, "system");
+        assert_eq!(config.theme_choice(), ThemeChoice::System);
         assert_eq!(config.daily_note_folder, "Daily");
         assert!(config.daily_note_template_slug.is_none());
     }
@@ -135,7 +271,7 @@ mod tests {
         // serde_yml 0.0.13 rejects fully empty documents, so an empty mapping
         // is the minimal input; empty-file handling lives in Cave::load_config.
         let config: AppConfig = serde_yml::from_str("{}").unwrap();
-        assert_eq!(config.theme, "dark");
+        assert_eq!(config.theme, "system");
         assert_eq!(config.daily_note_folder, "Daily");
         assert_eq!(config.markdown_font, FontConfig::markdown_default());
         assert!(config.daily_note_template_slug.is_none());
@@ -186,6 +322,84 @@ mod tests {
     fn test_active_cave_none_is_not_serialized() {
         let yaml = serde_yml::to_string(&AppConfig::default()).unwrap();
         assert!(!yaml.contains("active_cave"));
+    }
+
+    #[test]
+    fn test_daisyui_theme_names_map_to_the_nearest_catppuccin_flavour() {
+        for dark in [
+            "dark",
+            "dracula",
+            "catppuccin-mocha",
+            "tokyo-night",
+            "my-dark-theme",
+        ] {
+            assert_eq!(ThemeChoice::from_config(dark), ThemeChoice::Dark, "{dark}");
+        }
+        for light in ["light", "cupcake", "catppuccin-latte", "latte", "Nord"] {
+            assert_eq!(
+                ThemeChoice::from_config(light),
+                ThemeChoice::Light,
+                "{light}"
+            );
+        }
+        for system in ["system", "default", "", "no-such-theme"] {
+            assert_eq!(
+                ThemeChoice::from_config(system),
+                ThemeChoice::System,
+                "{system}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_reading_a_daisyui_theme_keeps_its_name() {
+        let config: AppConfig = serde_yml::from_str("theme: dracula\n").unwrap();
+        assert_eq!(config.theme_choice(), ThemeChoice::Dark);
+        let yaml = serde_yml::to_string(&config).unwrap();
+        assert!(yaml.contains("theme: dracula"), "{yaml}");
+    }
+
+    #[test]
+    fn test_choosing_a_theme_writes_a_name_the_tauri_app_accepts() {
+        let mut config: AppConfig = serde_yml::from_str("theme: dracula\n").unwrap();
+        // Re-picking what the name reads as keeps it.
+        config.set_theme_choice(ThemeChoice::Dark);
+        assert_eq!(config.theme, "dracula");
+
+        for (choice, stored) in [
+            (ThemeChoice::Light, "light"),
+            (ThemeChoice::System, "system"),
+            (ThemeChoice::Dark, "dark"),
+        ] {
+            config.set_theme_choice(choice);
+            assert_eq!(config.theme, stored);
+            let yaml = serde_yml::to_string(&config).unwrap();
+            let back: AppConfig = serde_yml::from_str(&yaml).unwrap();
+            assert_eq!(back.theme_choice(), choice);
+            assert_eq!(back, config);
+        }
+    }
+
+    #[test]
+    fn test_full_config_round_trips_without_active_cave() {
+        let mut config = AppConfig {
+            theme: "light".into(),
+            daily_note_folder: "Journal".into(),
+            daily_note_template_slug: Some("day".into()),
+            markdown_font: FontConfig {
+                font_family: "Iosevka".into(),
+                font_size: 15,
+            },
+            ..AppConfig::default()
+        };
+        config.agent.max_turns = 3;
+        config.agent.rag.embedding_model = Some("BGESmallENV15".into());
+        config.agent.tool_config.web_search.api_key = Some("BSA-key".into());
+        config.agent.disabled_tools = vec!["web_fetch".into()];
+
+        let yaml = serde_yml::to_string(&config).unwrap();
+        let back: AppConfig = serde_yml::from_str(&yaml).unwrap();
+        assert_eq!(back, config);
     }
 
     #[test]
