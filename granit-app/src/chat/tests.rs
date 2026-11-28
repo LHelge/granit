@@ -401,10 +401,107 @@ fn dragging_the_edge_resizes_the_panel_and_saves_the_width_once(cx: &mut TestApp
     );
 }
 
+/// Stream `items` (ending with `Done`) into the chat and wait for the end.
+async fn stream(
+    app: &App,
+    chat: &Entity<ChatPanel>,
+    items: Vec<Result<AgentStreamItem, AgentError>>,
+    cx: &mut TestAppContext,
+) {
+    let task = chat.update(cx, |chat, cx| {
+        chat.run_stream(
+            async move { Ok(AgentStream::from_items(items)) },
+            "hi".into(),
+            0,
+            cx,
+        );
+        chat.take_stream().unwrap()
+    });
+    cx.executor().allow_parking();
+    task.await;
+    settle(app, cx);
+}
+
+#[gpui::test]
+async fn indented_code_in_a_list_item_is_code_as_in_the_reader(cx: &mut TestAppContext) {
+    let (_dir, app, chat) = start(cx);
+    let items = vec![
+        text("- item\n\n      [[x"),
+        text("]]\n\nAfter [[a]]."),
+        Ok(AgentStreamItem::Done),
+    ];
+    stream(&app, &chat, items, cx).await;
+
+    let source = cx.read_entity(&chat, |chat, _| chat.transcript().to_string());
+    assert_eq!(
+        source, "- item\n\n      [[x]]\n\nAfter [a](<wiki:a>).",
+        "the list's code is left as written"
+    );
+    let parsed = cx.read_entity(&chat, |chat, _| chat.parsed_links());
+    assert_eq!(parsed, vec!["wiki:a"]);
+    let rendered = cx.read_entity(&chat, |chat, cx| chat.rendered_text(cx));
+    assert!(rendered.contains("[[x]]"), "{rendered:?}");
+}
+
+#[gpui::test]
+async fn links_and_fences_split_across_chunks_are_decided_whole(cx: &mut TestAppContext) {
+    let (_dir, app, chat) = start(cx);
+    let items = vec![
+        text("Before [[a"),
+        text("|the "),
+        text("note]] and `[[no"),
+        text("t]]` then\n``"),
+        text("`\n[[b]]\n`"),
+        text("``\nAfter [["),
+        text("c]]"),
+        Ok(AgentStreamItem::Done),
+    ];
+    stream(&app, &chat, items, cx).await;
+
+    let source = cx.read_entity(&chat, |chat, _| chat.transcript().to_string());
+    assert_eq!(
+        source,
+        "Before [the note](<wiki:a>) and `[[not]]` then\n```\n[[b]]\n```\nAfter [c](<wiki:c>)"
+    );
+    let parsed = cx.read_entity(&chat, |chat, _| chat.parsed_links());
+    assert_eq!(parsed, vec!["wiki:a", "wiki:c"]);
+}
+
+#[gpui::test]
+fn a_cave_switch_stops_the_reply_before_the_core_swaps_caves(cx: &mut TestAppContext) {
+    let (dir, app, chat) = start(cx);
+    chat.update(cx, |chat, cx| {
+        chat.run_stream(std::future::pending(), "hi".into(), 0, cx);
+        chat.on_reply_text("Partial", cx);
+    });
+    assert!(cx.read_entity(&chat, |chat, _| chat.is_streaming()));
+
+    let other = fixture_cave();
+    app.update_workspace(cx, |workspace, cx| {
+        workspace.open_cave(other.path().to_path_buf(), cx)
+    });
+    cx.run_until_parked();
+
+    assert_eq!(
+        cx.update(|cx| Host::cave_path(cx)),
+        Some(other.path().to_path_buf())
+    );
+    assert!(!cx.read_entity(&chat, |chat, _| chat.is_streaming()));
+    assert_eq!(
+        cx.read_entity(&chat, |chat, _| chat.stopped_in()),
+        Some(Some(dir.path().to_path_buf())),
+        "the reply stopped while the old cave was still installed"
+    );
+}
+
 #[gpui::test]
 async fn link_labels_render_as_written(cx: &mut TestAppContext) {
     let (_dir, app, chat) = start(cx);
-    let items = vec![text("See [[*x*]] and [[a\\]]."), Ok(AgentStreamItem::Done)];
+    let items = vec![
+        text("See [[*x*]] and [[t|a\\b]], "),
+        text("not [[a\\]]."),
+        Ok(AgentStreamItem::Done),
+    ];
     let task = chat.update(cx, |chat, cx| {
         chat.run_stream(
             async move { Ok(AgentStream::from_items(items)) },
@@ -419,7 +516,11 @@ async fn link_labels_render_as_written(cx: &mut TestAppContext) {
     settle(&app, cx);
 
     let rendered = cx.read_entity(&chat, |chat, cx| chat.rendered_text(cx));
-    assert!(rendered.contains("See *x* and a\\."), "{rendered:?}");
+    // `\]` escapes the bracket, so the reader sees no link there either.
+    assert!(
+        rendered.contains("See *x* and a\\b, not [[a]]."),
+        "{rendered:?}"
+    );
     let parsed = cx.read_entity(&chat, |chat, _| chat.parsed_links());
-    assert_eq!(parsed, vec!["wiki:*x*", "wiki:a\\"]);
+    assert_eq!(parsed, vec!["wiki:*x*", "wiki:t"]);
 }

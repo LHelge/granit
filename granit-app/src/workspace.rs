@@ -645,14 +645,18 @@ impl Workspace {
         self.status = CaveStatus::Opening(path.clone());
         cx.notify();
         // Edits made while the cave is prepared are written right before the
-        // core swaps caves.
+        // core swaps caves. A running reply stops then too: its tools act on
+        // whichever cave is installed.
         let note_view = self.note_view.downgrade();
+        let chat = self.chat.downgrade();
         let before_install = move |cx: &mut App| {
             config_ops::flush_all(cx)
                 .map_err(|err| format!("the settings could not be saved: {err}"))?;
             note_view
                 .update(cx, |view, cx| view.save_before_leaving(cx))
-                .unwrap_or(Ok(()))
+                .unwrap_or(Ok(()))?;
+            chat.update(cx, |chat, cx| chat.stop_reply(cx)).ok();
+            Ok(())
         };
         let task = cave_ops::open_cave(path.clone(), before_install, cx);
         cx.spawn(async move |this, cx| {

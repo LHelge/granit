@@ -1,10 +1,10 @@
 ---
 id: zem.q5
 title: "Chat: take wiki-links from granit-core and stop a reply before a cave switch"
-status: open
+status: in_progress
 priority: P2
 created: "2026-11-27T07:09:14.254219511Z"
-updated: "2026-11-27T07:09:14.254219511Z"
+updated: "2026-11-28T08:34:13.341025643Z"
 tags:
   - gpui
   - port
@@ -14,6 +14,7 @@ tags:
 depends_on:
   - zem.up
   - zem.cn
+attempts: 1
 ---
 
 ## Summary

@@ -4,15 +4,18 @@
 //! rendered by a single GPUI Kit `TextView`: replies stream into it and are
 //! formatted while they arrive, the view follows the bottom, and a
 //! selection can run across messages. `[[wiki-links]]` are rewritten to
-//! `wiki:` links on the stream ([`wiki_links`]) and resolved against the
-//! cave ([`links`]); clicking one emits [`ChatEvent::OpenNote`], which the
-//! workspace handles. Broken links are drawn as plain text, task-list
-//! checkboxes are not clickable, and raw HTML shows as text.
+//! `wiki:` links on the stream ([`wiki_links`], deciding links and code with
+//! granit-core's parser) and resolved against the cave ([`links`]); clicking
+//! one emits [`ChatEvent::OpenNote`], which the workspace handles. Broken
+//! links are drawn as plain text, task-list checkboxes are not clickable,
+//! and raw HTML shows as text.
 //!
 //! A message goes to the core's agent (`Agent::stream_with_history`) on the
 //! tokio runtime; every stream item is brought to the panel with an entity
 //! update. Tool results announce `CaveEvent::NotesChanged`, so the explorer
-//! and the open note follow what agent tools change. Changing the provider,
+//! and the open note follow what agent tools change. A cave switch stops the
+//! reply before the core swaps caves ([`ChatPanel::stop_reply`]), so no tool
+//! call of it reaches the new cave. Changing the provider,
 //! model or mode saves the cave's config, resets the agent and cancels a
 //! running reply, as the Tauri app does; "New conversation" clears the
 //! agent's history. History lives in the agent, per session.
@@ -118,6 +121,10 @@ pub struct ChatPanel {
     /// Records every link URL the view parses, for tests.
     #[cfg(test)]
     link_probe: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
+    /// The cave installed in the core when [`Self::stop_reply`] last
+    /// stopped a reply, for tests.
+    #[cfg(test)]
+    stopped_in: Option<Option<std::path::PathBuf>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -175,6 +182,8 @@ impl ChatPanel {
             drawn_font: None,
             #[cfg(test)]
             link_probe: Default::default(),
+            #[cfg(test)]
+            stopped_in: None,
             _subscriptions: subscriptions,
         };
         this.follow_tail(cx);
@@ -203,6 +212,28 @@ impl ChatPanel {
     #[cfg(test)]
     pub fn take_stream(&mut self) -> Option<Task<()>> {
         self.stream.take()
+    }
+
+    /// The cave the core had installed when a reply was last stopped by
+    /// [`Self::stop_reply`] (`None`: none was), for tests.
+    #[cfg(test)]
+    pub fn stopped_in(&self) -> Option<Option<std::path::PathBuf>> {
+        self.stopped_in.clone()
+    }
+
+    /// Stop the running reply, keeping what arrived of it. The workspace
+    /// calls it right before the core swaps caves: the agent's tools act on
+    /// whichever cave is installed, so a reply must not outlive its cave.
+    pub fn stop_reply(&mut self, cx: &mut Context<Self>) {
+        if self.stream.take().is_none() {
+            return;
+        }
+        #[cfg(test)]
+        {
+            self.stopped_in = Some(Host::cave_path(cx));
+        }
+        let pushed = self.transcript.finish_reply();
+        self.push_view(pushed, cx);
     }
 
     /// The font family and size the panel was last drawn with.

@@ -3,12 +3,14 @@ mod frontmatter;
 mod links;
 mod presentation;
 mod render;
+mod stream;
 
 pub(crate) use builder::splice_frontmatter_scalar;
 pub(crate) use frontmatter::locate_frontmatter;
 pub use frontmatter::split_frontmatter;
 pub use links::{AnchorHeading, LinkSpans, WikiLinkSpan};
 pub use render::{cave_image_path, DocumentStats};
+pub use stream::StreamSpans;
 
 use std::cell::OnceCell;
 

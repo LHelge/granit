@@ -76,7 +76,7 @@ impl LinkSpans {
 }
 
 /// The options every wiki-link aware pass parses with: the renderer's.
-fn link_options() -> Options {
+pub(super) fn link_options() -> Options {
     let mut options = base_options();
     options.insert(Options::ENABLE_WIKILINKS);
     options
