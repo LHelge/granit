@@ -76,17 +76,19 @@ fn default_embedding_models() -> Option<EmbeddingModelDirs> {
 /// resources (`[package.metadata.packager]` in `Cargo.toml`).
 const BUNDLED_MODEL: &str = "models/all-MiniLM-L6-v2-onnx";
 
-/// The default embedding model shipped in the macOS bundle, found from the
-/// executable (`Granit.app/Contents/MacOS/<exe>`, with the model in
-/// `Contents/Resources`). `None` outside a bundle, e.g. under `cargo run`:
-/// the model is then downloaded.
+/// The default embedding model shipped with the packaged app, found from the
+/// executable. cargo-packager puts the resources in `Contents/Resources` of
+/// the macOS bundle (`Granit.app/Contents/MacOS/<exe>`), and in
+/// `usr/lib/<exe>` beside `usr/bin/<exe>` of the `.deb` and the AppImage. `None`
+/// outside a package, e.g. under `cargo run`: the model is then downloaded.
 fn bundled_model_dir(exe: &Path) -> Option<PathBuf> {
-    let dir = exe
-        .parent()?
-        .parent()?
-        .join("Resources")
-        .join(BUNDLED_MODEL);
-    dir.is_dir().then_some(dir)
+    let prefix = exe.parent()?.parent()?;
+    let macos = prefix.join("Resources");
+    let linux = prefix.join("lib").join(exe.file_name()?);
+    [macos, linux]
+        .into_iter()
+        .map(|resources| resources.join(BUNDLED_MODEL))
+        .find(|dir| dir.is_dir())
 }
 
 /// The app-wide host state.
@@ -154,6 +156,24 @@ mod tests {
         assert_eq!(bundled_model_dir(&exe), None);
 
         let model = contents.join("Resources").join(BUNDLED_MODEL);
+        std::fs::create_dir_all(&model).unwrap();
+        assert_eq!(bundled_model_dir(&exe), Some(model));
+    }
+
+    /// The `.deb` installs to `/usr`, the AppImage mounts the same tree as
+    /// its AppDir: `usr/bin/granit-app` and `usr/lib/granit-app/models/…`.
+    #[test]
+    fn the_bundled_model_is_found_in_the_linux_package_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let usr = dir.path().join("Granit.AppDir/usr");
+        let exe = usr.join("bin/granit-app");
+        assert_eq!(bundled_model_dir(&exe), None);
+
+        // Another executable's resources are not this one's.
+        std::fs::create_dir_all(usr.join("lib/other").join(BUNDLED_MODEL)).unwrap();
+        assert_eq!(bundled_model_dir(&exe), None);
+
+        let model = usr.join("lib/granit-app").join(BUNDLED_MODEL);
         std::fs::create_dir_all(&model).unwrap();
         assert_eq!(bundled_model_dir(&exe), Some(model));
     }

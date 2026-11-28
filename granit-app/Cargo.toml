@@ -51,12 +51,17 @@ tempfile = "3.27.0"
 
 # Packaging with cargo-packager: `cargo packager --release -p granit-app`
 # after a release build. The release workflow runs it for macOS (signed,
-# notarized `Granit.app` and `Granit_<version>_aarch64.dmg`). The version
-# comes from the workspace. Paths are relative to this directory; the icons
-# and the model stay under `src-tauri/` until the cutover.
+# notarized `Granit.app` and `Granit_<version>_aarch64.dmg`); on Linux
+# `--formats deb,appimage` makes `granit-app_<version>_amd64.deb` (package
+# `granit`) and `granit-app_<version>_x86_64.AppImage`. The version comes
+# from the workspace. Paths are relative to this directory; the icons and
+# the model stay under `src-tauri/` until the cutover.
 [package.metadata.packager]
 product-name = "Granit"
 identifier = "se.lhelge.granit"
+# The `.deb` description and the desktop entry's comment (else the crate's).
+description = "Minimal desktop note-taking app"
+long-description = "Granit opens a local folder of markdown notes, with a rendered editor, an integrated AI agent and encrypted backups."
 category = "Productivity"
 homepage = "https://granit.lhelge.se/"
 icons = [
@@ -70,6 +75,23 @@ icons = [
 # (`host::bundled_model_dir` finds it).
 resources = [
     { src = "../src-tauri/resources/models/all-MiniLM-L6-v2-onnx/*", target = "models/all-MiniLM-L6-v2-onnx" },
+]
+
+# The libraries the binary links (`readelf -d`) and the ones GPUI dlopens
+# (Wayland, the Vulkan loader); a Vulkan driver is the system's. The names
+# are Ubuntu's, where the release is built: a binary built elsewhere links
+# that system's OpenSSL.
+[package.metadata.packager.deb]
+depends = [
+    "libc6",
+    "libgcc-s1",
+    "libstdc++6",
+    "libssl3",
+    "libxcb1",
+    "libxkbcommon0",
+    "libxkbcommon-x11-0",
+    "libwayland-client0",
+    "libvulkan1",
 ]
 
 # `signing-identity` is matched by codesign against the certificate's name,
